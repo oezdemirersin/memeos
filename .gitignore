@@ -1,0 +1,12 @@
+instance/
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+.env
+.DS_Store
+static/renders/
+static/uploads/
+venv/
+.venv/

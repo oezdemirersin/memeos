@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MemeOS — Stadtfragebogen {{ city.name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#080b12;--surface:#0f1420;--surface2:#161c2d;--border:rgba(255,255,255,0.07);--accent:#3b82f6;--text:#e2e8f0;--muted:#64748b;--font-display:'Bebas Neue',sans-serif;--font-body:'DM Sans',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;padding:20px;}
+.container{max-width:640px;margin:0 auto;}
+.header{text-align:center;padding:32px 0 24px;}
+.logo{font-family:var(--font-display);font-size:28px;letter-spacing:2px;margin-bottom:4px;}
+.logo span{color:var(--accent);}
+.subtitle{font-size:14px;color:var(--muted);}
+.city-badge{display:inline-block;background:var(--accent);color:white;padding:4px 16px;border-radius:20px;font-size:13px;font-weight:700;margin:12px 0;}
+.intro{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;font-size:13px;line-height:1.6;color:var(--muted);}
+.form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:12px;}
+.q-num{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;}
+.q-text{font-size:15px;font-weight:600;margin-bottom:12px;line-height:1.4;}
+input[type=text]{width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;transition:border-color .15s;}
+input[type=text]:focus{border-color:var(--accent);}
+.name-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;}
+.name-section label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+.submit-btn{width:100%;padding:14px;background:var(--accent);color:white;border:none;border-radius:10px;font-family:var(--font-body);font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;}
+.submit-btn:hover{background:#2563eb;}
+.optional{font-size:11px;color:var(--muted);margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">MEME<span>OS</span></div>
+    <div class="subtitle">Stadtfragebogen</div>
+    <div class="city-badge">{{ city.name }}</div>
+  </div>
+
+  <div class="intro">
+    Hallo! Wir bauen Meme-Inhalte für <strong>{{ city.name }}</strong> und brauchen lokales Wissen von echten Einwohnern.
+    Beantworte so viele Fragen wie möglich — je spezifischer, desto besser!
+    Alle Angaben sind anonym und werden nur intern verwendet.
+  </div>
+
+  <form method="POST" action="/survey/submit">
+    <input type="hidden" name="token" value="{{ survey.token }}">
+
+    <div class="name-section">
+      <label>Dein Name (optional)</label>
+      <input type="text" name="respondent" value="{{ survey.respondent or '' }}" placeholder="Max Mustermann">
+      <div class="optional">Wird nur intern verwendet, nicht öffentlich.</div>
+    </div>
+
+    {% for q in questions %}
+    <div class="form-card">
+      <div class="q-num">Frage {{ loop.index }} / {{ questions|length }}</div>
+      <div class="q-text">{{ q.text }}</div>
+      <input type="text" name="{{ q.key }}" placeholder="Deine Antwort…">
+    </div>
+    {% endfor %}
+
+    <button type="submit" class="submit-btn">Fragebogen absenden →</button>
+  </form>
+</div>
+</body>
+</html>

@@ -1,0 +1,1486 @@
+import os
+import json
+import time
+import secrets
+import hashlib
+import threading
+import urllib.parse
+import uuid
+import requests
+import feedparser
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import (Flask, render_template, request, redirect, url_for,
+                   jsonify, session, flash, send_from_directory, abort)
+from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
+                    NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
+                    KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
+import anthropic
+import logging
+
+# ── Setup ──────────────────────────────────────────────────────────────────────
+log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'memeos-dev-secret-change-in-prod')
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DB_PATH  = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
+os.makedirs(os.path.join(_BASE_DIR, 'instance'), exist_ok=True)
+os.makedirs(os.path.join(_BASE_DIR, 'static', 'renders'), exist_ok=True)
+os.makedirs(os.path.join(_BASE_DIR, 'static', 'uploads'), exist_ok=True)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{_DB_PATH}')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+db.init_app(app)
+
+# ── Env ────────────────────────────────────────────────────────────────────────
+ADMIN_USERNAME    = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD    = os.getenv('ADMIN_PASSWORD', 'memeos2025')
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+CANVA_CLIENT_ID   = os.getenv('CANVA_CLIENT_ID', '')
+CANVA_CLIENT_SECRET = os.getenv('CANVA_CLIENT_SECRET', '')
+CONTENT_OS_URL    = os.getenv('CONTENT_OS_URL', '')
+CONTENT_OS_KEY    = os.getenv('CONTENT_OS_KEY', '')
+BASE_URL          = os.getenv('BASE_URL', 'http://localhost:5200')
+CANVA_REDIRECT_URI = BASE_URL + '/canva/callback'
+
+# ── CSRF ───────────────────────────────────────────────────────────────────────
+_CSRF_EXEMPT = {'/login', '/logout', '/canva/callback', '/ping', '/survey/submit'}
+
+@app.before_request
+def csrf_protect():
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        if request.path in _CSRF_EXEMPT or request.path.startswith('/api/'):
+            return
+        token = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token')
+        if not token or token != session.get('csrf_token'):
+            abort(403)
+
+@app.context_processor
+def inject_csrf():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return dict(csrf_token=session['csrf_token'])
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('logged_in'):
+        return redirect(url_for('dashboard'))
+    error = None
+    if request.method == 'POST':
+        u = request.form.get('username', '').strip()
+        p = request.form.get('password', '')
+        # DB-User
+        user = User.query.filter_by(username=u, active=True).first()
+        if user and user.check_password(p):
+            session['logged_in'] = True
+            session['username']  = u
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            return redirect(url_for('dashboard'))
+        # Env-Fallback
+        elif u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            session['username']  = u
+            return redirect(url_for('dashboard'))
+        else:
+            error = 'Ungültige Zugangsdaten'
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/ping')
+def ping():
+    return 'ok'
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+@app.route('/')
+@login_required
+def dashboard():
+    stats = {
+        'cities':     City.query.filter_by(active=True).count(),
+        'templates':  MemeTemplate.query.filter_by(active=True).count(),
+        'pending':    RenderJob.query.filter(RenderJob.status.in_(['pending','running'])).count(),
+        'review':     RenderJob.query.filter(RenderJob.status.in_(['done','review'])).count(),
+        'done':       RenderJob.query.filter_by(status='approved').count(),
+        'news':       NewsItem.query.filter_by(status='scored').count(),
+        'knowledge':  CityKnowledge.query.filter_by(active=True).count(),
+    }
+    recent_jobs = RenderJob.query.order_by(RenderJob.created_at.desc()).limit(10).all()
+    cities      = City.query.filter_by(active=True).order_by(City.name).all()
+    templates   = MemeTemplate.query.filter_by(active=True).order_by(MemeTemplate.name).all()
+    todos       = AppTodo.query.filter_by(done=False).order_by(AppTodo.priority.desc(), AppTodo.created_at.desc()).all()
+
+    today = datetime.utcnow().strftime('%m-%d')
+    seasonal_templates = [t for t in templates if t.seasonal_from and t.seasonal_to
+                          and t.seasonal_from <= today <= t.seasonal_to]
+
+    canva_connected = _canva_is_connected()
+    ai_cost_month = _ai_cost_this_month()
+
+    return render_template('dashboard.html',
+        stats=stats,
+        recent_jobs=recent_jobs,
+        cities=cities,
+        templates=templates,
+        todos=todos,
+        seasonal_templates=seasonal_templates,
+        canva_connected=canva_connected,
+        ai_cost_month=ai_cost_month,
+        categories=KNOWLEDGE_CATEGORIES,
+        category_map=CATEGORY_MAP,
+        now=datetime.utcnow(),
+    )
+
+# ── Static renders ─────────────────────────────────────────────────────────────
+@app.route('/renders/<path:filename>')
+@login_required
+def serve_render(filename):
+    return send_from_directory(os.path.join(_BASE_DIR, 'static', 'renders'), filename)
+
+@app.route('/uploads/<path:filename>')
+@login_required
+def serve_upload(filename):
+    return send_from_directory(os.path.join(_BASE_DIR, 'static', 'uploads'), filename)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CITY API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/cities', methods=['GET'])
+@login_required
+def api_cities_list():
+    cities = City.query.order_by(City.name).all()
+    return jsonify([{
+        'id': c.id, 'name': c.name, 'state': c.state,
+        'population': c.population, 'active': c.active,
+        'instagram_handle': c.instagram_handle,
+        'knowledge_count': c.knowledge_count(),
+        'render_count': c.render_count(),
+    } for c in cities])
+
+@app.route('/api/cities', methods=['POST'])
+@login_required
+def api_city_create():
+    d = request.json or {}
+    if not d.get('name'):
+        return jsonify({'error': 'Name fehlt'}), 400
+    if City.query.filter_by(name=d['name']).first():
+        return jsonify({'error': 'Stadt existiert bereits'}), 409
+    city = City(
+        name=d['name'].strip(),
+        state=d.get('state', ''),
+        population=d.get('population'),
+        instagram_handle=d.get('instagram_handle', ''),
+        tiktok_handle=d.get('tiktok_handle', ''),
+        accent_color=d.get('accent_color', '#3b82f6'),
+        rss_url=d.get('rss_url', ''),
+        notes=d.get('notes', ''),
+        active=d.get('active', True),
+    )
+    db.session.add(city)
+    db.session.commit()
+    return jsonify({'id': city.id, 'name': city.name}), 201
+
+@app.route('/api/cities/<int:city_id>', methods=['PUT'])
+@login_required
+def api_city_update(city_id):
+    city = City.query.get_or_404(city_id)
+    d = request.json or {}
+    for field in ['name','state','population','instagram_handle','tiktok_handle',
+                  'accent_color','rss_url','notes','active']:
+        if field in d:
+            setattr(city, field, d[field])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/cities/<int:city_id>', methods=['DELETE'])
+@login_required
+def api_city_delete(city_id):
+    city = City.query.get_or_404(city_id)
+    db.session.delete(city)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/cities/bulk-import', methods=['POST'])
+@login_required
+def api_cities_bulk_import():
+    d = request.json or {}
+    names = d.get('cities', [])
+    created = 0
+    for item in names:
+        if isinstance(item, str):
+            name, state, pop = item.strip(), '', None
+        else:
+            name  = item.get('name', '').strip()
+            state = item.get('state', '')
+            pop   = item.get('population')
+        if not name or City.query.filter_by(name=name).first():
+            continue
+        db.session.add(City(name=name, state=state, population=pop))
+        created += 1
+    db.session.commit()
+    return jsonify({'created': created})
+
+# ── City-Wiki API ──────────────────────────────────────────────────────────────
+
+@app.route('/api/cities/<int:city_id>/knowledge', methods=['GET'])
+@login_required
+def api_knowledge_list(city_id):
+    City.query.get_or_404(city_id)
+    entries = CityKnowledge.query.filter_by(city_id=city_id)\
+                .order_by(CityKnowledge.category, CityKnowledge.confidence.desc()).all()
+    return jsonify([{
+        'id': e.id, 'category': e.category, 'category_label': e.category_label,
+        'category_color': e.category_color, 'name': e.name, 'description': e.description,
+        'confidence': e.confidence, 'source': e.source, 'source_badge': e.source_badge,
+        'used_count': e.used_count, 'active': e.active,
+        'on_cooldown': e.on_cooldown,
+        'cooldown_until': e.cooldown_until.isoformat() if e.cooldown_until else None,
+    } for e in entries])
+
+@app.route('/api/cities/<int:city_id>/knowledge', methods=['POST'])
+@login_required
+def api_knowledge_create(city_id):
+    City.query.get_or_404(city_id)
+    d = request.json or {}
+    if not d.get('name') or not d.get('category'):
+        return jsonify({'error': 'Name und Kategorie erforderlich'}), 400
+    e = CityKnowledge(
+        city_id=city_id,
+        category=d['category'],
+        name=d['name'].strip(),
+        description=d.get('description', ''),
+        confidence=int(d.get('confidence', 70)),
+        source=d.get('source', 'manual'),
+    )
+    db.session.add(e)
+    db.session.commit()
+    return jsonify({'id': e.id}), 201
+
+@app.route('/api/knowledge/<int:entry_id>', methods=['PUT'])
+@login_required
+def api_knowledge_update(entry_id):
+    e = CityKnowledge.query.get_or_404(entry_id)
+    d = request.json or {}
+    for field in ['name','description','confidence','source','active','category']:
+        if field in d:
+            setattr(e, field, d[field])
+    if 'cooldown_days' in d and d['cooldown_days']:
+        e.cooldown_until = datetime.utcnow() + timedelta(days=int(d['cooldown_days']))
+    elif d.get('clear_cooldown'):
+        e.cooldown_until = None
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/knowledge/<int:entry_id>', methods=['DELETE'])
+@login_required
+def api_knowledge_delete(entry_id):
+    e = CityKnowledge.query.get_or_404(entry_id)
+    db.session.delete(e)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/cities/<int:city_id>/knowledge/ai-generate', methods=['POST'])
+@login_required
+def api_knowledge_ai_generate(city_id):
+    city = City.query.get_or_404(city_id)
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Kein Anthropic API Key'}), 400
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        categories_str = ', '.join([f"{k} ({label})" for k, label, _ in KNOWLEDGE_CATEGORIES])
+        prompt = f"""Du bist ein Experte für deutsche Städte und lokale Meme-Kultur.
+Generiere City-Wiki-Einträge für {city.name} ({city.state}, ~{city.population or '?'} Einwohner).
+
+Kategorien: {categories_str}
+
+Antworte NUR mit einem JSON-Array. Jeder Eintrag hat:
+- category: eine der Kategorien oben
+- name: konkreter Ortsname/Begriff (max 50 Zeichen)
+- description: kurze Erklärung warum dieser Ort in diese Kategorie passt (max 100 Zeichen)
+- confidence: 0-100 (wie sicher bist du?)
+
+Generiere 3-5 Einträge pro vorhandener Kategorie, insgesamt 30-50 Einträge.
+Sei möglichst spezifisch und lokal — generische Antworten wie "Stadtpark" sind wertlos.
+Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
+
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=4000,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        # Extrahiere JSON
+        import re
+        match = re.search(r'\[.*\]', raw, re.DOTALL)
+        if not match:
+            return jsonify({'error': 'KI hat kein gültiges JSON zurückgegeben'}), 500
+        entries_data = json.loads(match.group(0))
+
+        _log_ai_usage('city_wiki_generate', 'claude-haiku-4-5-20251001',
+                      msg.usage.input_tokens, msg.usage.output_tokens)
+
+        created = 0
+        for e_data in entries_data:
+            cat = e_data.get('category', '')
+            name = e_data.get('name', '').strip()
+            if not cat or not name or cat not in CATEGORY_MAP:
+                continue
+            exists = CityKnowledge.query.filter_by(city_id=city_id, name=name).first()
+            if exists:
+                continue
+            entry = CityKnowledge(
+                city_id=city_id,
+                category=cat,
+                name=name,
+                description=e_data.get('description', ''),
+                confidence=int(e_data.get('confidence', 60)),
+                source='ai',
+            )
+            db.session.add(entry)
+            created += 1
+
+        db.session.commit()
+        return jsonify({'created': created})
+    except Exception as ex:
+        log.error(f'AI Wiki Generate Error: {ex}')
+        return jsonify({'error': str(ex)}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEMPLATE API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/templates', methods=['GET'])
+@login_required
+def api_templates_list():
+    templates = MemeTemplate.query.order_by(MemeTemplate.name).all()
+    return jsonify([{
+        'id': t.id, 'name': t.name, 'description': t.description,
+        'canva_template_id': t.canva_template_id,
+        'required_vars': t.get_required_vars(),
+        'tags': t.get_tags(),
+        'category': t.category,
+        'preview_image': t.preview_image,
+        'example_text': t.example_text,
+        'has_canva': t.has_canva(),
+        'use_count': t.use_count,
+        'active': t.active,
+        'seasonal_from': t.seasonal_from,
+        'seasonal_to': t.seasonal_to,
+        'min_population': t.min_population,
+    } for t in templates])
+
+@app.route('/api/templates', methods=['POST'])
+@login_required
+def api_template_create():
+    d = request.json or {}
+    if not d.get('name'):
+        return jsonify({'error': 'Name fehlt'}), 400
+    t = MemeTemplate(
+        name=d['name'].strip(),
+        description=d.get('description', ''),
+        canva_template_id=d.get('canva_template_id', ''),
+        required_vars=json.dumps(d.get('required_vars', [])),
+        canva_field_map=json.dumps(d.get('canva_field_map', {})),
+        tags=json.dumps(d.get('tags', [])),
+        category=d.get('category', 'allgemein'),
+        example_text=d.get('example_text', ''),
+        seasonal_from=d.get('seasonal_from', ''),
+        seasonal_to=d.get('seasonal_to', ''),
+        min_population=int(d.get('min_population', 0)),
+    )
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({'id': t.id}), 201
+
+@app.route('/api/templates/<int:tmpl_id>', methods=['PUT'])
+@login_required
+def api_template_update(tmpl_id):
+    t = MemeTemplate.query.get_or_404(tmpl_id)
+    d = request.json or {}
+    for field in ['name','description','canva_template_id','category',
+                  'example_text','seasonal_from','seasonal_to','min_population','active']:
+        if field in d:
+            setattr(t, field, d[field])
+    if 'required_vars' in d:
+        t.required_vars = json.dumps(d['required_vars'])
+    if 'canva_field_map' in d:
+        t.canva_field_map = json.dumps(d['canva_field_map'])
+    if 'tags' in d:
+        t.tags = json.dumps(d['tags'])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/templates/<int:tmpl_id>', methods=['DELETE'])
+@login_required
+def api_template_delete(tmpl_id):
+    t = MemeTemplate.query.get_or_404(tmpl_id)
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/templates/<int:tmpl_id>/upload-preview', methods=['POST'])
+@login_required
+def api_template_upload_preview(tmpl_id):
+    t = MemeTemplate.query.get_or_404(tmpl_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'Keine Datei'}), 400
+    f = request.files['file']
+    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'jpg'
+    if ext not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
+        return jsonify({'error': 'Nur Bilder erlaubt'}), 400
+    filename = f'template_{tmpl_id}_{int(time.time())}.{ext}'
+    f.save(os.path.join(_BASE_DIR, 'static', 'uploads', filename))
+    t.preview_image = filename
+    db.session.commit()
+    return jsonify({'filename': filename})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERATOR API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/generate', methods=['POST'])
+@login_required
+def api_generate():
+    d = request.json or {}
+    template_id = d.get('template_id')
+    city_id     = d.get('city_id')
+    if not template_id or not city_id:
+        return jsonify({'error': 'template_id und city_id erforderlich'}), 400
+
+    t    = MemeTemplate.query.get_or_404(template_id)
+    city = City.query.get_or_404(city_id)
+
+    job = RenderJob(template_id=t.id, city_id=city.id, status='pending')
+    db.session.add(job)
+    db.session.commit()
+
+    thread = threading.Thread(target=_run_generate_job, args=(app, job.id), daemon=True)
+    thread.start()
+
+    return jsonify({'job_id': job.id, 'status': 'pending'})
+
+@app.route('/api/generate/bulk', methods=['POST'])
+@login_required
+def api_generate_bulk():
+    d = request.json or {}
+    template_id = d.get('template_id')
+    city_ids    = d.get('city_ids', [])
+    if not template_id or not city_ids:
+        return jsonify({'error': 'template_id und city_ids erforderlich'}), 400
+
+    MemeTemplate.query.get_or_404(template_id)
+    job_ids = []
+    for cid in city_ids:
+        city = City.query.get(cid)
+        if not city:
+            continue
+        job = RenderJob(template_id=template_id, city_id=cid, status='pending')
+        db.session.add(job)
+        db.session.flush()
+        job_ids.append(job.id)
+    db.session.commit()
+
+    for jid in job_ids:
+        t = threading.Thread(target=_run_generate_job, args=(app, jid), daemon=True)
+        t.start()
+        time.sleep(0.3)
+
+    return jsonify({'job_ids': job_ids, 'count': len(job_ids)})
+
+@app.route('/api/jobs', methods=['GET'])
+@login_required
+def api_jobs_list():
+    status_filter = request.args.get('status')
+    q = RenderJob.query
+    if status_filter:
+        statuses = status_filter.split(',')
+        q = q.filter(RenderJob.status.in_(statuses))
+    jobs = q.order_by(RenderJob.created_at.desc()).limit(100).all()
+    return jsonify([_job_to_dict(j) for j in jobs])
+
+@app.route('/api/jobs/<int:job_id>', methods=['GET'])
+@login_required
+def api_job_get(job_id):
+    job = RenderJob.query.get_or_404(job_id)
+    return jsonify(_job_to_dict(job))
+
+@app.route('/api/jobs/<int:job_id>/review', methods=['POST'])
+@login_required
+def api_job_review(job_id):
+    job = RenderJob.query.get_or_404(job_id)
+    d = request.json or {}
+    action = d.get('action')  # approve | reject
+    if action not in ('approve', 'reject'):
+        return jsonify({'error': 'action muss approve oder reject sein'}), 400
+
+    job.status      = 'approved' if action == 'approve' else 'rejected'
+    job.review_note = d.get('note', '')
+    job.reviewed_at = datetime.utcnow()
+    db.session.commit()
+
+    if action == 'approve' and d.get('send_to_content_os'):
+        threading.Thread(target=_send_to_content_os, args=(app, job.id), daemon=True).start()
+
+    return jsonify({'ok': True, 'status': job.status})
+
+@app.route('/api/jobs/<int:job_id>/resend', methods=['POST'])
+@login_required
+def api_job_resend(job_id):
+    job = RenderJob.query.get_or_404(job_id)
+    threading.Thread(target=_send_to_content_os, args=(app, job.id), daemon=True).start()
+    return jsonify({'ok': True})
+
+@app.route('/api/jobs/<int:job_id>', methods=['DELETE'])
+@login_required
+def api_job_delete(job_id):
+    job = RenderJob.query.get_or_404(job_id)
+    if job.image_filename:
+        try:
+            os.remove(os.path.join(_BASE_DIR, 'static', 'renders', job.image_filename))
+        except Exception:
+            pass
+    db.session.delete(job)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+def _job_to_dict(j):
+    return {
+        'id': j.id,
+        'template_id': j.template_id,
+        'template_name': j.template.name if j.template else '',
+        'city_id': j.city_id,
+        'city_name': j.city.name if j.city else '',
+        'status': j.status,
+        'status_label': j.status_label,
+        'fit_score': j.fit_score,
+        'fit_color': j.fit_color,
+        'fit_reasoning': j.fit_reasoning,
+        'vars_used': j.get_vars(),
+        'manual_brief': j.manual_brief,
+        'image_filename': j.image_filename,
+        'image_url': url_for('serve_render', filename=j.image_filename) if j.image_filename else None,
+        'error_message': j.error_message,
+        'review_note': j.review_note,
+        'sent_to_content_os': j.sent_to_content_os,
+        'created_at': j.created_at.isoformat() if j.created_at else None,
+        'completed_at': j.completed_at.isoformat() if j.completed_at else None,
+    }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERATE LOGIC (Background Thread)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _run_generate_job(flask_app, job_id):
+    with flask_app.app_context():
+        job = RenderJob.query.get(job_id)
+        if not job:
+            return
+        job.status = 'running'
+        db.session.commit()
+        try:
+            template = job.template
+            city     = job.city
+
+            # 1) Fit-Score + Variable-Matching via Claude
+            result = _claude_fit_and_vars(city, template)
+            job.fit_score    = result['fit_score']
+            job.fit_reasoning = result['reasoning']
+            job.vars_used    = json.dumps(result['vars'])
+            job.manual_brief = result['brief']
+
+            if result['fit_score'] < 40:
+                job.status = 'done'
+                job.error_message = f'Fit-Score zu niedrig ({result["fit_score"]}/100) — übersprungen'
+                db.session.commit()
+                return
+
+            # 2) Canva Autofill (wenn Template und Verbindung vorhanden)
+            if template.has_canva() and _canva_is_connected():
+                png_bytes = _canva_autofill(template, result['vars'])
+                if png_bytes:
+                    filename = f'render_{job.id}_{int(time.time())}.png'
+                    path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
+                    with open(path, 'wb') as f:
+                        f.write(png_bytes)
+                    job.image_filename = filename
+                    job.status = 'done'
+                else:
+                    job.status = 'done'
+                    job.error_message = 'Canva Autofill fehlgeschlagen — nur Brief verfügbar'
+            else:
+                job.status = 'done'
+
+            job.completed_at = datetime.utcnow()
+
+            # Verwendete Knowledge-Einträge markieren
+            _mark_knowledge_used(city.id, result['vars'], template.id)
+
+            # Template use_count erhöhen
+            template.use_count = (template.use_count or 0) + 1
+            db.session.commit()
+
+        except Exception as ex:
+            log.error(f'Generate Job {job_id} Error: {ex}')
+            job.status = 'failed'
+            job.error_message = str(ex)
+            db.session.commit()
+
+
+def _claude_fit_and_vars(city, template):
+    if not ANTHROPIC_API_KEY:
+        return {'fit_score': 75, 'reasoning': 'Kein API Key — Standard-Score', 'vars': {}, 'brief': 'Kein API Key konfiguriert'}
+
+    knowledge = CityKnowledge.query.filter_by(city_id=city.id, active=True)\
+                    .filter(CityKnowledge.cooldown_until == None)\
+                    .order_by(CityKnowledge.confidence.desc()).all()
+
+    knowledge_str = '\n'.join([
+        f"- [{e.category}] {e.name} (Konfidenz: {e.confidence}, Quelle: {e.source})"
+        + (f": {e.description}" if e.description else '')
+        for e in knowledge
+    ]) or 'Keine Knowledge-Einträge vorhanden'
+
+    required_vars = template.get_required_vars()
+    vars_str = ', '.join(required_vars) if required_vars else 'keine'
+
+    prompt = f"""Du bist Meme-Experte für deutsche Stadtseiten auf Instagram.
+
+Stadt: {city.name} ({city.state}, ~{city.population or '?'} Einwohner)
+
+Meme-Template: {template.name}
+Beschreibung: {template.description or 'keine'}
+Beispiel-Text: {template.example_text or 'keiner'}
+Benötigte Variablen: {vars_str}
+
+Stadt-Wissen ({city.name}):
+{knowledge_str}
+
+Bewerte:
+1. Wie gut passt dieses Template zu {city.name}? (fit_score: 0–100)
+   < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
+2. Welche konkreten Werte sollen für die Variablen eingesetzt werden?
+3. Schreibe einen kurzen "Manual Brief" für den Fall dass kein Canva-Template vorhanden ist
+   (was soll der Meme-Creator machen?)
+
+Antworte NUR mit JSON:
+{{
+  "fit_score": <Zahl 0-100>,
+  "reasoning": "<kurze Begründung, max 100 Zeichen>",
+  "vars": {{"variable_name": "konkreter Wert", ...}},
+  "brief": "<was soll der Creator machen, max 200 Zeichen>"
+}}"""
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=500,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        _log_ai_usage('fit_score', 'claude-haiku-4-5-20251001',
+                      msg.usage.input_tokens, msg.usage.output_tokens)
+        import re
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+    except Exception as ex:
+        log.error(f'Claude Fit-Score Error: {ex}')
+
+    return {'fit_score': 50, 'reasoning': 'Fehler beim KI-Aufruf', 'vars': {}, 'brief': 'Manuell erstellen'}
+
+
+def _mark_knowledge_used(city_id, vars_dict, template_id):
+    for category, value in vars_dict.items():
+        entry = CityKnowledge.query.filter_by(
+            city_id=city_id, category=category, name=value, active=True
+        ).first()
+        if entry:
+            entry.used_count  = (entry.used_count or 0) + 1
+            entry.last_used_at = datetime.utcnow()
+            entry.cooldown_until = datetime.utcnow() + timedelta(days=14)
+    db.session.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CANVA API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _canva_get_token():
+    if not CANVA_CLIENT_ID or not CANVA_CLIENT_SECRET:
+        return None
+    tokens = _canva_load_tokens()
+    access_token = tokens.get('access_token')
+    expires_at   = tokens.get('expires_at', '')
+    try:
+        if access_token and expires_at:
+            if datetime.fromisoformat(expires_at) > datetime.now() + timedelta(minutes=5):
+                return access_token
+    except Exception:
+        pass
+    refresh_token = tokens.get('refresh_token') or AppSettings.get('canva_refresh_token_backup')
+    if not refresh_token:
+        return None
+    try:
+        r = requests.post('https://api.canva.com/rest/v1/oauth/token', data={
+            'grant_type':    'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id':     CANVA_CLIENT_ID,
+            'client_secret': CANVA_CLIENT_SECRET,
+        }, timeout=15)
+        if r.ok:
+            data = r.json()
+            new_tokens = {
+                'access_token':  data.get('access_token'),
+                'refresh_token': data.get('refresh_token', refresh_token),
+                'expires_at':    (datetime.now() + timedelta(seconds=data.get('expires_in', 3600))).isoformat(),
+            }
+            _canva_save_tokens(new_tokens)
+            return new_tokens['access_token']
+    except Exception as ex:
+        log.warning(f'Canva Token Refresh Error: {ex}')
+    return None
+
+
+def _canva_is_connected():
+    if not CANVA_CLIENT_ID or not CANVA_CLIENT_SECRET:
+        return False
+    if AppSettings.get('canva_explicitly_disconnected') == '1':
+        return False
+    tokens = _canva_load_tokens()
+    access_token = tokens.get('access_token')
+    expires_at   = tokens.get('expires_at', '')
+    try:
+        if access_token and expires_at:
+            if datetime.fromisoformat(expires_at) > datetime.now() + timedelta(minutes=5):
+                return True
+    except Exception:
+        pass
+    return bool(tokens.get('refresh_token') or AppSettings.get('canva_refresh_token_backup'))
+
+
+def _canva_load_tokens():
+    raw = AppSettings.get('canva_tokens', '{}')
+    try: return json.loads(raw)
+    except: return {}
+
+
+def _canva_save_tokens(tokens):
+    AppSettings.set('canva_tokens', json.dumps(tokens))
+
+
+def _canva_autofill(template, vars_dict):
+    token = _canva_get_token()
+    if not token:
+        return None
+    field_map = template.get_canva_field_map()
+    data = {}
+    for var_key, value in vars_dict.items():
+        canva_field = field_map.get(var_key, var_key)
+        data[canva_field] = {'type': 'text', 'text': str(value)}
+
+    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    try:
+        r = requests.post('https://api.canva.com/rest/v1/autofills', headers=headers, json={
+            'brand_template_id': template.canva_template_id,
+            'data': data,
+        }, timeout=20)
+        if not r.ok:
+            log.warning(f'Canva Autofill Error: {r.status_code} {r.text[:150]}')
+            return None
+        job_id = r.json().get('job', {}).get('id')
+        if not job_id:
+            return None
+    except Exception as ex:
+        log.warning(f'Canva Autofill Request Error: {ex}')
+        return None
+
+    design_id = None
+    for _ in range(20):
+        time.sleep(2)
+        try:
+            sr = requests.get(f'https://api.canva.com/rest/v1/autofills/{job_id}',
+                              headers=headers, timeout=10)
+            if sr.ok:
+                job_data = sr.json().get('job', {})
+                status = job_data.get('status', '')
+                if status == 'success':
+                    design_id = job_data.get('result', {}).get('design', {}).get('id')
+                    break
+                elif status == 'failed':
+                    return None
+        except Exception:
+            pass
+
+    if not design_id:
+        return None
+
+    try:
+        er = requests.post('https://api.canva.com/rest/v1/exports', headers=headers, json={
+            'design_id': design_id,
+            'format': {'type': 'png', 'lossless': True},
+        }, timeout=20)
+        if not er.ok:
+            return None
+        export_job_id = er.json().get('job', {}).get('id')
+        if not export_job_id:
+            return None
+    except Exception:
+        return None
+
+    for _ in range(20):
+        time.sleep(2)
+        try:
+            pr = requests.get(f'https://api.canva.com/rest/v1/exports/{export_job_id}',
+                              headers=headers, timeout=10)
+            if pr.ok:
+                ej = pr.json().get('job', {})
+                if ej.get('status') == 'success':
+                    urls = ej.get('result', {}).get('urls', [])
+                    if urls:
+                        img_r = requests.get(urls[0], timeout=30)
+                        if img_r.ok:
+                            return img_r.content
+                    break
+                elif ej.get('status') == 'failed':
+                    return None
+        except Exception:
+            pass
+    return None
+
+
+@app.route('/canva/connect')
+@login_required
+def canva_connect():
+    if not CANVA_CLIENT_ID:
+        flash('CANVA_CLIENT_ID nicht gesetzt', 'danger')
+        return redirect(url_for('dashboard'))
+    code_verifier  = secrets.token_urlsafe(64)
+    code_challenge = hashlib.sha256(code_verifier.encode()).digest()
+    import base64
+    code_challenge_b64 = base64.urlsafe_b64encode(code_challenge).rstrip(b'=').decode()
+    session['canva_code_verifier'] = code_verifier
+    params = {
+        'client_id':              CANVA_CLIENT_ID,
+        'redirect_uri':           CANVA_REDIRECT_URI,
+        'response_type':          'code',
+        'scope':                  'asset:read design:content:read design:content:write brand_template:read',
+        'code_challenge':         code_challenge_b64,
+        'code_challenge_method':  'S256',
+        'state':                  'memeos_canva_auth',
+    }
+    url = 'https://www.canva.com/api/oauth/authorize?' + urllib.parse.urlencode(params)
+    return redirect(url)
+
+
+@app.route('/canva/callback')
+def canva_callback():
+    code  = request.args.get('code')
+    error = request.args.get('error')
+    if error or not code:
+        return redirect('/?tab=settings&canva=error')
+    code_verifier = session.pop('canva_code_verifier', '')
+    try:
+        token_data = {
+            'grant_type':    'authorization_code',
+            'code':          code,
+            'redirect_uri':  CANVA_REDIRECT_URI,
+            'client_id':     CANVA_CLIENT_ID,
+            'code_verifier': code_verifier,
+        }
+        if CANVA_CLIENT_SECRET:
+            token_data['client_secret'] = CANVA_CLIENT_SECRET
+        r = requests.post('https://api.canva.com/rest/v1/oauth/token', data=token_data, timeout=15)
+        if r.ok:
+            data = r.json()
+            tokens = {
+                'access_token':  data.get('access_token'),
+                'refresh_token': data.get('refresh_token'),
+                'expires_at':    (datetime.now() + timedelta(seconds=data.get('expires_in', 3600))).isoformat(),
+            }
+            _canva_save_tokens(tokens)
+            if data.get('refresh_token'):
+                AppSettings.set('canva_refresh_token_backup', data['refresh_token'])
+            AppSettings.set('canva_explicitly_disconnected', '0')
+            return redirect('/?tab=settings&canva=connected')
+    except Exception as ex:
+        log.error(f'Canva Callback Error: {ex}')
+    return redirect('/?tab=settings&canva=error')
+
+
+@app.route('/canva/disconnect', methods=['POST'])
+@login_required
+def canva_disconnect():
+    _canva_save_tokens({})
+    AppSettings.set('canva_explicitly_disconnected', '1')
+    return redirect('/?tab=settings')
+
+
+@app.route('/api/canva/status')
+@login_required
+def api_canva_status():
+    return jsonify({
+        'connected': _canva_is_connected(),
+        'client_id_set': bool(CANVA_CLIENT_ID),
+    })
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEWS RSS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/news/fetch', methods=['POST'])
+@login_required
+def api_news_fetch():
+    d = request.json or {}
+    city_id = d.get('city_id')
+    cities  = [City.query.get_or_404(city_id)] if city_id else City.query.filter_by(active=True).filter(City.rss_url != '').all()
+
+    total = 0
+    for city in cities:
+        if not city.rss_url:
+            continue
+        try:
+            feed = feedparser.parse(city.rss_url)
+            for entry in feed.entries[:20]:
+                url  = entry.get('link', '')
+                if NewsItem.query.filter_by(url=url).first():
+                    continue
+                pub = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    import calendar
+                    pub = datetime.fromtimestamp(calendar.timegm(entry.published_parsed))
+                item = NewsItem(
+                    city_id=city.id,
+                    headline=entry.get('title', '')[:500],
+                    url=url,
+                    source_name=feed.feed.get('title', ''),
+                    published_at=pub,
+                )
+                db.session.add(item)
+                total += 1
+        except Exception as ex:
+            log.warning(f'RSS Fetch Error [{city.name}]: {ex}')
+    db.session.commit()
+
+    if ANTHROPIC_API_KEY and total > 0:
+        threading.Thread(target=_score_news_items, args=(app,), daemon=True).start()
+
+    return jsonify({'fetched': total})
+
+
+def _score_news_items(flask_app):
+    with flask_app.app_context():
+        unscoredItems = NewsItem.query.filter_by(status='new').limit(20).all()
+        if not unscoredItems:
+            return
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        templates = MemeTemplate.query.filter_by(active=True).all()
+        templates_str = '\n'.join([f"- ID:{t.id} {t.name}: {t.description or ''}" for t in templates])
+
+        for item in unscoredItems:
+            try:
+                prompt = f"""Bewerte diese Nachricht für Instagram-Memes einer Stadtseite.
+
+Nachricht: "{item.headline}"
+Stadt: {item.city.name}
+
+Verfügbare Meme-Templates:
+{templates_str or 'Keine Templates verfügbar'}
+
+Antworte NUR mit JSON:
+{{
+  "meme_score": <0-100>,
+  "reasoning": "<kurze Begründung, max 80 Zeichen>",
+  "suggested_template_id": <Template-ID oder null>
+}}
+
+meme_score:
+- 0-30: ungeeignet (zu lokal, zu langweilig, kein Humor-Potenzial)
+- 30-60: möglich
+- 60-100: sehr meme-würdig (Skandal, Kurioses, lokales Klischee bestätigt)"""
+
+                msg = client.messages.create(
+                    model='claude-haiku-4-5-20251001',
+                    max_tokens=200,
+                    messages=[{'role': 'user', 'content': prompt}]
+                )
+                raw = msg.content[0].text.strip()
+                _log_ai_usage('news_score', 'claude-haiku-4-5-20251001',
+                              msg.usage.input_tokens, msg.usage.output_tokens)
+                import re
+                match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if match:
+                    data = json.loads(match.group(0))
+                    item.meme_score   = int(data.get('meme_score', 0))
+                    item.meme_reasoning = data.get('reasoning', '')
+                    tmpl_id = data.get('suggested_template_id')
+                    if tmpl_id:
+                        item.suggested_template_id = int(tmpl_id)
+                    item.status = 'scored'
+            except Exception as ex:
+                log.warning(f'News Score Error: {ex}')
+        db.session.commit()
+
+
+@app.route('/api/news', methods=['GET'])
+@login_required
+def api_news_list():
+    city_id = request.args.get('city_id', type=int)
+    status  = request.args.get('status', 'scored')
+    q = NewsItem.query
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    if status:
+        q = q.filter_by(status=status)
+    items = q.order_by(NewsItem.meme_score.desc(), NewsItem.fetched_at.desc()).limit(100).all()
+    return jsonify([{
+        'id': n.id, 'city_name': n.city.name,
+        'headline': n.headline, 'url': n.url,
+        'published_at': n.published_at.isoformat() if n.published_at else None,
+        'meme_score': n.meme_score,
+        'meme_score_color': n.meme_score_color,
+        'meme_reasoning': n.meme_reasoning,
+        'suggested_template_id': n.suggested_template_id,
+        'suggested_template_name': n.suggested_template.name if n.suggested_template else None,
+        'status': n.status,
+    } for n in items])
+
+@app.route('/api/news/<int:news_id>', methods=['PUT'])
+@login_required
+def api_news_update(news_id):
+    item = NewsItem.query.get_or_404(news_id)
+    d = request.json or {}
+    if 'status' in d:
+        item.status = d['status']
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/news/<int:news_id>/generate', methods=['POST'])
+@login_required
+def api_news_generate(news_id):
+    item = NewsItem.query.get_or_404(news_id)
+    if not item.suggested_template_id:
+        return jsonify({'error': 'Kein Template vorgeschlagen'}), 400
+    job = RenderJob(
+        template_id=item.suggested_template_id,
+        city_id=item.city_id,
+        status='pending',
+    )
+    db.session.add(job)
+    item.status = 'used'
+    db.session.commit()
+    threading.Thread(target=_run_generate_job, args=(app, job.id), daemon=True).start()
+    return jsonify({'job_id': job.id})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESIDENT SURVEY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SURVEY_QUESTIONS = [
+    {'key': 'worst_traffic',    'text': 'Welche Kreuzung / Ampel nervt dich am meisten?'},
+    {'key': 'problem_place',    'text': 'Welcher Ort in der Stadt gilt als gefährlich oder problematisch?'},
+    {'key': 'youth_spot',       'text': 'Wo hängen Jugendliche ab? (Park, Platz, Treffpunkt)'},
+    {'key': 'food_spot',        'text': 'Das beste / bekannteste Lokal der Stadt?'},
+    {'key': 'school_rep',       'text': 'Welches Gymnasium / welche Schule hat den besten / schlechtesten Ruf?'},
+    {'key': 'rich_area',        'text': 'Welcher Stadtteil gilt als teuer / reich?'},
+    {'key': 'poor_area',        'text': 'Welcher Stadtteil gilt als "rough" / günstig?'},
+    {'key': 'student_area',     'text': 'Wo wohnen die meisten Studenten?'},
+    {'key': 'landmark',         'text': 'Was ist das bekannteste Wahrzeichen der Stadt?'},
+    {'key': 'local_event',      'text': 'Welches Event ist DAS Stadtfest / Highlight des Jahres?'},
+    {'key': 'local_sport',      'text': 'Welcher Sportverein repräsentiert die Stadt am meisten?'},
+    {'key': 'local_klischee',   'text': 'Was ist das größte Klischee über deine Stadt?'},
+    {'key': 'dialect_word',     'text': 'Gibt es einen typischen lokalen Ausdruck oder Dialektwort?'},
+    {'key': 'local_meme',       'text': 'Gibt es ein bekanntes lokales Meme oder Running Gag über die Stadt?'},
+    {'key': 'gentrified_area',  'text': 'Welcher Stadtteil hat sich in den letzten Jahren stark verändert?'},
+    {'key': 'tourist_spot',     'text': 'Wohin bringen einheimische Touristen als erstes?'},
+    {'key': 'avoid_spot',       'text': 'Wo würdest du nachts lieber nicht alleine sein?'},
+    {'key': 'pride_spot',       'text': 'Worauf sind die Einwohner am meisten stolz?'},
+    {'key': 'hated_thing',      'text': 'Was nervt die Einwohner am meisten an ihrer Stadt?'},
+    {'key': 'local_celeb',      'text': 'Gibt es eine bekannte Person die aus der Stadt stammt?'},
+]
+
+@app.route('/api/surveys', methods=['GET'])
+@login_required
+def api_surveys_list():
+    surveys = ResidentSurvey.query.order_by(ResidentSurvey.created_at.desc()).all()
+    return jsonify([{
+        'id': s.id, 'city_name': s.city.name, 'city_id': s.city_id,
+        'respondent': s.respondent, 'status': s.status,
+        'token': s.token,
+        'survey_url': url_for('survey_form', token=s.token, _external=True),
+        'submitted_at': s.submitted_at.isoformat() if s.submitted_at else None,
+        'created_at': s.created_at.isoformat(),
+    } for s in surveys])
+
+@app.route('/api/surveys', methods=['POST'])
+@login_required
+def api_survey_create():
+    d = request.json or {}
+    city_id = d.get('city_id')
+    if not city_id:
+        return jsonify({'error': 'city_id fehlt'}), 400
+    City.query.get_or_404(city_id)
+    survey = ResidentSurvey(
+        city_id=city_id,
+        token=secrets.token_urlsafe(32),
+        respondent=d.get('respondent', ''),
+    )
+    db.session.add(survey)
+    db.session.commit()
+    return jsonify({
+        'id': survey.id,
+        'token': survey.token,
+        'survey_url': url_for('survey_form', token=survey.token, _external=True),
+    }), 201
+
+@app.route('/survey/<token>')
+def survey_form(token):
+    survey = ResidentSurvey.query.filter_by(token=token).first_or_404()
+    if survey.status == 'completed':
+        return render_template('survey_done.html', city=survey.city)
+    return render_template('survey.html', survey=survey, city=survey.city,
+                           questions=SURVEY_QUESTIONS)
+
+@app.route('/survey/submit', methods=['POST'])
+def survey_submit():
+    token = request.form.get('token')
+    survey = ResidentSurvey.query.filter_by(token=token).first_or_404()
+    if survey.status == 'completed':
+        return render_template('survey_done.html', city=survey.city)
+    answers = {}
+    for q in SURVEY_QUESTIONS:
+        val = request.form.get(q['key'], '').strip()
+        if val:
+            answers[q['key']] = val
+    survey.answers      = json.dumps(answers)
+    survey.status       = 'completed'
+    survey.submitted_at = datetime.utcnow()
+    survey.respondent   = request.form.get('respondent', survey.respondent)
+    db.session.commit()
+    return render_template('survey_done.html', city=survey.city)
+
+@app.route('/api/surveys/<int:survey_id>/import', methods=['POST'])
+@login_required
+def api_survey_import(survey_id):
+    survey = ResidentSurvey.query.get_or_404(survey_id)
+    if survey.status != 'completed':
+        return jsonify({'error': 'Fragebogen noch nicht ausgefüllt'}), 400
+
+    answers = survey.get_answers()
+    category_map_survey = {
+        'worst_traffic':   'traffic_spot',
+        'problem_place':   'problem_place',
+        'avoid_spot':      'problem_place',
+        'youth_spot':      'youth_spot',
+        'food_spot':       'food_spot',
+        'school_rep':      'school',
+        'rich_area':       'stadtteil_reich',
+        'poor_area':       'stadtteil_arm',
+        'student_area':    'stadtteil_student',
+        'landmark':        'landmark',
+        'tourist_spot':    'landmark',
+        'local_event':     'event',
+        'local_sport':     'sport',
+        'local_klischee':  'klischee',
+        'pride_spot':      'klischee',
+        'hated_thing':     'klischee',
+        'dialect_word':    'dialect',
+        'local_meme':      'local_meme',
+        'gentrified_area': 'stadtteil_student',
+        'local_celeb':     'local_meme',
+    }
+
+    imported = 0
+    for q_key, value in answers.items():
+        category = category_map_survey.get(q_key)
+        if not category or not value:
+            continue
+        exists = CityKnowledge.query.filter_by(
+            city_id=survey.city_id, name=value
+        ).first()
+        if exists:
+            continue
+        entry = CityKnowledge(
+            city_id=survey.city_id,
+            category=category,
+            name=value[:200],
+            description=f'Aus Einwohner-Fragebogen ({survey.respondent or "anonym"})',
+            confidence=85,
+            source='resident',
+        )
+        db.session.add(entry)
+        imported += 1
+
+    survey.status      = 'imported'
+    survey.imported_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'imported': imported})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTENT OS BRIDGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _send_to_content_os(flask_app, job_id):
+    with flask_app.app_context():
+        job  = RenderJob.query.get(job_id)
+        if not job or not CONTENT_OS_URL:
+            return
+        try:
+            payload = {
+                'title':       f'{job.city.name} — {job.template.name}',
+                'city':        job.city.name,
+                'template':    job.template.name,
+                'fit_score':   job.fit_score,
+                'vars_used':   job.get_vars(),
+                'manual_brief': job.manual_brief,
+                'source':      'memeos',
+            }
+            headers = {}
+            if CONTENT_OS_KEY:
+                headers['X-MemeOS-Key'] = CONTENT_OS_KEY
+
+            if job.image_filename:
+                img_path = os.path.join(_BASE_DIR, 'static', 'renders', job.image_filename)
+                if os.path.exists(img_path):
+                    with open(img_path, 'rb') as f:
+                        r = requests.post(
+                            CONTENT_OS_URL.rstrip('/') + '/api/memeos/receive',
+                            files={'image': (job.image_filename, f, 'image/png')},
+                            data={'meta': json.dumps(payload)},
+                            headers=headers, timeout=30
+                        )
+                else:
+                    r = requests.post(
+                        CONTENT_OS_URL.rstrip('/') + '/api/memeos/receive',
+                        json=payload, headers=headers, timeout=15
+                    )
+            else:
+                r = requests.post(
+                    CONTENT_OS_URL.rstrip('/') + '/api/memeos/receive',
+                    json=payload, headers=headers, timeout=15
+                )
+
+            if r.ok:
+                job.sent_to_content_os = True
+                job.sent_at            = datetime.utcnow()
+                job.status             = 'sent'
+                db.session.commit()
+            else:
+                log.warning(f'ContentOS Bridge Error: {r.status_code} {r.text[:100]}')
+        except Exception as ex:
+            log.error(f'ContentOS Bridge Exception: {ex}')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TO-DO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/todos', methods=['GET'])
+@login_required
+def api_todos_list():
+    todos = AppTodo.query.order_by(AppTodo.priority.desc(), AppTodo.created_at.desc()).all()
+    return jsonify([{
+        'id': t.id, 'text': t.text, 'category': t.category,
+        'done': t.done, 'priority': t.priority,
+        'created_at': t.created_at.isoformat(),
+    } for t in todos])
+
+@app.route('/api/todos', methods=['POST'])
+@login_required
+def api_todo_create():
+    d = request.json or {}
+    if not d.get('text'):
+        return jsonify({'error': 'Text fehlt'}), 400
+    t = AppTodo(
+        text=d['text'].strip(),
+        category=d.get('category', 'idee'),
+        priority=int(d.get('priority', 0)),
+    )
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({'id': t.id}), 201
+
+@app.route('/api/todos/<int:todo_id>', methods=['PUT'])
+@login_required
+def api_todo_update(todo_id):
+    t = AppTodo.query.get_or_404(todo_id)
+    d = request.json or {}
+    for field in ['text', 'category', 'done', 'priority']:
+        if field in d:
+            setattr(t, field, d[field])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/todos/<int:todo_id>', methods=['DELETE'])
+@login_required
+def api_todo_delete(todo_id):
+    t = AppTodo.query.get_or_404(todo_id)
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/settings', methods=['GET'])
+@login_required
+def api_settings_get():
+    return jsonify({
+        'content_os_url':    CONTENT_OS_URL or AppSettings.get('content_os_url', ''),
+        'canva_connected':   _canva_is_connected(),
+        'canva_client_id':   bool(CANVA_CLIENT_ID),
+        'ai_key_set':        bool(ANTHROPIC_API_KEY),
+        'ai_cost_month':     _ai_cost_this_month(),
+    })
+
+@app.route('/api/settings', methods=['POST'])
+@login_required
+def api_settings_save():
+    d = request.json or {}
+    if 'content_os_url' in d:
+        AppSettings.set('content_os_url', d['content_os_url'])
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATS + KI-KOSTEN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/stats')
+@login_required
+def api_stats():
+    return jsonify({
+        'cities':     City.query.filter_by(active=True).count(),
+        'templates':  MemeTemplate.query.filter_by(active=True).count(),
+        'pending':    RenderJob.query.filter(RenderJob.status.in_(['pending','running'])).count(),
+        'review':     RenderJob.query.filter(RenderJob.status.in_(['done'])).count(),
+        'approved':   RenderJob.query.filter_by(status='approved').count(),
+        'sent':       RenderJob.query.filter_by(status='sent').count(),
+        'knowledge':  CityKnowledge.query.filter_by(active=True).count(),
+        'news':       NewsItem.query.filter_by(status='scored').count(),
+        'ai_cost_month': _ai_cost_this_month(),
+    })
+
+def _ai_cost_this_month():
+    first_day = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    from sqlalchemy import func
+    result = db.session.query(func.sum(AiUsageLog.cost_eur))\
+                .filter(AiUsageLog.created_at >= first_day).scalar()
+    return round(result or 0, 4)
+
+def _log_ai_usage(feature, model, input_tokens, output_tokens):
+    # Claude Haiku pricing (rough EUR estimate)
+    cost = (input_tokens * 0.0008 + output_tokens * 0.004) / 1000 * 0.92
+    entry = AiUsageLog(feature=feature, model=model,
+                       input_tokens=input_tokens, output_tokens=output_tokens,
+                       cost_eur=cost)
+    db.session.add(entry)
+    db.session.commit()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+def api_users_list():
+    users = User.query.all()
+    return jsonify([{
+        'id': u.id, 'username': u.username, 'email': u.email,
+        'role': u.role, 'active': u.active,
+        'last_login': u.last_login.isoformat() if u.last_login else None,
+    } for u in users])
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+def api_user_create():
+    d = request.json or {}
+    if not d.get('username') or not d.get('password'):
+        return jsonify({'error': 'Username und Passwort erforderlich'}), 400
+    if User.query.filter_by(username=d['username']).first():
+        return jsonify({'error': 'Username bereits vergeben'}), 409
+    u = User(username=d['username'], email=d.get('email', ''), role=d.get('role', 'admin'))
+    u.set_password(d['password'])
+    db.session.add(u)
+    db.session.commit()
+    return jsonify({'id': u.id}), 201
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def api_user_delete(user_id):
+    u = User.query.get_or_404(user_id)
+    db.session.delete(u)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STARTUP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _seed_todos():
+    todos = [
+        ('HTML-Templates für neue Memes testen (Playwright-Rendering) — später wenn neue Templates entstehen', 'feature', 1),
+        ('Canva API verbinden unter Einstellungen', 'feature', 1),
+        ('Erste 10 Städte im City-Wiki anlegen', 'feature', 1),
+        ('Erste Meme-Templates mit Canva Template-IDs verknüpfen', 'feature', 0),
+        ('Einwohner-Fragebogen für Pilot-Städte versenden', 'idee', 0),
+        ('ContentOS Bridge URL konfigurieren', 'feature', 0),
+        ('RSS-Feeds für Städte eintragen', 'idee', 0),
+    ]
+    if AppTodo.query.count() == 0:
+        for text, cat, prio in todos:
+            db.session.add(AppTodo(text=text, category=cat, priority=prio))
+        db.session.commit()
+
+def _seed_cities():
+    starter_cities = [
+        ('Darmstadt', 'Hessen', 160000),
+        ('Frankfurt', 'Hessen', 770000),
+        ('Wiesbaden', 'Hessen', 280000),
+        ('Mainz', 'Rheinland-Pfalz', 220000),
+        ('Mannheim', 'Baden-Württemberg', 310000),
+        ('Heidelberg', 'Baden-Württemberg', 160000),
+        ('Offenbach', 'Hessen', 130000),
+        ('Hanau', 'Hessen', 100000),
+        ('Kaiserslautern', 'Rheinland-Pfalz', 100000),
+        ('Braunschweig', 'Niedersachsen', 250000),
+        ('Berlin', 'Berlin', 3700000),
+        ('Hamburg', 'Hamburg', 1900000),
+        ('München', 'Bayern', 1500000),
+        ('Köln', 'Nordrhein-Westfalen', 1100000),
+        ('Stuttgart', 'Baden-Württemberg', 630000),
+        ('Düsseldorf', 'Nordrhein-Westfalen', 640000),
+        ('Dortmund', 'Nordrhein-Westfalen', 590000),
+        ('Essen', 'Nordrhein-Westfalen', 580000),
+        ('Leipzig', 'Sachsen', 600000),
+        ('Nürnberg', 'Bayern', 530000),
+    ]
+    if City.query.count() == 0:
+        for name, state, pop in starter_cities:
+            db.session.add(City(name=name, state=state, population=pop))
+        db.session.commit()
+
+with app.app_context():
+    db.create_all()
+    _seed_todos()
+    _seed_cities()
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5200)

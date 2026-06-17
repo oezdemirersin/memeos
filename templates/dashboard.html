@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MemeOS</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#080b12; --surface:#0f1420; --surface2:#161c2d; --surface3:#1e2640;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.12);
+  --accent:#3b82f6; --accent2:#60a5fa; --accent-dim:rgba(59,130,246,0.15);
+  --success:#22c55e; --warning:#f59e0b; --danger:#ef4444; --purple:#8b5cf6;
+  --text:#e2e8f0; --muted:#64748b; --muted2:#94a3b8;
+  --font-display:'Bebas Neue',sans-serif; --font-body:'DM Sans',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;display:flex;}
+
+/* ── Sidebar ── */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;}
+.sidebar-logo{padding:16px 18px;border-bottom:1px solid var(--border);}
+.sidebar-logo h1{font-family:var(--font-display);font-size:22px;letter-spacing:2px;color:white;}
+.sidebar-logo h1 span{color:var(--accent);}
+.sidebar-logo p{font-size:10px;color:var(--muted);margin-top:1px;letter-spacing:1px;}
+.nav{padding:8px 10px;flex:1;overflow-y:auto;}
+.nav-section{font-size:10px;color:var(--muted);letter-spacing:1px;padding:10px 8px 4px;text-transform:uppercase;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;color:var(--muted);cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;margin-bottom:1px;border:none;background:none;width:100%;text-align:left;}
+.nav-item:hover{background:var(--surface2);color:var(--text);}
+.nav-item.active{background:var(--accent-dim);color:var(--accent2);}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;}
+.nav-badge{margin-left:auto;background:var(--accent);color:white;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;}
+.nav-badge.warn{background:var(--warning);}
+.nav-badge.danger{background:var(--danger);}
+.sidebar-bottom{padding:10px;border-top:1px solid var(--border);}
+.sidebar-status{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;font-size:12px;color:var(--muted);}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.dot.green{background:var(--success);}
+.dot.red{background:var(--danger);}
+.dot.yellow{background:var(--warning);}
+.btn-logout{display:block;width:100%;padding:8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--font-body);transition:all .15s;margin-top:6px;}
+.btn-logout:hover{background:var(--surface2);color:var(--text);}
+
+/* ── Main ── */
+.main{margin-left:220px;flex:1;padding:24px;min-height:100vh;}
+.page{display:none;}
+.page.active{display:block;}
+
+/* ── Header ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+.page-title{font-family:var(--font-display);font-size:26px;letter-spacing:1px;}
+.page-title span{color:var(--accent);}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.card-sm{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;}
+
+/* ── Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.stat-val{font-family:var(--font-display);font-size:30px;letter-spacing:1px;}
+.stat-label{font-size:11px;color:var(--muted);margin-top:2px;}
+.stat-card.accent{border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.06);}
+.stat-card.success{border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.06);}
+.stat-card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06);}
+.stat-card.danger{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.06);}
+
+/* ── Grid layouts ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;}
+.btn-primary{background:var(--accent);color:white;}
+.btn-primary:hover{background:#2563eb;}
+.btn-success{background:var(--success);color:white;}
+.btn-success:hover{background:#16a34a;}
+.btn-danger{background:var(--danger);color:white;}
+.btn-danger:hover{background:#dc2626;}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-ghost:hover{background:var(--surface3);}
+.btn-sm{padding:5px 12px;font-size:12px;}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:5px;}
+.btn[disabled]{opacity:.4;cursor:not-allowed;}
+
+/* ── Forms ── */
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500;}
+input[type=text],input[type=number],input[type=url],input[type=password],input[type=email],select,textarea{
+  width:100%;padding:9px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);font-family:var(--font-body);font-size:13px;
+  outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+textarea{resize:vertical;min-height:80px;}
+select option{background:var(--surface2);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:10px 12px;text-align:left;color:var(--muted);font-weight:500;font-size:11px;letter-spacing:.5px;border-bottom:1px solid var(--border);text-transform:uppercase;}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,.02);}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;gap:4px;}
+.badge-blue{background:rgba(59,130,246,.15);color:#60a5fa;}
+.badge-green{background:rgba(34,197,94,.15);color:#4ade80;}
+.badge-yellow{background:rgba(245,158,11,.15);color:#fbbf24;}
+.badge-red{background:rgba(239,68,68,.15);color:#f87171;}
+.badge-purple{background:rgba(139,92,246,.15);color:#a78bfa;}
+.badge-gray{background:rgba(100,116,139,.15);color:#94a3b8;}
+
+/* ── Modals ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:none;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:24px;width:520px;max-width:90vw;max-height:85vh;overflow-y:auto;}
+.modal-lg{width:680px;}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.modal-title{font-family:var(--font-display);font-size:20px;letter-spacing:1px;}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;padding:2px 6px;border-radius:5px;}
+.modal-close:hover{color:var(--text);background:var(--surface2);}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+
+/* ── Toast ── */
+#toast-container{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 24px rgba(0,0,0,.4);animation:slideIn .2s ease;}
+.toast.success{border-left:3px solid var(--success);}
+.toast.error{border-left:3px solid var(--danger);}
+.toast.info{border-left:3px solid var(--accent);}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── Knowledge tags ── */
+.knowledge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;}
+.knowledge-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;position:relative;}
+.knowledge-card.on-cooldown{opacity:.5;}
+.knowledge-card-name{font-size:13px;font-weight:600;margin-bottom:2px;}
+.knowledge-card-meta{font-size:11px;color:var(--muted);}
+.knowledge-card-actions{position:absolute;top:8px;right:8px;display:none;gap:4px;}
+.knowledge-card:hover .knowledge-card-actions{display:flex;}
+.cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block;margin-right:5px;}
+
+/* ── Job cards ── */
+.job-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+.job-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.job-card-img{width:100%;height:160px;object-fit:cover;background:var(--surface3);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;}
+.job-card-img img{width:100%;height:100%;object-fit:cover;}
+.job-card-body{padding:12px;}
+.job-card-title{font-size:13px;font-weight:600;margin-bottom:4px;}
+.job-card-meta{font-size:11px;color:var(--muted);}
+.job-card-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.fit-bar{height:4px;border-radius:2px;background:var(--surface3);margin:6px 0;}
+.fit-bar-fill{height:100%;border-radius:2px;transition:width .5s;}
+
+/* ── Chip select ── */
+.chip-select{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:12px;border:1px solid var(--border);cursor:pointer;transition:all .15s;background:var(--surface2);}
+.chip.selected{background:var(--accent-dim);border-color:var(--accent);color:var(--accent2);}
+.chip:hover{border-color:var(--border2);}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty svg{width:48px;height:48px;margin:0 auto 12px;opacity:.3;}
+.empty p{font-size:14px;}
+
+/* ── Loader ── */
+.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Progress ── */
+.progress-bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s;}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px;}
+
+/* ── Tag input ── */
+.tag-input-wrap{display:flex;flex-wrap:wrap;gap:5px;padding:6px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);min-height:40px;cursor:text;}
+.tag-input-wrap input{border:none;background:transparent;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;min-width:120px;flex:1;}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-dim);color:var(--accent2);padding:2px 8px;border-radius:10px;font-size:12px;}
+.tag-chip button{background:none;border:none;color:var(--accent2);cursor:pointer;font-size:14px;line-height:1;padding:0;}
+
+/* ── Survey questions ── */
+.survey-q{padding:14px 0;border-bottom:1px solid var(--border);}
+.survey-q:last-child{border-bottom:none;}
+.survey-q-text{font-size:13px;font-weight:600;margin-bottom:8px;}
+.survey-answer{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--muted2);}
+</style>
+</head>
+<body>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <h1>MEME<span>OS</span></h1>
+    <p>STADTMEME SYSTEM</p>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Übersicht</div>
+    <button class="nav-item active" onclick="showPage('overview')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+      Dashboard
+    </button>
+
+    <div class="nav-section">Content</div>
+    <button class="nav-item" onclick="showPage('cities')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Städte & Wiki
+    </button>
+    <button class="nav-item" onclick="showPage('templates')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
+      Templates
+    </button>
+
+    <div class="nav-section">Generierung</div>
+    <button class="nav-item" onclick="showPage('generator')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      Generator
+    </button>
+    <button class="nav-item" onclick="showPage('bulk')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      Bulk-Generator
+      <span class="nav-badge warn" id="nav-bulk-badge" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('review')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Review Queue
+      <span class="nav-badge" id="nav-review-badge" style="display:none"></span>
+    </button>
+
+    <div class="nav-section">Quellen</div>
+    <button class="nav-item" onclick="showPage('news')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+      News RSS
+      <span class="nav-badge" id="nav-news-badge" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('surveys')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+      Fragebögen
+    </button>
+
+    <div class="nav-section">System</div>
+    <button class="nav-item" onclick="showPage('todos')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      To-Do
+    </button>
+    <button class="nav-item" onclick="showPage('settings')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Einstellungen
+    </button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="sidebar-status">
+      <div class="dot {{ 'green' if canva_connected else 'red' }}" id="canva-dot"></div>
+      <span id="canva-status-text">Canva {{ 'verbunden' if canva_connected else 'getrennt' }}</span>
+    </div>
+    <div class="sidebar-status" style="margin-top:2px;">
+      <div class="dot {{ 'green' if stats.ai_cost_month < 5 else 'yellow' }}"></div>
+      <span>KI: €{{ "%.3f"|format(ai_cost_month) }} / Monat</span>
+    </div>
+    <button class="btn-logout" onclick="location.href='/logout'">Ausloggen</button>
+  </div>
+</aside>
+
+<!-- ══ MAIN ══════════════════════════════════════════════════════════ -->
+<main class="main">
+
+<!-- ─── OVERVIEW ─── -->
+<div class="page active" id="page-overview">
+  <div class="page-header">
+    <div class="page-title">DASH<span>BOARD</span></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="refreshStats()">↻ Aktualisieren</button>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card accent"><div class="stat-val" id="stat-cities">{{ stats.cities }}</div><div class="stat-label">Aktive Städte</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-templates">{{ stats.templates }}</div><div class="stat-label">Templates</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-knowledge">{{ stats.knowledge }}</div><div class="stat-label">Wiki-Einträge</div></div>
+    <div class="stat-card warn"><div class="stat-val" id="stat-review">{{ stats.review }}</div><div class="stat-label">Im Review</div></div>
+    <div class="stat-card success"><div class="stat-val" id="stat-done">{{ stats.done }}</div><div class="stat-label">Freigegeben</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-news">{{ stats.news }}</div><div class="stat-label">News bewertet</div></div>
+  </div>
+
+  <div class="grid-2" style="gap:16px;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:600;">Letzte Jobs</div>
+        <button class="btn btn-ghost btn-xs" onclick="showPage('review')">Alle →</button>
+      </div>
+      {% if recent_jobs %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stadt</th><th>Template</th><th>Score</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for job in recent_jobs %}
+          <tr>
+            <td>{{ job.city.name if job.city else '—' }}</td>
+            <td style="color:var(--muted)">{{ job.template.name[:20] if job.template else '—' }}</td>
+            <td>
+              {% if job.fit_score %}
+              <span style="color:{{ job.fit_color }};font-weight:600;">{{ job.fit_score }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% set sc = job.status %}
+              <span class="badge {% if sc=='approved' or sc=='sent' %}badge-green{% elif sc=='done' or sc=='review' %}badge-yellow{% elif sc=='failed' or sc=='rejected' %}badge-red{% elif sc=='running' %}badge-blue{% else %}badge-gray{% endif %}">
+                {{ job.status_label }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty"><p>Noch keine Jobs</p></div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Saisonale Templates</div>
+      {% if seasonal_templates %}
+      {% for t in seasonal_templates %}
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;">{{ t.name }}</div>
+          <div style="font-size:11px;color:var(--muted);">{{ t.seasonal_from }} – {{ t.seasonal_to }}</div>
+        </div>
+        <button class="btn btn-primary btn-xs" onclick="openGeneratorWith({{ t.id }})">Generieren</button>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="empty" style="padding:30px 20px;"><p>Keine saisonalen Templates aktiv</p></div>
+      {% endif %}
+
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:600;margin-bottom:10px;">Schnellstart</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="showPage('generator')">⚡ Meme generieren</button>
+          <button class="btn btn-ghost btn-sm" onclick="showPage('bulk')">📦 Bulk-Generate</button>
+          <button class="btn btn-ghost btn-sm" onclick="fetchNews()">📰 News fetchen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── CITIES ─── -->
+<div class="page" id="page-cities">
+  <div class="page-header">
+    <div class="page-title">STÄDTE & <span>WIKI</span></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="openBulkCityImport()">Bulk Import</button>
+      <button class="btn btn-primary btn-sm" onclick="openCityModal()">+ Stadt</button>
+    </div>
+  </div>
+
+  <div class="grid-2" style="gap:0;height:calc(100vh - 120px);">
+    <!-- City List -->
+    <div style="border-right:1px solid var(--border);padding-right:16px;overflow-y:auto;max-height:calc(100vh - 120px);">
+      <div style="position:sticky;top:0;background:var(--bg);padding-bottom:10px;z-index:10;">
+        <input type="text" id="city-search" placeholder="Stadt suchen…" oninput="filterCities()" style="margin-bottom:8px;">
+      </div>
+      <div id="city-list">
+        {% for city in cities %}
+        <div class="city-item" data-name="{{ city.name.lower() }}" data-id="{{ city.id }}"
+             onclick="selectCity({{ city.id }}, '{{ city.name }}')"
+             style="padding:10px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid transparent;display:flex;align-items:center;gap:10px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:{{ city.accent_color }};flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:600;">{{ city.name }}</div>
+            <div style="font-size:11px;color:var(--muted);">{{ city.state }} · {{ "{:,}".format(city.population).replace(',','.') if city.population else '?' }} Einw.</div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);">{{ city.knowledge_count() }} Wiki</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- City Wiki -->
+    <div style="padding-left:20px;overflow-y:auto;max-height:calc(100vh - 120px);">
+      <div id="wiki-placeholder" style="display:flex;align-items:center;justify-content:center;height:200px;color:var(--muted);font-size:14px;">
+        ← Stadt auswählen
+      </div>
+      <div id="wiki-content" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;position:sticky;top:0;background:var(--bg);padding-bottom:8px;z-index:10;">
+          <div>
+            <div style="font-size:16px;font-weight:700;" id="wiki-city-name"></div>
+            <div style="font-size:12px;color:var(--muted);" id="wiki-city-meta"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-xs" onclick="editCity()">Bearbeiten</button>
+            <button class="btn btn-ghost btn-xs" onclick="openKnowledgeModal()">+ Eintrag</button>
+            <button class="btn btn-primary btn-xs" onclick="generateCityWiki()" id="wiki-ai-btn">✨ KI-Wiki</button>
+          </div>
+        </div>
+
+        {% for cat_key, cat_label, cat_color in categories %}
+        <div class="wiki-category" data-cat="{{ cat_key }}" style="margin-bottom:16px;display:none;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:{{ cat_color }};"></div>
+            <div style="font-size:12px;font-weight:600;color:var(--muted2);">{{ cat_label }}</div>
+            <div class="cat-count" style="font-size:11px;color:var(--muted);"></div>
+          </div>
+          <div class="knowledge-grid cat-items" data-cat="{{ cat_key }}"></div>
+        </div>
+        {% endfor %}
+
+        <div id="wiki-empty" style="display:none;" class="empty">
+          <p>Noch keine Wiki-Einträge.<br>KI generieren oder manuell hinzufügen.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TEMPLATES ─── -->
+<div class="page" id="page-templates">
+  <div class="page-header">
+    <div class="page-title">MEME <span>TEMPLATES</span></div>
+    <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">+ Template</button>
+  </div>
+
+  <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <input type="text" id="template-search" placeholder="Template suchen…" oninput="filterTemplates()" style="max-width:280px;">
+    <select id="template-filter-cat" onchange="filterTemplates()" style="width:auto;">
+      <option value="">Alle Kategorien</option>
+      <option>allgemein</option><option>pov</option><option>klischee</option>
+      <option>ranking</option><option>vergleich</option><option>news</option><option>saisonal</option>
+    </select>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;">
+      <input type="checkbox" id="template-filter-canva" onchange="filterTemplates()"> Nur mit Canva
+    </label>
+  </div>
+
+  <div id="templates-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- ─── GENERATOR ─── -->
+<div class="page" id="page-generator">
+  <div class="page-header">
+    <div class="page-title">MEME <span>GENERATOR</span></div>
+  </div>
+
+  <div class="grid-2" style="gap:20px;align-items:start;">
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Einzel-Generierung</div>
+      <div class="form-group">
+        <label>Template</label>
+        <select id="gen-template">
+          <option value="">— Template wählen —</option>
+          {% for t in templates %}
+          <option value="{{ t.id }}" data-vars="{{ t.required_vars }}" data-canva="{{ t.has_canva() }}" data-desc="{{ t.description or '' }}">
+            {{ t.name }} {% if t.has_canva() %}✓{% else %}(kein Canva){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="gen-template-info" style="display:none;" class="card-sm" style="margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--muted2);" id="gen-template-desc"></div>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;" id="gen-template-vars"></div>
+      </div>
+      <div class="form-group">
+        <label>Stadt</label>
+        <select id="gen-city">
+          <option value="">— Stadt wählen —</option>
+          {% for city in cities %}
+          <option value="{{ city.id }}">{{ city.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="startGenerate()">
+        ⚡ Meme generieren
+      </button>
+      <div id="gen-status" style="display:none;margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Ergebnis</div>
+      <div id="gen-result">
+        <div class="empty" style="padding:40px 20px;">
+          <p>Hier erscheint das Ergebnis</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── BULK ─── -->
+<div class="page" id="page-bulk">
+  <div class="page-header">
+    <div class="page-title">BULK <span>GENERATOR</span></div>
+  </div>
+
+  <div class="grid-2" style="gap:20px;align-items:start;">
+    <div class="card">
+      <div class="form-group">
+        <label>Template</label>
+        <select id="bulk-template">
+          <option value="">— Template wählen —</option>
+          {% for t in templates %}
+          <option value="{{ t.id }}">{{ t.name }} {% if t.has_canva() %}✓{% else %}(kein Canva){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Städte auswählen</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button class="btn btn-ghost btn-xs" onclick="selectAllCities()">Alle</button>
+          <button class="btn btn-ghost btn-xs" onclick="selectNoCities()">Keine</button>
+          <button class="btn btn-ghost btn-xs" onclick="selectActiveCities()">Aktive (mit Wiki)</button>
+        </div>
+        <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;" id="bulk-city-list">
+          {% for city in cities %}
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font-size:13px;" class="bulk-city-row" data-kc="{{ city.knowledge_count() }}">
+            <input type="checkbox" class="bulk-city-cb" value="{{ city.id }}">
+            <span style="flex:1;">{{ city.name }}</span>
+            <span style="font-size:11px;color:var(--muted);">{{ city.knowledge_count() }} Wiki</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="bulk-selection-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+
+      <button class="btn btn-primary" style="width:100%;" onclick="startBulk()">
+        📦 Bulk generieren
+      </button>
+
+      <div id="bulk-progress" style="display:none;margin-top:16px;">
+        <div style="font-size:13px;margin-bottom:6px;" id="bulk-progress-text"></div>
+        <div class="progress-bar"><div class="progress-fill" id="bulk-progress-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Laufende Jobs</div>
+      <div id="bulk-jobs-list">
+        <div class="empty" style="padding:30px 20px;"><p>Keine aktiven Jobs</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── REVIEW ─── -->
+<div class="page" id="page-review">
+  <div class="page-header">
+    <div class="page-title">REVIEW <span>QUEUE</span></div>
+    <div style="display:flex;gap:8px;">
+      <select id="review-filter" onchange="loadReviewJobs()">
+        <option value="done">Ausstehend (done)</option>
+        <option value="approved">Freigegeben</option>
+        <option value="rejected">Abgelehnt</option>
+        <option value="sent">Gesendet</option>
+        <option value="failed">Fehler</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadReviewJobs()">↻</button>
+    </div>
+  </div>
+
+  <div id="review-grid" class="job-grid">
+    <div class="empty"><p>Lade…</p></div>
+  </div>
+</div>
+
+<!-- ─── NEWS ─── -->
+<div class="page" id="page-news">
+  <div class="page-header">
+    <div class="page-title">NEWS <span>RSS</span></div>
+    <div style="display:flex;gap:8px;">
+      <select id="news-city-filter" onchange="loadNews()">
+        <option value="">Alle Städte</option>
+        {% for city in cities %}
+        <option value="{{ city.id }}">{{ city.name }}</option>
+        {% endfor %}
+      </select>
+      <select id="news-status-filter" onchange="loadNews()">
+        <option value="scored">Bewertet</option>
+        <option value="new">Neu</option>
+        <option value="used">Verwendet</option>
+        <option value="skipped">Übersprungen</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="fetchNews()">📡 RSS fetchen</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Stadt</th>
+          <th>Headline</th>
+          <th style="width:80px;">Score</th>
+          <th>Template</th>
+          <th>Begründung</th>
+          <th style="width:120px;">Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="news-tbody">
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">Lade…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ─── SURVEYS ─── -->
+<div class="page" id="page-surveys">
+  <div class="page-header">
+    <div class="page-title">EINWOHNER <span>FRAGEBÖGEN</span></div>
+    <button class="btn btn-primary btn-sm" onclick="openSurveyModal()">+ Fragebogen erstellen</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Stadt</th><th>Befragter</th><th>Status</th><th>Link</th><th>Erstellt</th><th>Aktionen</th></tr>
+      </thead>
+      <tbody id="surveys-tbody">
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">Lade…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ─── TODOS ─── -->
+<div class="page" id="page-todos">
+  <div class="page-header">
+    <div class="page-title">TO-DO <span>& IDEEN</span></div>
+    <button class="btn btn-primary btn-sm" onclick="openTodoModal()">+ Eintrag</button>
+  </div>
+
+  <div class="grid-2" style="gap:16px;align-items:start;">
+    <div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600;">OFFEN</div>
+      <div id="todos-open"></div>
+    </div>
+    <div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600;">ERLEDIGT</div>
+      <div id="todos-done"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SETTINGS ─── -->
+<div class="page" id="page-settings">
+  <div class="page-header">
+    <div class="page-title">EINSTEL<span>LUNGEN</span></div>
+  </div>
+
+  <div style="max-width:600px;display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Canva API</div>
+      <div id="canva-status-card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <div class="dot {{ 'green' if canva_connected else 'red' }}" id="settings-canva-dot"></div>
+          <div>
+            <div style="font-size:13px;font-weight:600;" id="settings-canva-text">
+              {{ 'Canva verbunden' if canva_connected else 'Canva nicht verbunden' }}
+            </div>
+            <div style="font-size:11px;color:var(--muted);">Autofill API für Template-Rendering</div>
+          </div>
+        </div>
+        {% if canva_connected %}
+        <form method="POST" action="/canva/disconnect">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn btn-ghost btn-sm">Canva trennen</button>
+        </form>
+        {% else %}
+        <a href="/canva/connect" class="btn btn-primary btn-sm">Canva verbinden</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">ContentOS Bridge</div>
+      <div class="form-group">
+        <label>ContentOS URL</label>
+        <input type="url" id="settings-content-os-url" placeholder="https://content-os-0rjo.onrender.com" value="{{ stats.get('content_os_url','') }}">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveSettings()">Speichern</button>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">KI-Kosten (Monat)</div>
+      <div style="font-size:28px;font-family:var(--font-display);">€{{ "%.4f"|format(ai_cost_month) }}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">Claude Haiku API-Verbrauch diesen Monat</div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Admin-Benutzer</div>
+      <div id="users-list"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="openUserModal()">+ Benutzer</button>
+    </div>
+  </div>
+</div>
+
+</main><!-- /main -->
+
+<!-- ══ MODALS ══════════════════════════════════════════════════════════ -->
+
+<!-- City Modal -->
+<div class="modal-overlay" id="modal-city">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="city-modal-title">STADT HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-city')">×</button>
+    </div>
+    <input type="hidden" id="city-modal-id">
+    <div class="form-row">
+      <div class="form-group"><label>Name *</label><input type="text" id="city-name"></div>
+      <div class="form-group"><label>Bundesland</label><input type="text" id="city-state"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Einwohner</label><input type="number" id="city-population"></div>
+      <div class="form-group"><label>Akzentfarbe</label><input type="text" id="city-color" value="#3b82f6"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Instagram Handle</label><input type="text" id="city-ig" placeholder="@darmstadtschau"></div>
+      <div class="form-group"><label>TikTok Handle</label><input type="text" id="city-tt" placeholder="@darmstadtschau"></div>
+    </div>
+    <div class="form-group"><label>RSS Feed URL</label><input type="url" id="city-rss"></div>
+    <div class="form-group"><label>Notizen</label><textarea id="city-notes" rows="2"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-city')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveCity()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Knowledge Modal -->
+<div class="modal-overlay" id="modal-knowledge">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">WIKI EINTRAG</div>
+      <button class="modal-close" onclick="closeModal('modal-knowledge')">×</button>
+    </div>
+    <input type="hidden" id="kw-city-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Kategorie *</label>
+        <select id="kw-category">
+          {% for key, label, color in categories %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Konfidenz (0–100)</label><input type="number" id="kw-confidence" value="70" min="0" max="100"></div>
+    </div>
+    <div class="form-group"><label>Name / Ort *</label><input type="text" id="kw-name" placeholder="z.B. Hauptbahnhof"></div>
+    <div class="form-group"><label>Beschreibung</label><textarea id="kw-description" rows="2" placeholder="Warum passt dieser Ort in die Kategorie?"></textarea></div>
+    <div class="form-group">
+      <label>Quelle</label>
+      <select id="kw-source">
+        <option value="manual">Manuell</option>
+        <option value="ai">KI</option>
+        <option value="resident">Einwohner</option>
+        <option value="verified">Verifiziert</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-knowledge')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveKnowledge()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Template Modal -->
+<div class="modal-overlay" id="modal-template">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="tmpl-modal-title">TEMPLATE HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-template')">×</button>
+    </div>
+    <input type="hidden" id="tmpl-id">
+    <div class="form-row">
+      <div class="form-group"><label>Name *</label><input type="text" id="tmpl-name"></div>
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="tmpl-category">
+          <option>allgemein</option><option>pov</option><option>klischee</option>
+          <option>ranking</option><option>vergleich</option><option>news</option><option>saisonal</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Beschreibung</label><textarea id="tmpl-description" rows="2" placeholder="Was zeigt dieses Template? Welcher Witz steckt dahinter?"></textarea></div>
+    <div class="form-group"><label>Beispiel-Text</label><textarea id="tmpl-example" rows="2" placeholder='z.B. "POV: Du musst kurz durch [PROBLEMORT]"'></textarea></div>
+    <div class="form-group">
+      <label>Canva Template ID</label>
+      <input type="text" id="tmpl-canva-id" placeholder="z.B. EAHLSU60FlE">
+    </div>
+
+    <div class="form-group">
+      <label>Benötigte Variablen</label>
+      <div class="chip-select" id="tmpl-vars-chips">
+        {% set var_options = ['problem_place','landmark','youth_spot','food_spot','traffic_spot','school','event','klischee','stadtteil_arm','stadtteil_reich','stadtteil_student','local_meme','sport','dialect'] %}
+        {% for v in var_options %}
+        <div class="chip" data-var="{{ v }}" onclick="toggleVar(this)">{{ v }}</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Canva Feld-Mapping (JSON) <span style="color:var(--muted);font-weight:400;">— Variable → Canva Feldname</span></label>
+      <textarea id="tmpl-field-map" rows="3" placeholder='{"problem_place": "mein_feld_in_canva", "landmark": "wahrzeichen_feld"}'></textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group"><label>Tags (kommagetrennt)</label><input type="text" id="tmpl-tags" placeholder="pov, sommer, klischee"></div>
+      <div class="form-group"><label>Mindest-Einwohner</label><input type="number" id="tmpl-min-pop" value="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Saisonal von (MM-TT)</label><input type="text" id="tmpl-season-from" placeholder="12-01"></div>
+      <div class="form-group"><label>Saisonal bis (MM-TT)</label><input type="text" id="tmpl-season-to" placeholder="12-31"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-template')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveTemplate()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Survey Modal -->
+<div class="modal-overlay" id="modal-survey">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">FRAGEBOGEN ERSTELLEN</div>
+      <button class="modal-close" onclick="closeModal('modal-survey')">×</button>
+    </div>
+    <div class="form-group">
+      <label>Stadt</label>
+      <select id="survey-city">
+        {% for city in cities %}
+        <option value="{{ city.id }}">{{ city.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group"><label>Name des Befragten (optional)</label><input type="text" id="survey-respondent" placeholder="Max Mustermann"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-survey')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="createSurvey()">Link erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Survey Result Modal -->
+<div class="modal-overlay" id="modal-survey-result">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title">FRAGEBOGEN ANTWORTEN</div>
+      <button class="modal-close" onclick="closeModal('modal-survey-result')">×</button>
+    </div>
+    <div id="survey-result-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-survey-result')">Schließen</button>
+      <button class="btn btn-primary" id="survey-import-btn" onclick="importSurvey()">✓ Ins Wiki importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Todo Modal -->
+<div class="modal-overlay" id="modal-todo">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">TO-DO HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-todo')">×</button>
+    </div>
+    <div class="form-group"><label>Text *</label><textarea id="todo-text" rows="3"></textarea></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="todo-category">
+          <option value="idee">💡 Idee</option>
+          <option value="feature">🔧 Feature</option>
+          <option value="bug">🐛 Bug</option>
+          <option value="notiz">📝 Notiz</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Priorität</label>
+        <select id="todo-priority">
+          <option value="0">Normal</option>
+          <option value="1">Hoch</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-todo')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveTodo()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk City Import Modal -->
+<div class="modal-overlay" id="modal-bulk-city">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">BULK IMPORT</div>
+      <button class="modal-close" onclick="closeModal('modal-bulk-city')">×</button>
+    </div>
+    <div class="form-group">
+      <label>Städte (eine pro Zeile)</label>
+      <textarea id="bulk-city-text" rows="10" placeholder="München&#10;Hamburg&#10;Berlin&#10;Köln"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-city')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="doBulkCityImport()">Importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- User Modal -->
+<div class="modal-overlay" id="modal-user">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">BENUTZER HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-user')">×</button>
+    </div>
+    <div class="form-group"><label>Benutzername *</label><input type="text" id="user-username"></div>
+    <div class="form-group"><label>E-Mail</label><input type="email" id="user-email"></div>
+    <div class="form-group"><label>Passwort *</label><input type="password" id="user-password"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-user')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="createUser()">Erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- ══ JAVASCRIPT ══════════════════════════════════════════════════════ -->
+<script>
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+let _selectedCityId = null;
+let _selectedSurveyId = null;
+let _allTemplates = [];
+let _bulkJobIds = [];
+let _bulkPollInterval = null;
+
+// ── CSRF META ──
+document.head.insertAdjacentHTML('beforeend','<meta name="csrf-token" content="{{ csrf_token }}">');
+
+// ── Navigation ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name)?.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if(n.getAttribute('onclick')?.includes("'" + name + "'")) n.classList.add('active');
+  });
+  if(name==='review') loadReviewJobs();
+  if(name==='news') loadNews();
+  if(name==='todos') loadTodos();
+  if(name==='surveys') loadSurveys();
+  if(name==='settings') loadUsers();
+  if(name==='templates') loadTemplates();
+  if(name==='bulk') updateBulkSelection();
+  history.replaceState(null,'','/?tab='+name);
+}
+
+// ── Toast ──
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── API helper ──
+async function api(method, url, body) {
+  const opts = {method, headers:{'Content-Type':'application/json','X-CSRF-Token':'{{ csrf_token }}'}};
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+// ── Stats refresh ──
+async function refreshStats() {
+  const s = await api('GET','/api/stats');
+  document.getElementById('stat-cities').textContent = s.cities;
+  document.getElementById('stat-templates').textContent = s.templates;
+  document.getElementById('stat-knowledge').textContent = s.knowledge;
+  document.getElementById('stat-review').textContent = s.review;
+  document.getElementById('stat-done').textContent = s.approved;
+  document.getElementById('stat-news').textContent = s.news;
+  if(s.review > 0) { document.getElementById('nav-review-badge').textContent = s.review; document.getElementById('nav-review-badge').style.display=''; }
+  else document.getElementById('nav-review-badge').style.display='none';
+  if(s.news > 0) { document.getElementById('nav-news-badge').textContent = s.news; document.getElementById('nav-news-badge').style.display=''; }
+  else document.getElementById('nav-news-badge').style.display='none';
+}
+
+// ── CITIES ──
+function filterCities() {
+  const q = document.getElementById('city-search').value.toLowerCase();
+  document.querySelectorAll('.city-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+  });
+}
+
+async function selectCity(id, name) {
+  _selectedCityId = id;
+  document.querySelectorAll('.city-item').forEach(el => {
+    el.style.background = el.dataset.id == id ? 'var(--surface2)' : '';
+    el.style.borderColor = el.dataset.id == id ? 'var(--border2)' : 'transparent';
+  });
+  document.getElementById('wiki-placeholder').style.display = 'none';
+  document.getElementById('wiki-content').style.display = 'block';
+  document.getElementById('wiki-city-name').textContent = name;
+  document.getElementById('kw-city-id').value = id;
+  await loadWiki(id);
+}
+
+async function loadWiki(cityId) {
+  const entries = await api('GET', `/api/cities/${cityId}/knowledge`);
+  const catKeys = {{ categories | map(attribute=0) | list | tojson }};
+  catKeys.forEach(cat => {
+    const catEl = document.querySelector(`.wiki-category[data-cat="${cat}"]`);
+    const items = entries.filter(e => e.category === cat && e.active);
+    if(catEl) {
+      catEl.style.display = items.length ? '' : 'none';
+      const grid = catEl.querySelector('.cat-items');
+      const count = catEl.querySelector('.cat-count');
+      if(count) count.textContent = `(${items.length})`;
+      if(grid) grid.innerHTML = items.map(e => knowledgeCard(e)).join('');
+    }
+  });
+  const total = entries.filter(e => e.active).length;
+  document.getElementById('wiki-empty').style.display = total === 0 ? '' : 'none';
+  const city = {{ cities | map(attribute='id') | list | tojson }};
+  const cityObj = await api('GET', `/api/cities`);
+  const c = (await api('GET','/api/cities')).find(x => x.id == cityId);
+  if(c) document.getElementById('wiki-city-meta').textContent = `${c.state || ''} · ${c.population ? c.population.toLocaleString('de-DE') + ' Einw.' : ''} · ${total} Wiki-Einträge`;
+}
+
+function knowledgeCard(e) {
+  return `<div class="knowledge-card ${e.on_cooldown ? 'on-cooldown' : ''}" data-id="${e.id}">
+    <div class="knowledge-card-name">${e.name}</div>
+    <div class="knowledge-card-meta">
+      <span class="badge badge-gray" style="font-size:10px;">${e.source_badge}</span>
+      <span style="color:${e.confidence >= 70 ? 'var(--success)' : e.confidence >= 40 ? 'var(--warning)' : 'var(--danger)'}"> ${e.confidence}%</span>
+      ${e.on_cooldown ? '<span title="Cooldown aktiv"> ❄</span>' : ''}
+    </div>
+    ${e.description ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${e.description}</div>` : ''}
+    <div class="knowledge-card-actions">
+      <button class="btn btn-xs btn-ghost" onclick="deleteKnowledge(${e.id})">✕</button>
+    </div>
+  </div>`;
+}
+
+async function deleteKnowledge(id) {
+  if(!confirm('Löschen?')) return;
+  await api('DELETE', `/api/knowledge/${id}`);
+  await loadWiki(_selectedCityId);
+}
+
+async function generateCityWiki() {
+  if(!_selectedCityId) return;
+  const btn = document.getElementById('wiki-ai-btn');
+  btn.disabled = true; btn.textContent = '⏳ KI läuft…';
+  try {
+    const r = await api('POST', `/api/cities/${_selectedCityId}/knowledge/ai-generate`);
+    if(r.error) { toast(r.error, 'error'); }
+    else { toast(`${r.created} Wiki-Einträge generiert!`, 'success'); await loadWiki(_selectedCityId); }
+  } catch(e) { toast('Fehler bei KI-Generierung', 'error'); }
+  btn.disabled = false; btn.textContent = '✨ KI-Wiki';
+}
+
+function openCityModal(id) {
+  document.getElementById('city-modal-title').textContent = id ? 'STADT BEARBEITEN' : 'STADT HINZUFÜGEN';
+  document.getElementById('city-modal-id').value = id || '';
+  if(!id) { ['city-name','city-state','city-ig','city-tt','city-rss','city-notes'].forEach(f => document.getElementById(f).value = ''); document.getElementById('city-population').value=''; document.getElementById('city-color').value='#3b82f6'; }
+  openModal('modal-city');
+}
+
+async function editCity() {
+  if(!_selectedCityId) return;
+  const cities = await api('GET', '/api/cities');
+  const c = cities.find(x => x.id == _selectedCityId);
+  if(!c) return;
+  document.getElementById('city-modal-id').value = c.id;
+  document.getElementById('city-modal-title').textContent = 'STADT BEARBEITEN';
+  document.getElementById('city-name').value = c.name;
+  document.getElementById('city-state').value = c.state || '';
+  document.getElementById('city-population').value = c.population || '';
+  document.getElementById('city-ig').value = c.instagram_handle || '';
+  openModal('modal-city');
+}
+
+async function saveCity() {
+  const id = document.getElementById('city-modal-id').value;
+  const data = {
+    name: document.getElementById('city-name').value,
+    state: document.getElementById('city-state').value,
+    population: parseInt(document.getElementById('city-population').value) || null,
+    instagram_handle: document.getElementById('city-ig').value,
+    tiktok_handle: document.getElementById('city-tt').value,
+    accent_color: document.getElementById('city-color').value,
+    rss_url: document.getElementById('city-rss').value,
+    notes: document.getElementById('city-notes').value,
+  };
+  const r = id ? await api('PUT',`/api/cities/${id}`,data) : await api('POST','/api/cities',data);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast('Gespeichert!','success');
+  closeModal('modal-city');
+  location.reload();
+}
+
+function openKnowledgeModal() {
+  document.getElementById('kw-name').value='';
+  document.getElementById('kw-description').value='';
+  document.getElementById('kw-confidence').value=70;
+  openModal('modal-knowledge');
+}
+
+async function saveKnowledge() {
+  const cityId = document.getElementById('kw-city-id').value;
+  const data = {
+    category: document.getElementById('kw-category').value,
+    name: document.getElementById('kw-name').value,
+    description: document.getElementById('kw-description').value,
+    confidence: parseInt(document.getElementById('kw-confidence').value),
+    source: document.getElementById('kw-source').value,
+  };
+  const r = await api('POST', `/api/cities/${cityId}/knowledge`, data);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast('Eintrag gespeichert!','success');
+  closeModal('modal-knowledge');
+  await loadWiki(cityId);
+}
+
+function openBulkCityImport() { openModal('modal-bulk-city'); }
+
+async function doBulkCityImport() {
+  const text = document.getElementById('bulk-city-text').value;
+  const cities = text.split('\n').map(s=>s.trim()).filter(Boolean);
+  const r = await api('POST','/api/cities/bulk-import',{cities});
+  toast(`${r.created} Städte importiert!`,'success');
+  closeModal('modal-bulk-city');
+  location.reload();
+}
+
+// ── TEMPLATES ──
+async function loadTemplates() {
+  const templates = await api('GET','/api/templates');
+  _allTemplates = templates;
+  renderTemplates(templates);
+}
+
+function renderTemplates(templates) {
+  const grid = document.getElementById('templates-grid');
+  if(!templates.length) { grid.innerHTML = '<div class="empty"><p>Keine Templates</p></div>'; return; }
+  grid.innerHTML = templates.map(t => `
+    <div class="card-sm" style="display:flex;flex-direction:column;gap:8px;" data-tmpl-id="${t.id}">
+      ${t.preview_image ? `<img src="/uploads/${t.preview_image}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;">` : `<div style="height:80px;background:var(--surface3);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Kein Vorschaubild</div>`}
+      <div style="display:flex;align-items:start;justify-content:space-between;gap:6px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">${t.name}</div>
+          <div style="font-size:11px;color:var(--muted);">${t.category}</div>
+        </div>
+        <span class="badge ${t.has_canva ? 'badge-green' : 'badge-gray'}" style="flex-shrink:0;">${t.has_canva ? 'Canva ✓' : 'Kein Canva'}</span>
+      </div>
+      ${t.description ? `<div style="font-size:12px;color:var(--muted2);">${t.description}</div>` : ''}
+      ${t.example_text ? `<div style="font-size:11px;color:var(--muted);font-style:italic;">"${t.example_text}"</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">
+        ${t.required_vars.map(v=>`<span class="badge badge-blue" style="font-size:10px;">${v}</span>`).join('')}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})">Generieren</button>
+        <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})">Bearbeiten</button>
+        <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterTemplates() {
+  const q = document.getElementById('template-search').value.toLowerCase();
+  const cat = document.getElementById('template-filter-cat').value;
+  const onlyCanva = document.getElementById('template-filter-canva').checked;
+  let filtered = _allTemplates.filter(t => {
+    if(q && !t.name.toLowerCase().includes(q) && !t.description?.toLowerCase().includes(q)) return false;
+    if(cat && t.category !== cat) return false;
+    if(onlyCanva && !t.has_canva) return false;
+    return true;
+  });
+  renderTemplates(filtered);
+}
+
+function openTemplateModal(id) {
+  if(id) {
+    const t = _allTemplates.find(x => x.id == id);
+    if(!t) return;
+    document.getElementById('tmpl-modal-title').textContent = 'TEMPLATE BEARBEITEN';
+    document.getElementById('tmpl-id').value = t.id;
+    document.getElementById('tmpl-name').value = t.name;
+    document.getElementById('tmpl-description').value = t.description || '';
+    document.getElementById('tmpl-example').value = t.example_text || '';
+    document.getElementById('tmpl-canva-id').value = t.canva_template_id || '';
+    document.getElementById('tmpl-category').value = t.category || 'allgemein';
+    document.getElementById('tmpl-tags').value = t.tags.join(', ');
+    document.getElementById('tmpl-min-pop').value = t.min_population || 0;
+    document.getElementById('tmpl-season-from').value = t.seasonal_from || '';
+    document.getElementById('tmpl-season-to').value = t.seasonal_to || '';
+    document.getElementById('tmpl-field-map').value = JSON.stringify(t.canva_field_map || {}, null, 2);
+    document.querySelectorAll('.chip[data-var]').forEach(c => {
+      c.classList.toggle('selected', t.required_vars.includes(c.dataset.var));
+    });
+  } else {
+    document.getElementById('tmpl-modal-title').textContent = 'TEMPLATE HINZUFÜGEN';
+    document.getElementById('tmpl-id').value = '';
+    ['tmpl-name','tmpl-description','tmpl-example','tmpl-canva-id','tmpl-tags','tmpl-season-from','tmpl-season-to'].forEach(f => document.getElementById(f).value = '');
+    document.getElementById('tmpl-min-pop').value = 0;
+    document.getElementById('tmpl-field-map').value = '{}';
+    document.querySelectorAll('.chip[data-var]').forEach(c => c.classList.remove('selected'));
+  }
+  openModal('modal-template');
+}
+
+function toggleVar(chip) { chip.classList.toggle('selected'); }
+
+async function saveTemplate() {
+  const id = document.getElementById('tmpl-id').value;
+  const selectedVars = [...document.querySelectorAll('.chip.selected[data-var]')].map(c => c.dataset.var);
+  let fieldMap = {};
+  try { fieldMap = JSON.parse(document.getElementById('tmpl-field-map').value || '{}'); } catch(e) {}
+  const tags = document.getElementById('tmpl-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const data = {
+    name: document.getElementById('tmpl-name').value,
+    description: document.getElementById('tmpl-description').value,
+    example_text: document.getElementById('tmpl-example').value,
+    canva_template_id: document.getElementById('tmpl-canva-id').value,
+    category: document.getElementById('tmpl-category').value,
+    required_vars: selectedVars,
+    canva_field_map: fieldMap,
+    tags,
+    min_population: parseInt(document.getElementById('tmpl-min-pop').value) || 0,
+    seasonal_from: document.getElementById('tmpl-season-from').value,
+    seasonal_to: document.getElementById('tmpl-season-to').value,
+  };
+  const r = id ? await api('PUT',`/api/templates/${id}`,data) : await api('POST','/api/templates',data);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast('Template gespeichert!','success');
+  closeModal('modal-template');
+  loadTemplates();
+}
+
+async function deleteTemplate(id) {
+  if(!confirm('Template löschen?')) return;
+  await api('DELETE',`/api/templates/${id}`);
+  toast('Template gelöscht','info');
+  loadTemplates();
+}
+
+// ── GENERATOR ──
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('gen-template')?.addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    const info = document.getElementById('gen-template-info');
+    if(!this.value) { info.style.display='none'; return; }
+    info.style.display='';
+    document.getElementById('gen-template-desc').textContent = opt.dataset.desc || '';
+    let vars = [];
+    try { vars = JSON.parse(opt.dataset.vars || '[]'); } catch(e) {}
+    document.getElementById('gen-template-vars').innerHTML = vars.map(v=>`<span class="badge badge-blue">${v}</span>`).join('');
+  });
+  document.querySelectorAll('.bulk-city-cb').forEach(cb => {
+    cb.addEventListener('change', updateBulkSelection);
+  });
+  loadTemplates();
+  refreshStats();
+  // Check URL param for tab
+  const params = new URLSearchParams(location.search);
+  const tab = params.get('tab');
+  if(tab) showPage(tab);
+});
+
+function openGeneratorWith(templateId) {
+  showPage('generator');
+  const sel = document.getElementById('gen-template');
+  for(let opt of sel.options) { if(opt.value == templateId) { sel.value = templateId; sel.dispatchEvent(new Event('change')); break; } }
+}
+
+async function startGenerate() {
+  const tId = document.getElementById('gen-template').value;
+  const cId = document.getElementById('gen-city').value;
+  if(!tId || !cId) { toast('Template und Stadt wählen!','error'); return; }
+
+  const statusEl = document.getElementById('gen-status');
+  statusEl.style.display='';
+  statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div> KI bewertet Fit-Score…</div>';
+  document.getElementById('gen-result').innerHTML = '<div class="empty"><p>Generierung läuft…</p></div>';
+
+  const r = await api('POST','/api/generate',{template_id:parseInt(tId),city_id:parseInt(cId)});
+  if(r.error) { toast(r.error,'error'); statusEl.style.display='none'; return; }
+
+  pollJob(r.job_id, statusEl);
+}
+
+async function pollJob(jobId, statusEl) {
+  for(let i=0; i<60; i++) {
+    await new Promise(res => setTimeout(res, 3000));
+    const job = await api('GET', `/api/jobs/${jobId}`);
+    if(statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:var(--muted);">Status: ${job.status_label} | Fit-Score: ${job.fit_score ?? '—'}</div>`;
+    if(['done','failed','approved','rejected'].includes(job.status)) {
+      renderJobResult(job);
+      if(statusEl) statusEl.style.display='none';
+      refreshStats();
+      return;
+    }
+  }
+  toast('Timeout — Job dauert zu lange','error');
+}
+
+function renderJobResult(job) {
+  const el = document.getElementById('gen-result');
+  if(!el) return;
+  const scoreColor = job.fit_color;
+  el.innerHTML = `
+    <div>
+      <div style="display:flex;gap:12px;margin-bottom:12px;align-items:center;">
+        <div style="font-size:28px;font-family:var(--font-display);color:${scoreColor};">${job.fit_score ?? '—'}</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;">Fit-Score</div>
+          <div style="font-size:12px;color:var(--muted);">${job.fit_reasoning || ''}</div>
+        </div>
+      </div>
+      ${job.image_url ? `<img src="${job.image_url}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
+      ${!job.image_url && job.manual_brief ? `<div class="card-sm" style="background:var(--surface3);margin-bottom:12px;"><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">MANUAL BRIEF</div><div style="font-size:13px;">${job.manual_brief}</div></div>` : ''}
+      ${Object.keys(job.vars_used||{}).length ? `<div style="margin-bottom:12px;"><div style="font-size:11px;color:var(--muted);margin-bottom:6px;">VERWENDETE VARIABLEN</div>${Object.entries(job.vars_used).map(([k,v])=>`<div style="font-size:12px;"><span style="color:var(--muted);">${k}:</span> ${v}</div>`).join('')}</div>` : ''}
+      ${job.error_message ? `<div class="badge badge-red" style="margin-bottom:10px;">${job.error_message}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-success btn-sm" onclick="approveJob(${job.id})">✓ Freigeben</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>
+        ${job.image_url ? `<a href="${job.image_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
+      </div>
+    </div>`;
+}
+
+async function approveJob(id) {
+  const sendToOS = confirm('Auch an ContentOS senden?');
+  await api('POST',`/api/jobs/${id}/review`,{action:'approve',send_to_content_os:sendToOS});
+  toast('Freigegeben!','success');
+  refreshStats();
+  loadReviewJobs();
+}
+
+async function rejectJob(id) {
+  await api('POST',`/api/jobs/${id}/review`,{action:'reject'});
+  toast('Abgelehnt','info');
+  refreshStats();
+  loadReviewJobs();
+}
+
+// ── BULK ──
+function updateBulkSelection() {
+  const checked = document.querySelectorAll('.bulk-city-cb:checked').length;
+  const total   = document.querySelectorAll('.bulk-city-cb').length;
+  const infoEl  = document.getElementById('bulk-selection-info');
+  if(infoEl) infoEl.textContent = `${checked} von ${total} Städten ausgewählt`;
+  const badgeEl = document.getElementById('nav-bulk-badge');
+  if(badgeEl) { if(checked>0){badgeEl.textContent=checked;badgeEl.style.display='';}else{badgeEl.style.display='none';} }
+}
+
+function selectAllCities() { document.querySelectorAll('.bulk-city-cb').forEach(cb=>cb.checked=true); updateBulkSelection(); }
+function selectNoCities() { document.querySelectorAll('.bulk-city-cb').forEach(cb=>cb.checked=false); updateBulkSelection(); }
+function selectActiveCities() {
+  document.querySelectorAll('.bulk-city-row').forEach(row => {
+    const kc = parseInt(row.dataset.kc || 0);
+    row.querySelector('.bulk-city-cb').checked = kc > 0;
+  });
+  updateBulkSelection();
+}
+
+async function startBulk() {
+  const tId = document.getElementById('bulk-template').value;
+  if(!tId) { toast('Template wählen!','error'); return; }
+  const cityIds = [...document.querySelectorAll('.bulk-city-cb:checked')].map(cb => parseInt(cb.value));
+  if(!cityIds.length) { toast('Mindestens eine Stadt auswählen!','error'); return; }
+
+  const r = await api('POST','/api/generate/bulk',{template_id:parseInt(tId),city_ids:cityIds});
+  if(r.error) { toast(r.error,'error'); return; }
+  toast(`${r.count} Jobs gestartet!`,'success');
+  _bulkJobIds = r.job_ids;
+
+  const prog = document.getElementById('bulk-progress');
+  prog.style.display='';
+  pollBulkJobs(r.job_ids);
+}
+
+async function pollBulkJobs(jobIds) {
+  if(_bulkPollInterval) clearInterval(_bulkPollInterval);
+  _bulkPollInterval = setInterval(async () => {
+    const jobs = await api('GET', `/api/jobs?status=pending,running,done,failed,approved,rejected`);
+    const myJobs = jobs.filter(j => jobIds.includes(j.id));
+    const done = myJobs.filter(j => !['pending','running'].includes(j.status)).length;
+    const pct  = Math.round(done / jobIds.length * 100);
+    document.getElementById('bulk-progress-text').textContent = `${done} / ${jobIds.length} Jobs fertig`;
+    document.getElementById('bulk-progress-fill').style.width = pct + '%';
+    renderBulkJobs(myJobs);
+    if(done >= jobIds.length) {
+      clearInterval(_bulkPollInterval);
+      toast('Alle Bulk-Jobs abgeschlossen!','success');
+      refreshStats();
+    }
+  }, 4000);
+}
+
+function renderBulkJobs(jobs) {
+  const el = document.getElementById('bulk-jobs-list');
+  if(!jobs.length) { el.innerHTML='<div class="empty" style="padding:20px;"><p>Keine Jobs</p></div>'; return; }
+  el.innerHTML = jobs.map(j=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:12px;font-weight:600;">${j.city_name}</div>
+      ${j.fit_score ? `<div style="font-size:12px;color:${j.fit_color};font-weight:700;">${j.fit_score}</div>` : ''}
+      <span class="badge ${j.status==='done'||j.status==='approved'?'badge-green':j.status==='failed'||j.status==='rejected'?'badge-red':j.status==='running'?'badge-blue':'badge-gray'}" style="font-size:10px;">${j.status_label}</span>
+    </div>`).join('');
+}
+
+// ── REVIEW ──
+async function loadReviewJobs() {
+  const status = document.getElementById('review-filter')?.value || 'done';
+  const jobs = await api('GET', `/api/jobs?status=${status}`);
+  const grid = document.getElementById('review-grid');
+  if(!jobs.length) { grid.innerHTML='<div class="empty"><p>Keine Jobs in diesem Status</p></div>'; return; }
+  grid.innerHTML = jobs.map(j => `
+    <div class="job-card">
+      <div class="job-card-img">
+        ${j.image_url ? `<img src="${j.image_url}" alt="meme">` : `<span style="font-size:12px;color:var(--muted);">${j.manual_brief ? '📋 Brief verfügbar' : 'Kein Bild'}</span>`}
+      </div>
+      <div class="job-card-body">
+        <div class="job-card-title">${j.city_name}</div>
+        <div class="job-card-meta">${j.template_name}</div>
+        <div class="fit-bar"><div class="fit-bar-fill" style="width:${j.fit_score||0}%;background:${j.fit_color};"></div></div>
+        <div style="font-size:11px;color:${j.fit_color};font-weight:600;margin-bottom:4px;">Score: ${j.fit_score ?? '—'} · ${j.fit_reasoning || ''}</div>
+        ${j.manual_brief ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic;">"${j.manual_brief}"</div>` : ''}
+        ${Object.keys(j.vars_used||{}).length ? `<div style="margin-bottom:6px;">${Object.entries(j.vars_used).map(([k,v])=>`<span class="badge badge-blue" style="font-size:10px;margin-right:3px;">${k}: ${v}</span>`).join('')}</div>` : ''}
+        <div class="job-card-actions">
+          ${j.status==='done' ? `
+            <button class="btn btn-success btn-xs" onclick="approveJob(${j.id})">✓ OK</button>
+            <button class="btn btn-danger btn-xs" onclick="rejectJob(${j.id})">✕</button>
+          ` : `<span class="badge ${j.status==='approved'||j.status==='sent'?'badge-green':j.status==='rejected'?'badge-red':'badge-gray'}">${j.status_label}</span>`}
+          ${j.image_url ? `<a href="${j.image_url}" download class="btn btn-ghost btn-xs">↓</a>` : ''}
+          ${j.status==='approved' && !j.sent_to_content_os ? `<button class="btn btn-ghost btn-xs" onclick="resendJob(${j.id})">→ ContentOS</button>` : ''}
+          <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteJob(${j.id})">🗑</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function resendJob(id) {
+  await api('POST',`/api/jobs/${id}/resend`);
+  toast('An ContentOS gesendet','success');
+}
+
+async function deleteJob(id) {
+  if(!confirm('Job löschen?')) return;
+  await api('DELETE',`/api/jobs/${id}`);
+  toast('Job gelöscht','info');
+  loadReviewJobs();
+}
+
+// ── NEWS ──
+async function loadNews() {
+  const cityId = document.getElementById('news-city-filter')?.value || '';
+  const status = document.getElementById('news-status-filter')?.value || 'scored';
+  let url = `/api/news?status=${status}`;
+  if(cityId) url += `&city_id=${cityId}`;
+  const items = await api('GET', url);
+  const tbody = document.getElementById('news-tbody');
+  if(!items.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">Keine News</td></tr>'; return; }
+  tbody.innerHTML = items.map(n => `
+    <tr>
+      <td style="font-size:12px;">${n.city_name}</td>
+      <td><a href="${n.url}" target="_blank" style="color:var(--text);text-decoration:none;font-size:13px;">${n.headline}</a></td>
+      <td><span style="color:${n.meme_score_color};font-weight:700;">${n.meme_score ?? '—'}</span></td>
+      <td style="font-size:12px;color:var(--muted);">${n.suggested_template_name || '—'}</td>
+      <td style="font-size:11px;color:var(--muted);">${n.meme_reasoning || ''}</td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          ${n.suggested_template_id && n.status!=='used' ? `<button class="btn btn-primary btn-xs" onclick="generateFromNews(${n.id})">⚡</button>` : ''}
+          <button class="btn btn-ghost btn-xs" onclick="skipNews(${n.id})">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function fetchNews() {
+  const cityId = document.getElementById('news-city-filter')?.value;
+  const body = cityId ? {city_id: parseInt(cityId)} : {};
+  const btn = event.target;
+  btn.disabled=true; btn.textContent='⏳ Fetche…';
+  const r = await api('POST','/api/news/fetch', body);
+  btn.disabled=false; btn.textContent='📡 RSS fetchen';
+  toast(`${r.fetched} neue Artikel gefunden. KI bewertet im Hintergrund.`,'success');
+  setTimeout(loadNews, 8000);
+}
+
+async function generateFromNews(id) {
+  const r = await api('POST',`/api/news/${id}/generate`);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast(`Job #${r.job_id} gestartet!`,'success');
+  showPage('review');
+}
+
+async function skipNews(id) {
+  await api('PUT',`/api/news/${id}`,{status:'skipped'});
+  loadNews();
+}
+
+// ── SURVEYS ──
+async function loadSurveys() {
+  const surveys = await api('GET','/api/surveys');
+  const tbody = document.getElementById('surveys-tbody');
+  if(!surveys.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">Noch keine Fragebögen</td></tr>'; return; }
+  tbody.innerHTML = surveys.map(s=>`
+    <tr>
+      <td style="font-size:13px;font-weight:600;">${s.city_name}</td>
+      <td style="font-size:12px;">${s.respondent || '—'}</td>
+      <td><span class="badge ${s.status==='completed'?'badge-green':s.status==='imported'?'badge-blue':'badge-gray'}">${s.status}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-xs" onclick="copyLink('${s.survey_url}')">Link kopieren</button>
+      </td>
+      <td style="font-size:11px;color:var(--muted);">${s.created_at.substring(0,10)}</td>
+      <td>
+        ${s.status==='completed' ? `<button class="btn btn-primary btn-xs" onclick="viewSurvey(${s.id})">Antworten & Import</button>` : ''}
+        ${s.status==='imported' ? '<span class="badge badge-green">Importiert</span>' : ''}
+      </td>
+    </tr>`).join('');
+}
+
+function copyLink(url) {
+  navigator.clipboard.writeText(url);
+  toast('Link kopiert!','success');
+}
+
+async function viewSurvey(id) {
+  _selectedSurveyId = id;
+  const surveys = await api('GET','/api/surveys');
+  const survey = surveys.find(s => s.id == id);
+  const el = document.getElementById('survey-result-content');
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Lade…</div>';
+  openModal('modal-survey-result');
+  // For now show a placeholder — answers come from the submitted form
+  el.innerHTML = `<div style="font-size:14px;margin-bottom:12px;">${survey?.city_name} — ${survey?.respondent || 'anonym'}</div>
+    <div style="color:var(--muted);font-size:13px;">Die Antworten werden aus der Datenbank geladen. Klicke "Ins Wiki importieren" um alle Antworten als City-Wiki-Einträge zu speichern.</div>`;
+}
+
+async function importSurvey() {
+  if(!_selectedSurveyId) return;
+  const r = await api('POST',`/api/surveys/${_selectedSurveyId}/import`);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast(`${r.imported} Wiki-Einträge importiert!`,'success');
+  closeModal('modal-survey-result');
+  loadSurveys();
+}
+
+function openSurveyModal() { openModal('modal-survey'); }
+
+async function createSurvey() {
+  const cityId = document.getElementById('survey-city').value;
+  const respondent = document.getElementById('survey-respondent').value;
+  const r = await api('POST','/api/surveys',{city_id:parseInt(cityId),respondent});
+  if(r.error) { toast(r.error,'error'); return; }
+  navigator.clipboard.writeText(r.survey_url);
+  toast('Fragebogen erstellt! Link kopiert.','success');
+  closeModal('modal-survey');
+  loadSurveys();
+}
+
+// ── TODOS ──
+async function loadTodos() {
+  const todos = await api('GET','/api/todos');
+  const openEl = document.getElementById('todos-open');
+  const doneEl = document.getElementById('todos-done');
+  const open = todos.filter(t=>!t.done);
+  const done = todos.filter(t=>t.done);
+  const catIcon = {'idee':'💡','feature':'🔧','bug':'🐛','notiz':'📝'};
+  const renderTodo = t => `
+    <div style="display:flex;align-items:start;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;" id="todo-${t.id}">
+      <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo(${t.id},this.checked)" style="margin-top:2px;flex-shrink:0;">
+      <div style="flex:1;">
+        <div style="font-size:13px;${t.done?'text-decoration:line-through;color:var(--muted);':''}">${catIcon[t.category]||'•'} ${t.text}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">${t.category}${t.priority?` · <span style="color:var(--warning);">Hoch</span>`:''}</div>
+      </div>
+      <button class="btn btn-xs" style="background:none;color:var(--muted);border:none;" onclick="deleteTodo(${t.id})">✕</button>
+    </div>`;
+  openEl.innerHTML = open.length ? open.map(renderTodo).join('') : '<div class="empty" style="padding:20px;"><p>Alles erledigt!</p></div>';
+  doneEl.innerHTML = done.length ? done.map(renderTodo).join('') : '<div class="empty" style="padding:20px;"><p>Noch nichts erledigt</p></div>';
+}
+
+async function toggleTodo(id, done) {
+  await api('PUT',`/api/todos/${id}`,{done});
+  loadTodos();
+}
+
+async function deleteTodo(id) {
+  await api('DELETE',`/api/todos/${id}`);
+  loadTodos();
+}
+
+function openTodoModal() { document.getElementById('todo-text').value=''; openModal('modal-todo'); }
+
+async function saveTodo() {
+  const text = document.getElementById('todo-text').value.trim();
+  if(!text) return;
+  await api('POST','/api/todos',{
+    text, category:document.getElementById('todo-category').value,
+    priority:parseInt(document.getElementById('todo-priority').value)
+  });
+  toast('Gespeichert!','success');
+  closeModal('modal-todo');
+  loadTodos();
+}
+
+// ── SETTINGS ──
+async function saveSettings() {
+  const r = await api('POST','/api/settings',{
+    content_os_url: document.getElementById('settings-content-os-url').value,
+  });
+  toast('Einstellungen gespeichert!','success');
+}
+
+async function loadUsers() {
+  const users = await api('GET','/api/users');
+  const el = document.getElementById('users-list');
+  el.innerHTML = users.map(u=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${u.username}</div><div style="font-size:11px;color:var(--muted);">${u.email||''}${u.last_login?' · zuletzt: '+u.last_login.substring(0,10):''}</div></div>
+      <button class="btn btn-xs btn-ghost" onclick="deleteUser(${u.id})">Löschen</button>
+    </div>`).join('');
+}
+
+function openUserModal() { openModal('modal-user'); }
+
+async function createUser() {
+  const r = await api('POST','/api/users',{
+    username: document.getElementById('user-username').value,
+    email: document.getElementById('user-email').value,
+    password: document.getElementById('user-password').value,
+  });
+  if(r.error) { toast(r.error,'error'); return; }
+  toast('Benutzer erstellt!','success');
+  closeModal('modal-user');
+  loadUsers();
+}
+
+async function deleteUser(id) {
+  if(!confirm('Benutzer löschen?')) return;
+  await api('DELETE',`/api/users/${id}`);
+  loadUsers();
+}
+
+// ── MODALS ──
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if(e.target === el) el.classList.remove('open'); });
+});
+
+// ── Auto-refresh stats every 30s ──
+setInterval(refreshStats, 30000);
+</script>
+</body>
+</html>

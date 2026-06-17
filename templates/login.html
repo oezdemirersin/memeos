@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MemeOS — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080b12; --surface: #0f1420; --surface2: #161c2d;
+  --border: rgba(255,255,255,0.07); --accent: #3b82f6;
+  --text: #e2e8f0; --muted: #64748b; --danger: #ef4444;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-body); min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 40px; width: 380px;
+}
+.logo {
+  font-family: var(--font-display); font-size: 32px;
+  letter-spacing: 3px; text-align: center; margin-bottom: 4px;
+}
+.logo span { color: var(--accent); }
+.subtitle { color: var(--muted); font-size: 12px; text-align: center; letter-spacing: 1px; margin-bottom: 32px; }
+.field { margin-bottom: 16px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+input {
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); font-family: var(--font-body); font-size: 14px;
+  outline: none; transition: border-color 0.15s;
+}
+input:focus { border-color: var(--accent); }
+.error { color: var(--danger); font-size: 13px; margin-bottom: 14px; }
+.btn {
+  width: 100%; padding: 11px; border-radius: 8px; border: none;
+  background: var(--accent); color: white; font-family: var(--font-body);
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+  margin-top: 8px;
+}
+.btn:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">MEME<span>OS</span></div>
+  <div class="subtitle">STADTMEME AUTOMATISIERUNG</div>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="POST" action="/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="field">
+      <label>Benutzername</label>
+      <input type="text" name="username" autofocus autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Passwort</label>
+      <input type="password" name="password" autocomplete="current-password">
+    </div>
+    <button class="btn" type="submit">Einloggen</button>
+  </form>
+</div>
+</body>
+</html>
