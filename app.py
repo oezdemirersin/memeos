@@ -14,6 +14,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    jsonify, session, flash, send_from_directory, abort)
 from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
+                    CityMarketEntry, BuyablePage,
+                    MemoInspirationSource, MemoInspirationPost,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
 import anthropic
 import logging
@@ -134,6 +136,18 @@ def dashboard():
     canva_connected = _canva_is_connected()
     ai_cost_month = _ai_cost_this_month()
 
+    market_summary = {
+        'total':       CityMarketEntry.query.count(),
+        'owned':       CityMarketEntry.query.filter_by(status='owned').count(),
+        'want':        CityMarketEntry.query.filter_by(status='want_to_buy').count(),
+        'found':       CityMarketEntry.query.filter_by(status='found_pages').count(),
+        'in_contact':  BuyablePage.query.filter(BuyablePage.contact_status.in_(['antwortet','aktiv','in_verhandlung'])).count(),
+    }
+    inspo_counts = {
+        'new':   MemoInspirationPost.query.filter_by(status='new').count(),
+        'saved': MemoInspirationPost.query.filter_by(is_saved=True).count(),
+    }
+
     return render_template('dashboard.html',
         stats=stats,
         recent_jobs=recent_jobs,
@@ -145,6 +159,8 @@ def dashboard():
         ai_cost_month=ai_cost_month,
         categories=KNOWLEDGE_CATEGORIES,
         category_map=CATEGORY_MAP,
+        market_summary=market_summary,
+        inspo_counts=inspo_counts,
         now=datetime.utcnow(),
     )
 
@@ -1481,6 +1497,308 @@ with app.app_context():
     db.create_all()
     _seed_todos()
     _seed_cities()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MARKT API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/market', methods=['GET'])
+@login_required
+def api_market_list():
+    entries = CityMarketEntry.query.order_by(CityMarketEntry.rank).all()
+    return jsonify([{
+        'id': e.id, 'name': e.name, 'state': e.state,
+        'population': e.population, 'rank': e.rank,
+        'status': e.status, 'status_label': e.status_label,
+        'status_color': e.status_color,
+        'notes': e.notes,
+        'buyable_count': e.buyable_pages.count(),
+    } for e in entries])
+
+@app.route('/api/market/<int:entry_id>/status', methods=['PUT'])
+@login_required
+def api_market_status(entry_id):
+    e = CityMarketEntry.query.get_or_404(entry_id)
+    d = request.json or {}
+    if 'status' in d:
+        e.status = d['status']
+        if d['status'] == 'owned' and d.get('city_id'):
+            e.city_id = d['city_id']
+    if 'notes' in d:
+        e.notes = d['notes']
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/market/<int:entry_id>/pages', methods=['GET'])
+@login_required
+def api_market_pages(entry_id):
+    pages = BuyablePage.query.filter_by(market_entry_id=entry_id)\
+                .order_by(BuyablePage.created_at.desc()).all()
+    return jsonify([{
+        'id': p.id, 'instagram_url': p.instagram_url, 'handle': p.handle,
+        'followers': p.followers, 'price_ask': p.price_ask,
+        'contact_status': p.contact_status, 'contact_label': p.contact_label,
+        'contact_color': p.contact_color, 'contact_notes': p.contact_notes,
+        'created_at': p.created_at.isoformat(),
+    } for p in pages])
+
+@app.route('/api/market/<int:entry_id>/pages', methods=['POST'])
+@login_required
+def api_market_page_add(entry_id):
+    CityMarketEntry.query.get_or_404(entry_id)
+    d = request.json or {}
+    if not d.get('instagram_url') and not d.get('handle'):
+        return jsonify({'error': 'URL oder Handle erforderlich'}), 400
+    p = BuyablePage(
+        market_entry_id=entry_id,
+        instagram_url=d.get('instagram_url', ''),
+        handle=d.get('handle', ''),
+        followers=d.get('followers'),
+        price_ask=d.get('price_ask'),
+        contact_status=d.get('contact_status', 'neu'),
+        contact_notes=d.get('contact_notes', ''),
+    )
+    db.session.add(p)
+    # Auto-update market status if was 'none' or 'want_to_buy'
+    entry = CityMarketEntry.query.get(entry_id)
+    if entry.status in ('none', 'want_to_buy'):
+        entry.status = 'found_pages'
+    db.session.commit()
+    return jsonify({'id': p.id}), 201
+
+@app.route('/api/market/pages/<int:page_id>', methods=['PUT'])
+@login_required
+def api_market_page_update(page_id):
+    p = BuyablePage.query.get_or_404(page_id)
+    d = request.json or {}
+    for field in ['instagram_url','handle','followers','price_ask',
+                  'contact_status','contact_notes']:
+        if field in d:
+            setattr(p, field, d[field])
+    db.session.commit()
+    return jsonify({'ok': True, 'contact_label': p.contact_label, 'contact_color': p.contact_color})
+
+@app.route('/api/market/pages/<int:page_id>', methods=['DELETE'])
+@login_required
+def api_market_page_delete(page_id):
+    p = BuyablePage.query.get_or_404(page_id)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INSPIRATION API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/inspiration/sources', methods=['GET'])
+@login_required
+def api_inspo_sources():
+    sources = MemoInspirationSource.query.order_by(MemoInspirationSource.username).all()
+    return jsonify([{
+        'id': s.id, 'username': s.username, 'notes': s.notes,
+        'post_count': s.post_count(), 'new_count': s.new_count(),
+        'last_fetch': s.last_fetch.isoformat() if s.last_fetch else None,
+    } for s in sources])
+
+@app.route('/api/inspiration/sources', methods=['POST'])
+@login_required
+def api_inspo_source_add():
+    d = request.json or {}
+    username = d.get('username', '').strip().lstrip('@')
+    if not username:
+        return jsonify({'error': 'Username fehlt'}), 400
+    if MemoInspirationSource.query.filter_by(username=username).first():
+        return jsonify({'error': 'Quelle bereits vorhanden'}), 409
+    s = MemoInspirationSource(username=username, notes=d.get('notes', ''))
+    db.session.add(s)
+    db.session.commit()
+    return jsonify({'id': s.id, 'username': s.username}), 201
+
+@app.route('/api/inspiration/sources/<int:src_id>', methods=['DELETE'])
+@login_required
+def api_inspo_source_delete(src_id):
+    s = MemoInspirationSource.query.get_or_404(src_id)
+    db.session.delete(s)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/inspiration/posts', methods=['GET'])
+@login_required
+def api_inspo_posts():
+    status  = request.args.get('status', 'new')
+    src_id  = request.args.get('source_id', type=int)
+    q = MemoInspirationPost.query
+    if status == 'saved':
+        q = q.filter_by(is_saved=True)
+    elif status and status != 'all':
+        q = q.filter_by(status=status)
+    if src_id:
+        q = q.filter_by(source_id=src_id)
+    posts = q.order_by(MemoInspirationPost.created_at.desc()).limit(200).all()
+    return jsonify([{
+        'id': p.id, 'source_id': p.source_id,
+        'username': p.source.username if p.source else '',
+        'instagram_code': p.instagram_code,
+        'image_url': p.image_url, 'caption': p.caption,
+        'like_count': p.like_count, 'media_type': p.media_type,
+        'status': p.status, 'is_saved': p.is_saved,
+        'meme_idea': p.meme_idea,
+        'post_date': p.post_date.isoformat() if p.post_date else None,
+    } for p in posts])
+
+@app.route('/api/inspiration/posts/add', methods=['POST'])
+@login_required
+def api_inspo_post_add():
+    d = request.json or {}
+    src_id = d.get('source_id')
+    if not src_id:
+        return jsonify({'error': 'source_id fehlt'}), 400
+    code = d.get('instagram_code', f'manual_{int(time.time())}')
+    if MemoInspirationPost.query.filter_by(instagram_code=code).first():
+        return jsonify({'error': 'Post bereits vorhanden'}), 409
+    p = MemoInspirationPost(
+        source_id=src_id,
+        instagram_code=code,
+        image_url=d.get('image_url', ''),
+        caption=d.get('caption', ''),
+        like_count=d.get('like_count'),
+        media_type=d.get('media_type', 'image'),
+        meme_idea=d.get('meme_idea', ''),
+    )
+    db.session.add(p)
+    db.session.commit()
+    return jsonify({'id': p.id}), 201
+
+@app.route('/api/inspiration/posts/<int:post_id>', methods=['PUT'])
+@login_required
+def api_inspo_post_update(post_id):
+    p = MemoInspirationPost.query.get_or_404(post_id)
+    d = request.json or {}
+    for field in ['status', 'is_saved', 'meme_idea']:
+        if field in d:
+            setattr(p, field, d[field])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/inspiration/posts/<int:post_id>', methods=['DELETE'])
+@login_required
+def api_inspo_post_delete(post_id):
+    p = MemoInspirationPost.query.get_or_404(post_id)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/inspiration/posts/<int:post_id>/generate', methods=['POST'])
+@login_required
+def api_inspo_post_generate(post_id):
+    p = MemoInspirationPost.query.get_or_404(post_id)
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Kein API Key'}), 400
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        templates = MemeTemplate.query.filter_by(active=True).all()
+        tmpl_str = '\n'.join([f"- ID:{t.id} {t.name}" for t in templates])
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=300,
+            messages=[{'role': 'user', 'content': f"""Analysiere diesen Instagram-Post als Meme-Inspiration:
+
+Caption: {p.caption or '(keine)'}
+Likes: {p.like_count or '?'}
+Von: @{p.source.username if p.source else '?'}
+
+Verfügbare Meme-Templates:
+{tmpl_str}
+
+Antworte mit JSON:
+{{"meme_idea": "<konkrete Meme-Idee für eine deutsche Stadtseite, max 150 Zeichen>", "suggested_template_id": <ID oder null>}}"""}]
+        )
+        raw = msg.content[0].text.strip()
+        _log_ai_usage('inspo_analyze', 'claude-haiku-4-5-20251001',
+                      msg.usage.input_tokens, msg.usage.output_tokens)
+        import re
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            p.meme_idea = data.get('meme_idea', '')
+            p.status = 'saved'
+            p.is_saved = True
+            db.session.commit()
+            return jsonify({'meme_idea': p.meme_idea})
+    except Exception as ex:
+        return jsonify({'error': str(ex)}), 500
+    return jsonify({'error': 'KI-Fehler'}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STARTUP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _seed_market():
+    if CityMarketEntry.query.count() > 0:
+        return
+    cities_100 = [
+        (1,'Berlin','Berlin',3755251),(2,'Hamburg','Hamburg',1906411),
+        (3,'München','Bayern',1512491),(4,'Köln','Nordrhein-Westfalen',1084394),
+        (5,'Frankfurt am Main','Hessen',773068),(6,'Stuttgart','Baden-Württemberg',634830),
+        (7,'Düsseldorf','Nordrhein-Westfalen',645000),(8,'Leipzig','Sachsen',620523),
+        (9,'Dortmund','Nordrhein-Westfalen',588462),(10,'Essen','Nordrhein-Westfalen',578087),
+        (11,'Bremen','Bremen',571403),(12,'Dresden','Sachsen',561922),
+        (13,'Hannover','Niedersachsen',535932),(14,'Nürnberg','Bayern',518365),
+        (15,'Duisburg','Nordrhein-Westfalen',495885),(16,'Bochum','Nordrhein-Westfalen',364920),
+        (17,'Wuppertal','Nordrhein-Westfalen',356293),(18,'Bielefeld','Nordrhein-Westfalen',341755),
+        (19,'Bonn','Nordrhein-Westfalen',335988),(20,'Münster','Nordrhein-Westfalen',317763),
+        (21,'Karlsruhe','Baden-Württemberg',313092),(22,'Mannheim','Baden-Württemberg',309370),
+        (23,'Augsburg','Bayern',295135),(24,'Wiesbaden','Hessen',284665),
+        (25,'Gelsenkirchen','Nordrhein-Westfalen',259645),(26,'Mönchengladbach','Nordrhein-Westfalen',259536),
+        (27,'Braunschweig','Niedersachsen',249406),(28,'Chemnitz','Sachsen',244517),
+        (29,'Aachen','Nordrhein-Westfalen',245885),(30,'Kiel','Schleswig-Holstein',246243),
+        (31,'Halle (Saale)','Sachsen-Anhalt',237865),(32,'Magdeburg','Sachsen-Anhalt',237475),
+        (33,'Freiburg im Breisgau','Baden-Württemberg',232198),(34,'Krefeld','Nordrhein-Westfalen',225144),
+        (35,'Mainz','Rheinland-Pfalz',217556),(36,'Lübeck','Schleswig-Holstein',216277),
+        (37,'Erfurt','Thüringen',214966),(38,'Rostock','Mecklenburg-Vorpommern',208886),
+        (39,'Oberhausen','Nordrhein-Westfalen',206465),(40,'Kassel','Hessen',201048),
+        (41,'Hagen','Nordrhein-Westfalen',188814),(42,'Hamm','Nordrhein-Westfalen',179634),
+        (43,'Saarbrücken','Saarland',179349),(44,'Potsdam','Brandenburg',183391),
+        (45,'Mülheim an der Ruhr','Nordrhein-Westfalen',170632),(46,'Osnabrück','Niedersachsen',165109),
+        (47,'Heidelberg','Baden-Württemberg',161485),(48,'Darmstadt','Hessen',160279),
+        (49,'Ludwigshafen am Rhein','Rheinland-Pfalz',163196),(50,'Oldenburg','Niedersachsen',169077),
+        (51,'Solingen','Nordrhein-Westfalen',158726),(52,'Leverkusen','Nordrhein-Westfalen',163478),
+        (53,'Herne','Nordrhein-Westfalen',155875),(54,'Neuss','Nordrhein-Westfalen',151924),
+        (55,'Paderborn','Nordrhein-Westfalen',151877),(56,'Regensburg','Bayern',155519),
+        (57,'Ingolstadt','Bayern',140140),(58,'Offenbach am Main','Hessen',132448),
+        (59,'Fürth','Bayern',130305),(60,'Ulm','Baden-Württemberg',126790),
+        (61,'Würzburg','Bayern',127966),(62,'Heilbronn','Baden-Württemberg',126592),
+        (63,'Pforzheim','Baden-Württemberg',125542),(64,'Wolfsburg','Niedersachsen',124371),
+        (65,'Göttingen','Niedersachsen',119529),(66,'Bottrop','Nordrhein-Westfalen',115677),
+        (67,'Reutlingen','Baden-Württemberg',115818),(68,'Erlangen','Bayern',113758),
+        (69,'Bremerhaven','Bremen',113557),(70,'Koblenz','Rheinland-Pfalz',113961),
+        (71,'Bergisch Gladbach','Nordrhein-Westfalen',111965),(72,'Remscheid','Nordrhein-Westfalen',110994),
+        (73,'Jena','Thüringen',111443),(74,'Trier','Rheinland-Pfalz',111631),
+        (75,'Moers','Nordrhein-Westfalen',104637),(76,'Siegen','Nordrhein-Westfalen',102583),
+        (77,'Hildesheim','Niedersachsen',98073),(78,'Kaiserslautern','Rheinland-Pfalz',97232),
+        (79,'Gütersloh','Nordrhein-Westfalen',101070),(80,'Cottbus','Brandenburg',99700),
+        (81,'Salzgitter','Niedersachsen',101767),(82,'Hamm','Nordrhein-Westfalen',179634),
+        (83,'Hanau','Hessen',98041),(84,'Witten','Nordrhein-Westfalen',96787),
+        (85,'Schwerin','Mecklenburg-Vorpommern',95941),(86,'Gera','Thüringen',93125),
+        (87,'Zwickau','Sachsen',91175),(88,'Esslingen am Neckar','Baden-Württemberg',91808),
+        (89,'Ludwigsburg','Baden-Württemberg',93000),(90,'Iserlohn','Nordrhein-Westfalen',93000),
+        (91,'Marl','Nordrhein-Westfalen',84606),(92,'Heidenheim an der Brenz','Baden-Württemberg',50000),
+        (93,'Flensburg','Schleswig-Holstein',90164),(94,'Tübingen','Baden-Württemberg',91788),
+        (95,'Villingen-Schwenningen','Baden-Württemberg',84000),(96,'Ratingen','Nordrhein-Westfalen',89000),
+        (97,'Lünen','Nordrhein-Westfalen',86000),(98,'Velbert','Nordrhein-Westfalen',82000),
+        (99,'Minden','Nordrhein-Westfalen',82000),(100,'Konstanz','Baden-Württemberg',84000),
+    ]
+    seen_names = set()
+    for rank, name, state, pop in cities_100:
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        db.session.add(CityMarketEntry(rank=rank, name=name, state=state, population=pop))
+    db.session.commit()
+
+
+with app.app_context():
+    _seed_market()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5200)

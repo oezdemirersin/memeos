@@ -114,6 +114,19 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .badge-purple{background:rgba(139,92,246,.15);color:#a78bfa;}
 .badge-gray{background:rgba(100,116,139,.15);color:#94a3b8;}
 
+/* ── Markt ── */
+.markt-row{cursor:pointer;transition:background .15s;}
+.markt-row:hover td{background:rgba(255,255,255,.03)!important;}
+.markt-row.selected td{background:rgba(99,102,241,.08)!important;}
+.status-select{background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:3px 6px;font-size:12px;cursor:pointer;}
+.status-select:focus{outline:none;border-color:var(--accent);}
+
+/* ── Inspiration ── */
+.inspo-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s;}
+.inspo-card:hover{border-color:var(--border2);}
+.inspo-img{height:160px;background:var(--surface2);}
+.inspo-body{padding:10px;}
+
 /* ── Modals ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:none;align-items:center;justify-content:center;}
 .modal-overlay.open{display:flex;}
@@ -243,6 +256,16 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
       Fragebögen
     </button>
+    <button class="nav-item" onclick="showPage('markt')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+      Markt
+      <span class="nav-badge" id="nav-markt-badge" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('inspiration')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+      Inspiration
+      {% if inspo_counts.new > 0 %}<span class="nav-badge">{{ inspo_counts.new }}</span>{% endif %}
+    </button>
 
     <div class="nav-section">System</div>
     <button class="nav-item" onclick="showPage('todos')">
@@ -260,7 +283,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <span id="canva-status-text">Canva {{ 'verbunden' if canva_connected else 'getrennt' }}</span>
     </div>
     <div class="sidebar-status" style="margin-top:2px;">
-      <div class="dot {{ 'green' if stats.ai_cost_month < 5 else 'yellow' }}"></div>
+      <div class="dot {{ 'green' if ai_cost_month < 5 else 'yellow' }}"></div>
       <span>KI: €{{ "%.3f"|format(ai_cost_month) }} / Monat</span>
     </div>
     <button class="btn-logout" onclick="location.href='/logout'">Ausloggen</button>
@@ -286,6 +309,38 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="stat-card warn"><div class="stat-val" id="stat-review">{{ stats.review }}</div><div class="stat-label">Im Review</div></div>
     <div class="stat-card success"><div class="stat-val" id="stat-done">{{ stats.done }}</div><div class="stat-label">Freigegeben</div></div>
     <div class="stat-card"><div class="stat-val" id="stat-news">{{ stats.news }}</div><div class="stat-label">News bewertet</div></div>
+  </div>
+
+  <!-- City-Pages Grid -->
+  <div style="margin-bottom:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:600;color:var(--muted2);">MEINE STADTSEITEN</div>
+      <button class="btn btn-ghost btn-xs" onclick="showPage('cities')">Alle verwalten →</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;" id="city-cards-grid">
+      {% for city in cities %}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;" onclick="showPage('cities');selectCity({{ city.id }},'{{ city.name }}')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:{{ city.accent_color }};flex-shrink:0;"></div>
+          <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ city.name }}</div>
+        </div>
+        {% set kc = city.knowledge_count() %}
+        {% set rc = city.render_count() %}
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px;">
+            <span>Wiki</span><span>{{ kc }} Einträge</span>
+          </div>
+          <div style="height:3px;background:var(--surface3);border-radius:2px;">
+            <div style="height:100%;border-radius:2px;background:{% if kc >= 30 %}var(--success){% elif kc >= 10 %}var(--warning){% else %}var(--danger){% endif %};width:{% if kc >= 50 %}100{% else %}{{ [kc * 2, 100] | min }}{% endif %}%;"></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
+          <span>{{ rc }} Memes</span>
+          {% if city.instagram_handle %}<span style="color:var(--muted2);">{{ city.instagram_handle }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
 
   <div class="grid-2" style="gap:16px;">
@@ -685,7 +740,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">ContentOS Bridge</div>
       <div class="form-group">
         <label>ContentOS URL</label>
-        <input type="url" id="settings-content-os-url" placeholder="https://content-os-0rjo.onrender.com" value="{{ stats.get('content_os_url','') }}">
+        <input type="url" id="settings-content-os-url" placeholder="https://content-os-0rjo.onrender.com" value="{{ '' }}">
       </div>
       <button class="btn btn-primary btn-sm" onclick="saveSettings()">Speichern</button>
     </div>
@@ -704,7 +759,190 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- ─── MARKT ─── -->
+<div class="page" id="page-markt">
+  <div class="page-header">
+    <div class="page-title">SEITEN <span>MARKT</span></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:6px;">
+        <span class="badge badge-green">{{ market_summary.owned }} Besitzen wir</span>
+        <span class="badge badge-yellow">{{ market_summary.want }} Kaufen?</span>
+        <span class="badge badge-purple">{{ market_summary.found }} Gefunden</span>
+        <span class="badge badge-blue">{{ market_summary.in_contact }} Kontakt</span>
+      </div>
+      <input type="text" id="markt-search" placeholder="Stadt suchen…" oninput="filterMarkt()" style="width:180px;">
+      <select id="markt-status-filter" onchange="filterMarkt()" style="width:auto;">
+        <option value="">Alle Status</option>
+        <option value="none">Unmarkiert</option>
+        <option value="want_to_buy">Kaufen?</option>
+        <option value="found_pages">Seiten gefunden</option>
+        <option value="owned">Besitzen wir</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start;">
+    <!-- Städteliste -->
+    <div>
+      <div class="table-wrap">
+        <table id="markt-table">
+          <thead>
+            <tr>
+              <th style="width:40px;">#</th>
+              <th>Stadt</th>
+              <th>Bundesland</th>
+              <th>Einwohner</th>
+              <th style="width:160px;">Status</th>
+              <th>Seiten</th>
+              <th style="width:80px;"></th>
+            </tr>
+          </thead>
+          <tbody id="markt-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">Lade…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Detail-Panel -->
+    <div style="position:sticky;top:20px;">
+      <div class="card" id="markt-detail-panel">
+        <div style="text-align:center;padding:30px;color:var(--muted);font-size:13px;">
+          ← Stadt anklicken
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── INSPIRATION ─── -->
+<div class="page" id="page-inspiration">
+  <div class="page-header">
+    <div class="page-title">MEME <span>INSPIRATION</span></div>
+    <div style="display:flex;gap:8px;">
+      <select id="inspo-status" onchange="loadInspoPosts()">
+        <option value="new">Neu</option>
+        <option value="saved">Gespeichert</option>
+        <option value="used">Verwendet</option>
+        <option value="ignored">Ignoriert</option>
+        <option value="all">Alle</option>
+      </select>
+      <select id="inspo-source-filter" onchange="loadInspoPosts()">
+        <option value="">Alle Quellen</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start;">
+    <!-- Quellen Sidebar -->
+    <div style="position:sticky;top:20px;">
+      <div class="card" style="padding:16px;margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:10px;">SEITE BEOBACHTEN</div>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="inspo-new-source" placeholder="@username" style="flex:1;">
+          <button class="btn btn-primary btn-sm" onclick="addInspoSource()">+</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;">
+          QUELLEN (<span id="inspo-source-count">0</span>)
+        </div>
+        <div id="inspo-sources-list" style="max-height:400px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Posts Grid -->
+    <div>
+      <div id="inspo-posts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
+        <div class="empty"><p>Lade…</p></div>
+      </div>
+
+      <!-- Manuell hinzufügen -->
+      <div class="card" style="margin-top:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Post manuell hinzufügen</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Quelle</label>
+            <select id="inspo-manual-source"></select>
+          </div>
+          <div class="form-group">
+            <label>Bild-URL</label>
+            <input type="url" id="inspo-manual-url" placeholder="https://...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Caption / Beschreibung</label>
+          <textarea id="inspo-manual-caption" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Likes</label>
+            <input type="number" id="inspo-manual-likes">
+          </div>
+          <div class="form-group">
+            <label>Meme-Idee</label>
+            <input type="text" id="inspo-manual-idea" placeholder="Meme-Idee dazu…">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addInspoPostManual()">Post hinzufügen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main><!-- /main -->
+
+<!-- Markt: Page-Detail Modal -->
+<div class="modal-overlay" id="modal-markt-page">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">SEITE HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-markt-page')">×</button>
+    </div>
+    <input type="hidden" id="markt-page-entry-id">
+    <div class="form-row">
+      <div class="form-group"><label>Instagram URL</label><input type="url" id="mp-url" placeholder="https://instagram.com/stadtmemes"></div>
+      <div class="form-group"><label>Handle</label><input type="text" id="mp-handle" placeholder="@stadtmemes"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Follower</label><input type="number" id="mp-followers"></div>
+      <div class="form-group"><label>Preisvorstellung (€)</label><input type="number" id="mp-price"></div>
+    </div>
+    <div class="form-group">
+      <label>Kontakt-Status</label>
+      <select id="mp-status">
+        <option value="neu">Neu</option>
+        <option value="antwortet">Antwortet</option>
+        <option value="aktiv">Aktiv</option>
+        <option value="in_verhandlung">In Verhandlung</option>
+        <option value="inaktiv">Inaktiv</option>
+        <option value="antwortet_nicht">Antwortet nicht</option>
+        <option value="gekauft">Gekauft</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Notizen</label><textarea id="mp-notes" rows="2"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-markt-page')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveMarktPage()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Inspo Post Detail Modal -->
+<div class="modal-overlay" id="modal-inspo-post">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="inspo-modal-title">POST DETAIL</div>
+      <button class="modal-close" onclick="closeModal('modal-inspo-post')">×</button>
+    </div>
+    <div id="inspo-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-inspo-post')">Schließen</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ MODALS ══════════════════════════════════════════════════════════ -->
 
@@ -966,6 +1204,8 @@ function showPage(name) {
   if(name==='settings') loadUsers();
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
+  if(name==='markt') loadMarkt();
+  if(name==='inspiration') { loadInspoSources(); loadInspoPosts(); }
   history.replaceState(null,'','/?tab='+name);
 }
 
@@ -1671,6 +1911,270 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 
 // ── Auto-refresh stats every 30s ──
 setInterval(refreshStats, 30000);
+
+// ══════════════════════════════════════════
+// MARKT
+// ══════════════════════════════════════════
+let _marktData = [];
+let _marktSelectedId = null;
+
+async function loadMarkt() {
+  const data = await api('GET', '/api/market');
+  _marktData = data || [];
+  filterMarkt();
+}
+
+function filterMarkt() {
+  const q = (document.getElementById('markt-search')?.value||'').toLowerCase();
+  const s = document.getElementById('markt-status-filter')?.value||'';
+  const filtered = _marktData.filter(c =>
+    (c.name.toLowerCase().includes(q) || (c.state||'').toLowerCase().includes(q)) &&
+    (!s || c.status === s)
+  );
+  renderMarktTable(filtered);
+}
+
+const MARKT_STATUS_LABELS = {
+  none:       { label:'Keine',           cls:'badge-gray'   },
+  owned:      { label:'Besitzen wir',    cls:'badge-green'  },
+  want_to_buy:{ label:'Kaufen?',         cls:'badge-yellow' },
+  found_pages:{ label:'Seiten gefunden', cls:'badge-purple' },
+};
+
+const CONTACT_STATUS_LABELS = {
+  neu:            { label:'Neu',          cls:'badge-gray'   },
+  antwortet:      { label:'Antwortet',    cls:'badge-green'  },
+  aktiv:          { label:'Aktiv',        cls:'badge-green'  },
+  in_verhandlung: { label:'Verhandlung',  cls:'badge-yellow' },
+  inaktiv:        { label:'Inaktiv',      cls:'badge-gray'   },
+  antwortet_nicht:{ label:'Kein Antwort', cls:'badge-red'    },
+  gekauft:        { label:'Gekauft',      cls:'badge-blue'   },
+  abgelehnt:      { label:'Abgelehnt',    cls:'badge-red'    },
+};
+
+function renderMarktTable(data) {
+  const tbody = document.getElementById('markt-tbody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">Keine Städte gefunden</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(c => {
+    return `<tr class="markt-row${_marktSelectedId===c.id?' selected':''}" onclick="selectMarktCity(${c.id})">
+      <td style="color:var(--muted);font-size:11px;">${c.rank}</td>
+      <td><strong>${c.name}</strong></td>
+      <td style="color:var(--muted);font-size:12px;">${c.state||''}</td>
+      <td style="font-size:12px;">${c.population?(c.population/1000).toFixed(0)+'k':'—'}</td>
+      <td>
+        <select class="status-select" onchange="updateMarktStatus(${c.id},this.value)" onclick="event.stopPropagation()">
+          ${Object.entries(MARKT_STATUS_LABELS).map(([v,s])=>`<option value="${v}"${c.status===v?' selected':''}>${s.label}</option>`).join('')}
+        </select>
+      </td>
+      <td><span style="font-size:12px;color:${(c.buyable_count||0)>0?'var(--accent)':'var(--muted)'};">${c.buyable_count||0} Seiten</span></td>
+      <td><button class="btn btn-xs btn-primary" onclick="event.stopPropagation();selectMarktCity(${c.id})">Details</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function selectMarktCity(id) {
+  _marktSelectedId = id;
+  const city = _marktData.find(c => c.id === id);
+  if (!city) return;
+  renderMarktTable(_marktData.filter(c=>{
+    const q=(document.getElementById('markt-search')?.value||'').toLowerCase();
+    const s=document.getElementById('markt-status-filter')?.value||'';
+    return(c.name.toLowerCase().includes(q)||(c.state||'').toLowerCase().includes(q))&&(!s||c.status===s);
+  }));
+  const pages = await api('GET', `/api/market/${id}/pages`);
+  const panel = document.getElementById('markt-detail-panel');
+  panel.innerHTML = `
+    <div style="padding:16px;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">${city.name}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${city.state||''} · ${city.population?(city.population/1000).toFixed(0)+'k Einwohner':''} · Rang #${city.rank}</div>
+      <label style="font-size:11px;color:var(--muted2);">STATUS</label>
+      <select class="status-select" style="width:100%;margin-bottom:12px;" onchange="updateMarktStatus(${city.id},this.value)">
+        ${Object.entries(MARKT_STATUS_LABELS).map(([v,s])=>`<option value="${v}"${city.status===v?' selected':''}>${s.label}</option>`).join('')}
+      </select>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted2);">SEITEN (${pages.length})</div>
+        <button class="btn btn-xs btn-primary" onclick="openAddPageModal(${city.id})">+ Seite</button>
+      </div>
+      <div id="detail-pages-list">
+        ${pages.length===0?'<div style="color:var(--muted);font-size:12px;padding:10px 0;">Noch keine Seiten</div>':pages.map(p=>renderPageCard(p)).join('')}
+      </div>
+    </div>`;
+}
+
+function renderPageCard(p) {
+  return `<div class="page-card" id="page-card-${p.id}" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
+      <div>
+        <div style="font-size:13px;font-weight:600;">${p.handle||p.instagram_url}</div>
+        ${p.followers?`<div style="font-size:11px;color:var(--muted);">${(p.followers/1000).toFixed(1)}k Follower</div>`:''}
+        ${p.price_ask?`<div style="font-size:11px;color:var(--accent);">~${p.price_ask}€</div>`:''}
+      </div>
+      <button class="btn btn-xs" style="background:none;color:var(--muted);padding:0 4px;" onclick="deleteMarktPage(${p.id})">✕</button>
+    </div>
+    ${p.contact_notes?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">${p.contact_notes}</div>`:''}
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+      ${Object.entries(CONTACT_STATUS_LABELS).map(([v,s])=>
+        `<button class="btn btn-xs ${p.contact_status===v?'btn-primary':'btn-ghost'}" onclick="updateContactStatus(${p.id},'${v}')">${s.label}</button>`
+      ).join('')}
+    </div>
+    ${p.instagram_url?`<a href="${p.instagram_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:6px;">Link öffnen ↗</a>`:''}
+  </div>`;
+}
+
+async function updateMarktStatus(id, status) {
+  await api('PUT', `/api/market/${id}/status`, { status });
+  const city = _marktData.find(c => c.id===id);
+  if (city) city.status = status;
+  toast('Status aktualisiert!', 'success');
+}
+
+function openAddPageModal(entryId) {
+  document.getElementById('markt-page-entry-id').value = entryId;
+  ['mp-url','mp-handle','mp-notes'].forEach(id=>document.getElementById(id).value='');
+  ['mp-followers','mp-price'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mp-status').value='neu';
+  openModal('modal-markt-page');
+}
+
+async function saveMarktPage() {
+  const entryId = document.getElementById('markt-page-entry-id').value;
+  await api('POST', `/api/market/${entryId}/pages`, {
+    instagram_url: document.getElementById('mp-url').value,
+    handle:        document.getElementById('mp-handle').value,
+    followers:     parseInt(document.getElementById('mp-followers').value)||null,
+    price_ask:     parseFloat(document.getElementById('mp-price').value)||null,
+    contact_status: document.getElementById('mp-status').value,
+    contact_notes: document.getElementById('mp-notes').value,
+  });
+  toast('Seite gespeichert!', 'success');
+  closeModal('modal-markt-page');
+  selectMarktCity(parseInt(entryId));
+}
+
+async function updateContactStatus(pageId, status) {
+  await api('PUT', `/api/market/pages/${pageId}`, { contact_status: status });
+  toast('Kontaktstatus aktualisiert!', 'success');
+  selectMarktCity(_marktSelectedId);
+}
+
+async function deleteMarktPage(pageId) {
+  if (!confirm('Seite löschen?')) return;
+  await api('DELETE', `/api/market/pages/${pageId}`);
+  toast('Seite gelöscht', 'success');
+  selectMarktCity(_marktSelectedId);
+}
+
+// ══════════════════════════════════════════
+// INSPIRATION
+// ══════════════════════════════════════════
+async function loadInspoSources() {
+  const sources = await api('GET', '/api/inspiration/sources');
+  const list    = document.getElementById('inspo-sources-list');
+  const countEl = document.getElementById('inspo-source-count');
+  const filterSel = document.getElementById('inspo-source-filter');
+  const manualSel = document.getElementById('inspo-manual-source');
+  if (!list) return;
+
+  countEl.textContent = sources.length;
+  const opts = sources.map(s=>`<option value="${s.id}">${s.username}</option>`).join('');
+  filterSel.innerHTML = '<option value="">Alle Quellen</option>' + opts;
+  manualSel.innerHTML = '<option value="">—</option>' + opts;
+
+  list.innerHTML = sources.length ? sources.map(s=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:600;">${s.username}</div>
+        <div style="font-size:11px;color:var(--muted);">${s.post_count||0} Posts</div>
+      </div>
+      <button class="btn btn-xs btn-ghost" onclick="deleteInspoSource(${s.id})">✕</button>
+    </div>`).join('') :
+    '<div style="padding:16px;color:var(--muted);font-size:12px;">Noch keine Quellen</div>';
+}
+
+async function addInspoSource() {
+  const input = document.getElementById('inspo-new-source');
+  const username = input.value.trim().replace(/^@/,'');
+  if (!username) return;
+  await api('POST', '/api/inspiration/sources', { username:'@'+username });
+  input.value = '';
+  toast('Quelle hinzugefügt!', 'success');
+  loadInspoSources();
+}
+
+async function deleteInspoSource(id) {
+  if (!confirm('Quelle und alle Posts löschen?')) return;
+  await api('DELETE', `/api/inspiration/sources/${id}`);
+  toast('Quelle gelöscht', 'success');
+  loadInspoSources();
+  loadInspoPosts();
+}
+
+async function loadInspoPosts() {
+  const status   = document.getElementById('inspo-status')?.value||'new';
+  const sourceId = document.getElementById('inspo-source-filter')?.value||'';
+  let url = `/api/inspiration/posts?status=${status}`;
+  if (sourceId) url += `&source_id=${sourceId}`;
+  const posts = await api('GET', url);
+  const grid  = document.getElementById('inspo-posts-grid');
+  if (!grid) return;
+
+  grid.innerHTML = posts.length ? posts.map(p=>`
+    <div class="inspo-card" id="inspo-card-${p.id}">
+      ${p.image_url
+        ?`<div class="inspo-img" style="background-image:url('${p.image_url}');background-size:cover;background-position:center;"></div>`
+        :`<div class="inspo-img" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Kein Bild</div>`}
+      <div class="inspo-body">
+        <div style="font-size:11px;color:var(--accent);margin-bottom:4px;">${p.username||'Manuell'}</div>
+        ${p.caption?`<div style="font-size:12px;color:var(--muted2);margin-bottom:6px;max-height:48px;overflow:hidden;">${p.caption.substring(0,100)}${p.caption.length>100?'…':''}</div>`:''}
+        ${p.like_count?`<div style="font-size:11px;color:var(--muted);">❤ ${p.like_count.toLocaleString()}</div>`:''}
+        ${p.meme_idea?`<div style="font-size:11px;color:var(--fg);background:var(--surface2);border-radius:6px;padding:6px;margin-top:6px;">💡 ${p.meme_idea}</div>`:''}
+        <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+          ${!p.is_saved?`<button class="btn btn-xs btn-primary" onclick="saveInspoPost(${p.id})">Speichern</button>`:''}
+          ${p.status!=='ignored'?`<button class="btn btn-xs btn-ghost" onclick="ignoreInspoPost(${p.id})">Ignorieren</button>`:''}
+          <button class="btn btn-xs btn-ghost" onclick="generateMemeIdea(${p.id})">💡 KI-Idee</button>
+        </div>
+      </div>
+    </div>`).join('') :
+    '<div class="empty" style="grid-column:1/-1"><p>Keine Posts in dieser Kategorie</p></div>';
+}
+
+async function saveInspoPost(id) {
+  await api('PUT', `/api/inspiration/posts/${id}`, { is_saved:true, status:'saved' });
+  toast('Gespeichert!', 'success');
+  loadInspoPosts();
+}
+
+async function ignoreInspoPost(id) {
+  await api('PUT', `/api/inspiration/posts/${id}`, { status:'ignored' });
+  loadInspoPosts();
+}
+
+async function generateMemeIdea(id) {
+  toast('Generiere KI-Idee…', 'info');
+  const r = await api('POST', `/api/inspiration/posts/${id}/generate`);
+  if (r.meme_idea) { toast('Idee generiert!', 'success'); loadInspoPosts(); }
+  else toast(r.error||'Fehler', 'error');
+}
+
+async function addInspoPostManual() {
+  const sourceId = document.getElementById('inspo-manual-source').value;
+  if (!sourceId) { toast('Bitte erst eine Quelle auswählen', 'error'); return; }
+  const r = await api('POST', '/api/inspiration/posts/add', {
+    source_id:  parseInt(sourceId),
+    image_url:  document.getElementById('inspo-manual-url').value,
+    caption:    document.getElementById('inspo-manual-caption').value,
+    like_count: parseInt(document.getElementById('inspo-manual-likes').value)||null,
+    meme_idea:  document.getElementById('inspo-manual-idea').value,
+  });
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Post hinzugefügt!', 'success');
+  ['inspo-manual-url','inspo-manual-caption','inspo-manual-likes','inspo-manual-idea'].forEach(id=>document.getElementById(id).value='');
+  loadInspoPosts();
+  loadInspoSources();
+}
 </script>
 </body>
 </html>
