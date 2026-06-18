@@ -114,6 +114,21 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .badge-purple{background:rgba(139,92,246,.15);color:#a78bfa;}
 .badge-gray{background:rgba(100,116,139,.15);color:#94a3b8;}
 
+/* ── Vorrat ── */
+.vorrat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s;}
+.vorrat-card:hover{border-color:var(--border2);}
+.vorrat-img{height:150px;background:var(--surface2);position:relative;overflow:hidden;}
+.vorrat-img img{width:100%;height:100%;object-fit:cover;}
+.vorrat-img-placeholder{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;height:100%;}
+.vorrat-body{padding:10px;flex:1;display:flex;flex-direction:column;gap:6px;}
+.vorrat-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;}
+/* ── Kalender ── */
+.kal-day-header{text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0;letter-spacing:.5px;}
+.kal-cell{background:var(--surface);border:1px solid var(--border);border-radius:8px;min-height:100px;padding:6px;font-size:11px;}
+.kal-cell.today{border-color:var(--accent);background:rgba(99,102,241,.06);}
+.kal-cell.other-month{opacity:.4;}
+.kal-date{font-weight:600;margin-bottom:4px;color:var(--muted2);}
+.kal-post-chip{background:var(--accent);color:#fff;border-radius:4px;padding:2px 6px;margin-bottom:3px;font-size:10px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 /* ── Markt ── */
 .markt-row{cursor:pointer;transition:background .15s;}
 .markt-row:hover td{background:rgba(255,255,255,.03)!important;}
@@ -256,10 +271,23 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
       Fragebögen
     </button>
+    <button class="nav-item" onclick="showPage('vorrat')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      Vorrat
+      {% if vorrat_counts.bereit > 0 %}<span class="nav-badge">{{ vorrat_counts.bereit }}</span>{% endif %}
+    </button>
+    <button class="nav-item" onclick="showPage('kalender')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      Kalender
+      {% if vorrat_counts.geplant > 0 %}<span class="nav-badge">{{ vorrat_counts.geplant }}</span>{% endif %}
+    </button>
+    <button class="nav-item" onclick="showPage('performance')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+      Performance
+    </button>
     <button class="nav-item" onclick="showPage('markt')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
       Markt
-      <span class="nav-badge" id="nav-markt-badge" style="display:none"></span>
     </button>
     <button class="nav-item" onclick="showPage('inspiration')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
@@ -759,6 +787,132 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- ─── VORRAT ─── -->
+<div class="page" id="page-vorrat">
+  <div class="page-header">
+    <div class="page-title">CONTENT <span>VORRAT</span></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="vorrat-status-filter" onchange="loadVorrat()">
+        <option value="">Alle Status</option>
+        <option value="entwurf">Entwurf</option>
+        <option value="bereit">Bereit</option>
+        <option value="geplant">Geplant</option>
+        <option value="veroeffentlicht">Veröffentlicht</option>
+        <option value="archiviert">Archiviert</option>
+      </select>
+      <select id="vorrat-city-filter" onchange="loadVorrat()">
+        <option value="">Alle Städte</option>
+        {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+      <select id="vorrat-type-filter" onchange="loadVorrat()">
+        <option value="">Alle Typen</option>
+        <option value="feed">Feed</option>
+        <option value="reel">Reel</option>
+        <option value="story">Story</option>
+        <option value="carousel">Carousel</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="openVorratCreateModal()">+ Post hinzufügen</button>
+    </div>
+  </div>
+
+  <!-- Status-Übersicht -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+    <div class="card" style="padding:14px;cursor:pointer;" onclick="setVorratFilter('entwurf')">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">ENTWURF</div>
+      <div style="font-size:24px;font-weight:700;" id="vorrat-count-entwurf">—</div>
+    </div>
+    <div class="card" style="padding:14px;cursor:pointer;" onclick="setVorratFilter('bereit')">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">BEREIT</div>
+      <div style="font-size:24px;font-weight:700;color:var(--accent);" id="vorrat-count-bereit">—</div>
+    </div>
+    <div class="card" style="padding:14px;cursor:pointer;" onclick="setVorratFilter('geplant')">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">GEPLANT</div>
+      <div style="font-size:24px;font-weight:700;color:#fbbf24;" id="vorrat-count-geplant">—</div>
+    </div>
+    <div class="card" style="padding:14px;cursor:pointer;" onclick="setVorratFilter('veroeffentlicht')">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">VERÖFFENTLICHT</div>
+      <div style="font-size:24px;font-weight:700;color:#4ade80;" id="vorrat-count-pub">—</div>
+    </div>
+  </div>
+
+  <div id="vorrat-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">
+    <div class="empty"><p>Lade…</p></div>
+  </div>
+</div>
+
+<!-- ─── KALENDER ─── -->
+<div class="page" id="page-kalender">
+  <div class="page-header">
+    <div class="page-title">POSTING <span>KALENDER</span></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-ghost btn-sm" onclick="kalenderNav(-1)">← Zurück</button>
+      <span id="kalender-title" style="font-size:13px;font-weight:600;min-width:160px;text-align:center;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="kalenderNav(1)">Weiter →</button>
+      <button class="btn btn-ghost btn-sm" onclick="kalenderGoToday()">Heute</button>
+    </div>
+  </div>
+
+  <div id="kalender-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">
+    <!-- Wochentage Header -->
+    <div class="kal-day-header">Mo</div>
+    <div class="kal-day-header">Di</div>
+    <div class="kal-day-header">Mi</div>
+    <div class="kal-day-header">Do</div>
+    <div class="kal-day-header">Fr</div>
+    <div class="kal-day-header">Sa</div>
+    <div class="kal-day-header">So</div>
+  </div>
+</div>
+
+<!-- ─── PERFORMANCE ─── -->
+<div class="page" id="page-performance">
+  <div class="page-header">
+    <div class="page-title">PERFORMANCE <span>TRACKING</span></div>
+    <button class="btn btn-ghost btn-sm" onclick="loadPerformance()">↻ Aktualisieren</button>
+  </div>
+
+  <!-- KPI-Row -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+    <div class="card" style="padding:16px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">VERÖFFENTLICHTE POSTS</div>
+      <div style="font-size:28px;font-weight:700;" id="perf-total-posts">—</div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">GESAMT LIKES</div>
+      <div style="font-size:28px;font-weight:700;color:var(--accent);" id="perf-total-likes">—</div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">GESAMT SAVES</div>
+      <div style="font-size:28px;font-weight:700;color:#fbbf24;" id="perf-total-saves">—</div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Ø ENGAGEMENT</div>
+      <div style="font-size:28px;font-weight:700;color:#4ade80;" id="perf-avg-eng">—</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <!-- Top Posts -->
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px;">TOP POSTS</div>
+      <div id="perf-top-posts"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <!-- Stadt-Stats -->
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:14px;">NACH STADT</div>
+        <div id="perf-city-stats"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
+      </div>
+      <!-- Template-Stats -->
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:14px;">NACH TEMPLATE</div>
+        <div id="perf-tmpl-stats"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ─── MARKT ─── -->
 <div class="page" id="page-markt">
   <div class="page-header">
@@ -892,6 +1046,100 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 </main><!-- /main -->
+
+<!-- Vorrat: Erstellen Modal -->
+<div class="modal-overlay" id="modal-vorrat-create">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="vorrat-modal-title">POST HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-vorrat-create')">×</button>
+    </div>
+    <input type="hidden" id="vorrat-edit-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Stadt *</label>
+        <select id="vorrat-city">
+          {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Post-Typ</label>
+        <select id="vorrat-post-type">
+          <option value="feed">Feed</option>
+          <option value="reel">Reel</option>
+          <option value="story">Story</option>
+          <option value="carousel">Carousel</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Titel (intern)</label>
+      <input type="text" id="vorrat-title" placeholder="z.B. Darmstadt Hauptbahnhof Meme">
+    </div>
+    <div class="form-group">
+      <label>Bild-URL</label>
+      <input type="url" id="vorrat-image-url" placeholder="https://…">
+    </div>
+    <div class="form-group">
+      <label>Caption</label>
+      <textarea id="vorrat-caption" rows="3" placeholder="Instagram Caption…"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Hashtags</label>
+      <input type="text" id="vorrat-hashtags" placeholder="#stadtmemes #darmstadt…">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Status</label>
+        <select id="vorrat-status">
+          <option value="entwurf">Entwurf</option>
+          <option value="bereit">Bereit</option>
+          <option value="geplant">Geplant</option>
+          <option value="veroeffentlicht">Veröffentlicht</option>
+          <option value="archiviert">Archiviert</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Planen für</label>
+        <input type="datetime-local" id="vorrat-scheduled-at">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notizen</label>
+      <textarea id="vorrat-notes" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vorrat-create')">Abbrechen</button>
+      <button class="btn btn-ghost" id="vorrat-caption-btn" onclick="generateVorratCaption()" style="display:none">💡 KI-Caption</button>
+      <button class="btn btn-primary" onclick="saveVorratPost()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Vorrat: Performance Modal -->
+<div class="modal-overlay" id="modal-vorrat-perf">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">PERFORMANCE EINTRAGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-vorrat-perf')">×</button>
+    </div>
+    <input type="hidden" id="perf-post-id">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px;" id="perf-post-title"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Likes</label><input type="number" id="perf-likes"></div>
+      <div class="form-group"><label>Comments</label><input type="number" id="perf-comments"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Saves</label><input type="number" id="perf-saves"></div>
+      <div class="form-group"><label>Reach</label><input type="number" id="perf-reach"></div>
+    </div>
+    <div class="form-group"><label>Impressions</label><input type="number" id="perf-impressions"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vorrat-perf')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="savePerfData()">Speichern</button>
+    </div>
+  </div>
+</div>
 
 <!-- Markt: Page-Detail Modal -->
 <div class="modal-overlay" id="modal-markt-page">
@@ -1206,6 +1454,9 @@ function showPage(name) {
   if(name==='bulk') updateBulkSelection();
   if(name==='markt') loadMarkt();
   if(name==='inspiration') { loadInspoSources(); loadInspoPosts(); }
+  if(name==='vorrat') loadVorrat();
+  if(name==='kalender') loadKalender();
+  if(name==='performance') loadPerformance();
   history.replaceState(null,'','/?tab='+name);
 }
 
@@ -1911,6 +2162,299 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 
 // ── Auto-refresh stats every 30s ──
 setInterval(refreshStats, 30000);
+
+// ══════════════════════════════════════════
+// VORRAT
+// ══════════════════════════════════════════
+const VORRAT_STATUS = {
+  entwurf:        { label:'Entwurf',        color:'#64748b' },
+  bereit:         { label:'Bereit',          color:'#6366f1' },
+  geplant:        { label:'Geplant',         color:'#f59e0b' },
+  veroeffentlicht:{ label:'Veröffentlicht',  color:'#22c55e' },
+  archiviert:     { label:'Archiviert',      color:'#374151' },
+};
+
+let _vorratData = [];
+
+async function loadVorrat() {
+  const status    = document.getElementById('vorrat-status-filter')?.value || '';
+  const cityId    = document.getElementById('vorrat-city-filter')?.value || '';
+  const postType  = document.getElementById('vorrat-type-filter')?.value || '';
+  let url = '/api/vorrat?';
+  if (status)   url += `status=${status}&`;
+  if (cityId)   url += `city_id=${cityId}&`;
+  if (postType) url += `post_type=${postType}&`;
+  _vorratData = await api('GET', url);
+  renderVorratGrid(_vorratData);
+  updateVorratCounts(_vorratData);
+}
+
+function updateVorratCounts(data) {
+  const counts = { entwurf:0, bereit:0, geplant:0, veroeffentlicht:0 };
+  data.forEach(p => { if (p.status in counts) counts[p.status]++; });
+  document.getElementById('vorrat-count-entwurf').textContent = counts.entwurf;
+  document.getElementById('vorrat-count-bereit').textContent  = counts.bereit;
+  document.getElementById('vorrat-count-geplant').textContent = counts.geplant;
+  document.getElementById('vorrat-count-pub').textContent     = counts.veroeffentlicht;
+}
+
+function setVorratFilter(status) {
+  document.getElementById('vorrat-status-filter').value = status;
+  loadVorrat();
+}
+
+function renderVorratGrid(data) {
+  const grid = document.getElementById('vorrat-grid');
+  if (!data.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><p>Keine Posts in diesem Filter</p></div>';
+    return;
+  }
+  grid.innerHTML = data.map(p => {
+    const st = VORRAT_STATUS[p.status] || VORRAT_STATUS.entwurf;
+    const dot = `<span class="vorrat-status-dot" style="background:${st.color}"></span>`;
+    const img = p.image_url
+      ? `<img src="${p.image_url}" onerror="this.parentElement.innerHTML='<div class=\\'vorrat-img-placeholder\\'>Kein Bild</div>'">`
+      : `<div class="vorrat-img-placeholder">Kein Bild</div>`;
+    return `<div class="vorrat-card">
+      <div class="vorrat-img">${img}
+        <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.post_type}</div>
+        <div style="position:absolute;top:6px;left:6px;background:${p.city_color||'#3b82f6'};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.city_name}</div>
+      </div>
+      <div class="vorrat-body">
+        <div style="font-size:12px;font-weight:600;">${p.title || p.city_name + ' Meme'}</div>
+        ${p.caption ? `<div style="font-size:11px;color:var(--muted2);overflow:hidden;max-height:32px;">${p.caption.substring(0,80)}${p.caption.length>80?'…':''}</div>` : ''}
+        ${p.scheduled_at ? `<div style="font-size:11px;color:#fbbf24;">📅 ${new Date(p.scheduled_at).toLocaleDateString('de-DE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        ${p.engagement_rate ? `<div style="font-size:11px;color:#4ade80;">❤ ${p.perf_likes||0} · 💾 ${p.perf_saves||0} · ${p.engagement_rate}% ER</div>` : ''}
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          ${dot}<span style="font-size:11px;color:${st.color};">${st.label}</span>
+          <div style="flex:1;"></div>
+          <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})">✏</button>
+          <button class="btn btn-xs btn-ghost" onclick="openPerfModal(${p.id},'${(p.title||p.city_name).replace(/'/g,"\\'")}')">📊</button>
+          <button class="btn btn-xs btn-ghost" onclick="deleteVorratPost(${p.id})" style="color:var(--muted)">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openVorratCreateModal() {
+  document.getElementById('vorrat-modal-title').textContent = 'POST HINZUFÜGEN';
+  document.getElementById('vorrat-edit-id').value = '';
+  document.getElementById('vorrat-title').value = '';
+  document.getElementById('vorrat-image-url').value = '';
+  document.getElementById('vorrat-caption').value = '';
+  document.getElementById('vorrat-hashtags').value = '';
+  document.getElementById('vorrat-status').value = 'entwurf';
+  document.getElementById('vorrat-scheduled-at').value = '';
+  document.getElementById('vorrat-notes').value = '';
+  document.getElementById('vorrat-caption-btn').style.display = 'none';
+  openModal('modal-vorrat-create');
+}
+
+async function openVorratEdit(id) {
+  const p = _vorratData.find(x => x.id === id) || await api('GET', `/api/vorrat/${id}`);
+  document.getElementById('vorrat-modal-title').textContent = 'POST BEARBEITEN';
+  document.getElementById('vorrat-edit-id').value = id;
+  document.getElementById('vorrat-city').value   = p.city_id;
+  document.getElementById('vorrat-title').value  = p.title || '';
+  document.getElementById('vorrat-image-url').value = p.image_url || '';
+  document.getElementById('vorrat-caption').value   = p.caption || '';
+  document.getElementById('vorrat-hashtags').value  = p.hashtags || '';
+  document.getElementById('vorrat-post-type').value = p.post_type || 'feed';
+  document.getElementById('vorrat-status').value    = p.status || 'entwurf';
+  document.getElementById('vorrat-notes').value     = p.notes || '';
+  if (p.scheduled_at) {
+    document.getElementById('vorrat-scheduled-at').value = p.scheduled_at.substring(0,16);
+  }
+  document.getElementById('vorrat-caption-btn').style.display = 'inline-flex';
+  openModal('modal-vorrat-create');
+}
+
+async function saveVorratPost() {
+  const editId = document.getElementById('vorrat-edit-id').value;
+  const scheduled = document.getElementById('vorrat-scheduled-at').value;
+  const data = {
+    city_id:      parseInt(document.getElementById('vorrat-city').value),
+    title:        document.getElementById('vorrat-title').value,
+    image_url:    document.getElementById('vorrat-image-url').value,
+    caption:      document.getElementById('vorrat-caption').value,
+    hashtags:     document.getElementById('vorrat-hashtags').value,
+    post_type:    document.getElementById('vorrat-post-type').value,
+    status:       document.getElementById('vorrat-status').value,
+    notes:        document.getElementById('vorrat-notes').value,
+    scheduled_at: scheduled || null,
+  };
+  if (editId) {
+    await api('PUT', `/api/vorrat/${editId}`, data);
+    toast('Aktualisiert!', 'success');
+  } else {
+    await api('POST', '/api/vorrat', data);
+    toast('Post erstellt!', 'success');
+  }
+  closeModal('modal-vorrat-create');
+  loadVorrat();
+}
+
+async function deleteVorratPost(id) {
+  if (!confirm('Post löschen?')) return;
+  await api('DELETE', `/api/vorrat/${id}`);
+  toast('Gelöscht', 'success');
+  loadVorrat();
+}
+
+async function generateVorratCaption() {
+  const editId = document.getElementById('vorrat-edit-id').value;
+  if (!editId) { toast('Erst speichern, dann KI-Caption generieren', 'error'); return; }
+  toast('Generiere Caption…', 'info');
+  const r = await api('POST', `/api/vorrat/${editId}/caption`);
+  if (r.caption) {
+    document.getElementById('vorrat-caption').value  = r.caption;
+    document.getElementById('vorrat-hashtags').value = r.hashtags || '';
+    toast('Caption generiert!', 'success');
+  } else toast(r.error || 'Fehler', 'error');
+}
+
+function openPerfModal(id, title) {
+  document.getElementById('perf-post-id').value = id;
+  document.getElementById('perf-post-title').textContent = title;
+  const p = _vorratData.find(x => x.id === id);
+  if (p) {
+    document.getElementById('perf-likes').value       = p.perf_likes || '';
+    document.getElementById('perf-comments').value    = p.perf_comments || '';
+    document.getElementById('perf-saves').value       = p.perf_saves || '';
+    document.getElementById('perf-reach').value       = p.perf_reach || '';
+    document.getElementById('perf-impressions').value = p.perf_impressions || '';
+  }
+  openModal('modal-vorrat-perf');
+}
+
+async function savePerfData() {
+  const id = document.getElementById('perf-post-id').value;
+  await api('PUT', `/api/vorrat/${id}`, {
+    status:           'veroeffentlicht',
+    perf_likes:       parseInt(document.getElementById('perf-likes').value)||null,
+    perf_comments:    parseInt(document.getElementById('perf-comments').value)||null,
+    perf_saves:       parseInt(document.getElementById('perf-saves').value)||null,
+    perf_reach:       parseInt(document.getElementById('perf-reach').value)||null,
+    perf_impressions: parseInt(document.getElementById('perf-impressions').value)||null,
+  });
+  toast('Performance gespeichert!', 'success');
+  closeModal('modal-vorrat-perf');
+  loadVorrat();
+}
+
+// ══════════════════════════════════════════
+// KALENDER
+// ══════════════════════════════════════════
+let _kalYear  = new Date().getFullYear();
+let _kalMonth = new Date().getMonth(); // 0-based
+
+async function loadKalender() {
+  const from = new Date(_kalYear, _kalMonth, 1);
+  const to   = new Date(_kalYear, _kalMonth + 1, 1);
+  const fromStr = from.toISOString().substring(0,10);
+  const toStr   = to.toISOString().substring(0,10);
+  document.getElementById('kalender-title').textContent =
+    from.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const posts = await api('GET', `/api/kalender?from=${fromStr}&to=${toStr}`);
+  renderKalender(posts, from);
+}
+
+function kalenderNav(dir) { _kalMonth += dir; if(_kalMonth>11){_kalMonth=0;_kalYear++;}if(_kalMonth<0){_kalMonth=11;_kalYear--;} loadKalender(); }
+function kalenderGoToday() { _kalYear=new Date().getFullYear(); _kalMonth=new Date().getMonth(); loadKalender(); }
+
+function renderKalender(posts, monthStart) {
+  const grid   = document.getElementById('kalender-grid');
+  const today  = new Date(); today.setHours(0,0,0,0);
+  const year   = monthStart.getFullYear();
+  const month  = monthStart.getMonth();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  let startDow = monthStart.getDay(); if(startDow===0) startDow=7; // Mon=1
+
+  const postsByDay = {};
+  posts.forEach(p => {
+    const d = new Date(p.scheduled_at).getDate();
+    (postsByDay[d] = postsByDay[d] || []).push(p);
+  });
+
+  const headers = ['Mo','Di','Mi','Do','Fr','Sa','So'].map(d =>
+    `<div class="kal-day-header">${d}</div>`).join('');
+
+  let cells = '';
+  // Empty cells before month start (Mon-based)
+  for (let i=1; i<startDow; i++) cells += '<div class="kal-cell other-month"></div>';
+
+  for (let d=1; d<=daysInMonth; d++) {
+    const dt = new Date(year, month, d); dt.setHours(0,0,0,0);
+    const isToday = dt.getTime() === today.getTime();
+    const dayPosts = postsByDay[d] || [];
+    const chips = dayPosts.map(p =>
+      `<div class="kal-post-chip" style="background:${p.city_color||'#6366f1'}" onclick="openVorratEdit(${p.id})" title="${p.city_name}: ${p.title||'Meme'}">${p.city_name}</div>`
+    ).join('');
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}T10:00`;
+    cells += `<div class="kal-cell${isToday?' today':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span class="kal-date" style="${isToday?'color:var(--accent);':''}">${d}</span>
+        <button class="btn btn-xs" style="background:none;color:var(--muted);padding:0 3px;font-size:14px;" onclick="quickAddKalender('${dateStr}')">+</button>
+      </div>
+      ${chips}
+    </div>`;
+  }
+
+  grid.innerHTML = headers + cells;
+}
+
+function quickAddKalender(dateStr) {
+  openVorratCreateModal();
+  document.getElementById('vorrat-scheduled-at').value = dateStr;
+  document.getElementById('vorrat-status').value = 'geplant';
+}
+
+// ══════════════════════════════════════════
+// PERFORMANCE
+// ══════════════════════════════════════════
+async function loadPerformance() {
+  const data = await api('GET', '/api/performance');
+  document.getElementById('perf-total-posts').textContent = data.total_posts || 0;
+  document.getElementById('perf-total-likes').textContent = (data.total_likes||0).toLocaleString('de-DE');
+  document.getElementById('perf-total-saves').textContent = (data.total_saves||0).toLocaleString('de-DE');
+  document.getElementById('perf-avg-eng').textContent = (data.avg_engagement||0) + '%';
+
+  const topEl = document.getElementById('perf-top-posts');
+  topEl.innerHTML = data.top_posts.length ? data.top_posts.map(p => `
+    <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      ${p.image_url ? `<img src="${p.image_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+        `<div style="width:44px;height:44px;background:var(--surface2);border-radius:6px;flex-shrink:0;"></div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${p.title||p.city_name}</div>
+        <div style="font-size:11px;color:var(--muted);">${p.city_name} · ${p.post_type}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:13px;font-weight:700;color:var(--accent);">❤ ${(p.perf_likes||0).toLocaleString()}</div>
+        ${p.engagement_rate ? `<div style="font-size:10px;color:var(--muted);">${p.engagement_rate}% ER</div>` : ''}
+      </div>
+    </div>`).join('') :
+    '<div class="empty" style="padding:20px;"><p>Noch keine Daten — Performance eintragen im Vorrat-Tab</p></div>';
+
+  const cityEl = document.getElementById('perf-city-stats');
+  cityEl.innerHTML = data.city_stats.length ? data.city_stats.slice(0,10).map(s => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="width:10px;height:10px;border-radius:50%;background:${s.city_color};flex-shrink:0;"></div>
+      <div style="flex:1;font-size:12px;font-weight:600;">${s.city_name}</div>
+      <div style="font-size:11px;color:var(--muted);">${s.count} Posts</div>
+      <div style="font-size:12px;color:var(--accent);font-weight:600;">Ø ${s.avg_likes} ❤</div>
+    </div>`).join('') :
+    '<div style="padding:10px;color:var(--muted);font-size:12px;">Keine Daten</div>';
+
+  const tmplEl = document.getElementById('perf-tmpl-stats');
+  tmplEl.innerHTML = data.tmpl_stats.length ? data.tmpl_stats.slice(0,8).map(t => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${t.template_name}</div>
+      <div style="font-size:11px;color:var(--muted);">${t.count}×</div>
+      <div style="font-size:12px;color:var(--accent);font-weight:600;">Ø ${t.avg_likes} ❤</div>
+    </div>`).join('') :
+    '<div style="padding:10px;color:var(--muted);font-size:12px;">Keine Daten</div>';
+}
 
 // ══════════════════════════════════════════
 // MARKT

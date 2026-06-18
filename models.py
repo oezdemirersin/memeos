@@ -273,3 +273,174 @@ class AiUsageLog(db.Model):
     output_tokens = db.Column(db.Integer, default=0)
     cost_eur      = db.Column(db.Float, default=0.0)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class CityMarketEntry(db.Model):
+    """100 größte deutsche Städte — Markt-Übersicht für Page-Akquise."""
+    __tablename__ = 'city_market_entry'
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(200), nullable=False, unique=True)
+    state      = db.Column(db.String(100))
+    population = db.Column(db.Integer)
+    rank       = db.Column(db.Integer)
+    status     = db.Column(db.String(30), default='none', index=True)
+    # none | owned | want_to_buy | found_pages
+    city_id    = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=True)
+    notes      = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    city         = db.relationship('City', backref='market_entry')
+    buyable_pages= db.relationship('BuyablePage', backref='market_entry',
+                                   lazy='dynamic', cascade='all,delete')
+
+    @property
+    def status_color(self):
+        return {'owned':'#22c55e','want_to_buy':'#f59e0b',
+                'found_pages':'#8b5cf6','none':'#374151'}.get(self.status,'#374151')
+
+    @property
+    def status_label(self):
+        return {'owned':'Besitzen wir','want_to_buy':'Kaufen?',
+                'found_pages':'Seiten gefunden','none':'—'}.get(self.status,'—')
+
+
+class BuyablePage(db.Model):
+    """Kaufbare Instagram-Seite für eine Stadt."""
+    __tablename__ = 'buyable_page'
+    id               = db.Column(db.Integer, primary_key=True)
+    market_entry_id  = db.Column(db.Integer, db.ForeignKey('city_market_entry.id'), nullable=False, index=True)
+    instagram_url    = db.Column(db.String(500))
+    handle           = db.Column(db.String(200))
+    followers        = db.Column(db.Integer)
+    price_ask        = db.Column(db.Float)
+    contact_status   = db.Column(db.String(30), default='neu')
+    # neu | antwortet | aktiv | in_verhandlung | inaktiv | antwortet_nicht | gekauft | abgelehnt
+    contact_notes    = db.Column(db.Text)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def contact_color(self):
+        return {
+            'neu':'#64748b','antwortet':'#22c55e','aktiv':'#3b82f6',
+            'in_verhandlung':'#f59e0b','inaktiv':'#374151',
+            'antwortet_nicht':'#ef4444','gekauft':'#22c55e','abgelehnt':'#dc2626'
+        }.get(self.contact_status,'#64748b')
+
+    @property
+    def contact_label(self):
+        return {
+            'neu':'Neu','antwortet':'Antwortet','aktiv':'Aktiv',
+            'in_verhandlung':'In Verhandlung','inaktiv':'Inaktiv',
+            'antwortet_nicht':'Antwortet nicht','gekauft':'Gekauft','abgelehnt':'Abgelehnt'
+        }.get(self.contact_status, self.contact_status)
+
+
+class MemoInspirationSource(db.Model):
+    """Instagram-Seiten die wir für Meme-Inspiration beobachten."""
+    __tablename__ = 'memo_inspiration_source'
+    id         = db.Column(db.Integer, primary_key=True)
+    username   = db.Column(db.String(100), nullable=False, unique=True)
+    notes      = db.Column(db.Text)
+    last_fetch = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    posts      = db.relationship('MemoInspirationPost', backref='source',
+                                 lazy='dynamic', cascade='all,delete')
+
+    def post_count(self):
+        return self.posts.count()
+
+    def new_count(self):
+        return self.posts.filter_by(status='new').count()
+
+
+class MemePost(db.Model):
+    """Vorrat: Fertige/geplante Meme-Posts — Herzstück des Publishing-Flows."""
+    __tablename__ = 'meme_post'
+    id               = db.Column(db.Integer, primary_key=True)
+    city_id          = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False, index=True)
+    render_job_id    = db.Column(db.Integer, db.ForeignKey('render_job.id'), nullable=True)
+    template_id      = db.Column(db.Integer, db.ForeignKey('meme_template.id'), nullable=True)
+
+    title            = db.Column(db.String(300))
+    image_path       = db.Column(db.String(500))
+    image_url        = db.Column(db.String(1000))
+
+    caption          = db.Column(db.Text)
+    hashtags         = db.Column(db.Text)
+    post_type        = db.Column(db.String(20), default='feed', index=True)
+    # feed | reel | story | carousel
+
+    status           = db.Column(db.String(20), default='entwurf', index=True)
+    # entwurf | bereit | geplant | veroeffentlicht | archiviert
+
+    scheduled_at     = db.Column(db.DateTime, nullable=True, index=True)
+    published_at     = db.Column(db.DateTime)
+    notes            = db.Column(db.Text)
+
+    perf_likes       = db.Column(db.Integer)
+    perf_comments    = db.Column(db.Integer)
+    perf_saves       = db.Column(db.Integer)
+    perf_reach       = db.Column(db.Integer)
+    perf_impressions = db.Column(db.Integer)
+    perf_updated_at  = db.Column(db.DateTime)
+
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    city     = db.relationship('City',         backref='meme_posts')
+    template = db.relationship('MemeTemplate', backref='meme_posts')
+
+    @property
+    def status_label(self):
+        return {'entwurf':'Entwurf','bereit':'Bereit','geplant':'Geplant',
+                'veroeffentlicht':'Veröffentlicht','archiviert':'Archiviert'}.get(self.status, self.status)
+
+    @property
+    def engagement_rate(self):
+        reach = self.perf_reach or 0
+        if not reach: return None
+        interactions = (self.perf_likes or 0) + (self.perf_comments or 0) + (self.perf_saves or 0)
+        return round(interactions / reach * 100, 2)
+
+    def to_dict(self):
+        city_name = self.city.name if self.city else ''
+        city_color = self.city.accent_color if self.city else '#3b82f6'
+        tmpl_name  = self.template.name if self.template else ''
+        return {
+            'id': self.id, 'city_id': self.city_id, 'city_name': city_name,
+            'city_color': city_color, 'template_id': self.template_id,
+            'template_name': tmpl_name, 'render_job_id': self.render_job_id,
+            'title': self.title or '', 'image_url': self.image_url or self.image_path or '',
+            'caption': self.caption or '', 'hashtags': self.hashtags or '',
+            'post_type': self.post_type, 'status': self.status,
+            'status_label': self.status_label,
+            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'notes': self.notes or '',
+            'perf_likes': self.perf_likes, 'perf_comments': self.perf_comments,
+            'perf_saves': self.perf_saves, 'perf_reach': self.perf_reach,
+            'perf_impressions': self.perf_impressions,
+            'engagement_rate': self.engagement_rate,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class MemoInspirationPost(db.Model):
+    """Heruntergeladener Inspirations-Post."""
+    __tablename__ = 'memo_inspiration_post'
+    id             = db.Column(db.Integer, primary_key=True)
+    source_id      = db.Column(db.Integer, db.ForeignKey('memo_inspiration_source.id'), nullable=False, index=True)
+    instagram_code = db.Column(db.String(50), unique=True)
+    image_url      = db.Column(db.String(1000))
+    caption        = db.Column(db.Text)
+    post_date      = db.Column(db.DateTime)
+    like_count     = db.Column(db.Integer)
+    media_type     = db.Column(db.String(20), default='image')
+    status         = db.Column(db.String(20), default='new', index=True)
+    # new | saved | ignored | used
+    is_saved       = db.Column(db.Boolean, default=False)
+    meme_idea      = db.Column(db.Text)
+    carousel_urls  = db.Column(db.Text)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)

@@ -16,6 +16,7 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
+                    MemePost,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
 import anthropic
 import logging
@@ -147,6 +148,12 @@ def dashboard():
         'new':   MemoInspirationPost.query.filter_by(status='new').count(),
         'saved': MemoInspirationPost.query.filter_by(is_saved=True).count(),
     }
+    vorrat_counts = {
+        'entwurf':          MemePost.query.filter_by(status='entwurf').count(),
+        'bereit':           MemePost.query.filter_by(status='bereit').count(),
+        'geplant':          MemePost.query.filter_by(status='geplant').count(),
+        'veroeffentlicht':  MemePost.query.filter_by(status='veroeffentlicht').count(),
+    }
 
     return render_template('dashboard.html',
         stats=stats,
@@ -161,6 +168,7 @@ def dashboard():
         category_map=CATEGORY_MAP,
         market_summary=market_summary,
         inspo_counts=inspo_counts,
+        vorrat_counts=vorrat_counts,
         now=datetime.utcnow(),
     )
 
@@ -1728,6 +1736,218 @@ Antworte mit JSON:
     except Exception as ex:
         return jsonify({'error': str(ex)}), 500
     return jsonify({'error': 'KI-Fehler'}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VORRAT API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/vorrat', methods=['GET'])
+@login_required
+def api_vorrat_list():
+    status    = request.args.get('status', '')
+    city_id   = request.args.get('city_id', type=int)
+    post_type = request.args.get('post_type', '')
+    q = MemePost.query
+    if status:    q = q.filter_by(status=status)
+    if city_id:   q = q.filter_by(city_id=city_id)
+    if post_type: q = q.filter_by(post_type=post_type)
+    posts = q.order_by(MemePost.created_at.desc()).limit(500).all()
+    return jsonify([p.to_dict() for p in posts])
+
+@app.route('/api/vorrat', methods=['POST'])
+@login_required
+def api_vorrat_create():
+    d = request.json or {}
+    if not d.get('city_id'):
+        return jsonify({'error': 'city_id fehlt'}), 400
+    p = MemePost(
+        city_id=d['city_id'],
+        render_job_id=d.get('render_job_id'),
+        template_id=d.get('template_id'),
+        title=d.get('title',''),
+        image_url=d.get('image_url',''),
+        image_path=d.get('image_path',''),
+        caption=d.get('caption',''),
+        hashtags=d.get('hashtags',''),
+        post_type=d.get('post_type','feed'),
+        status=d.get('status','entwurf'),
+        notes=d.get('notes',''),
+    )
+    if d.get('scheduled_at'):
+        try: p.scheduled_at = datetime.fromisoformat(d['scheduled_at'])
+        except: pass
+    db.session.add(p)
+    db.session.commit()
+    return jsonify(p.to_dict()), 201
+
+@app.route('/api/vorrat/<int:post_id>', methods=['GET','PUT','DELETE'])
+@login_required
+def api_vorrat_item(post_id):
+    p = MemePost.query.get_or_404(post_id)
+    if request.method == 'DELETE':
+        db.session.delete(p)
+        db.session.commit()
+        return jsonify({'ok': True})
+    if request.method == 'GET':
+        return jsonify(p.to_dict())
+    d = request.json or {}
+    for f in ['title','image_url','caption','hashtags','post_type','status','notes',
+              'perf_likes','perf_comments','perf_saves','perf_reach','perf_impressions']:
+        if f in d: setattr(p, f, d[f])
+    if 'scheduled_at' in d:
+        p.scheduled_at = datetime.fromisoformat(d['scheduled_at']) if d['scheduled_at'] else None
+        if d['scheduled_at']: p.status = 'geplant'
+    if d.get('status') == 'veroeffentlicht' and not p.published_at:
+        p.published_at = datetime.utcnow()
+    if any(k in d for k in ['perf_likes','perf_comments','perf_saves','perf_reach','perf_impressions']):
+        p.perf_updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify(p.to_dict())
+
+@app.route('/api/vorrat/<int:post_id>/caption', methods=['POST'])
+@login_required
+def api_vorrat_caption(post_id):
+    p = MemePost.query.get_or_404(post_id)
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Kein API Key'}), 400
+    city = p.city
+    tmpl = p.template
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = f"""Du bist Social-Media-Manager für eine deutsche Stadt-Meme-Seite.
+Stadt: {city.name} ({city.state or ''})
+Template: {tmpl.name if tmpl else 'Stadtmeme'}
+Titel/Thema: {p.title or 'Stadtmeme'}
+Post-Typ: {p.post_type}
+
+Erstelle eine Instagram-Caption auf Deutsch:
+- Ton: locker, witzig, lokaler Humor
+- Max 150 Zeichen Caption
+- 10-15 relevante Hashtags
+Format: {{"caption": "...", "hashtags": "..."}}
+Nur JSON."""
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001', max_tokens=400,
+            messages=[{'role':'user','content':prompt}]
+        )
+        raw = msg.content[0].text
+        _log_ai_usage('caption_gen', msg.usage.input_tokens, msg.usage.output_tokens)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            p.caption  = data.get('caption', p.caption)
+            p.hashtags = data.get('hashtags', p.hashtags)
+            db.session.commit()
+            return jsonify({'caption': p.caption, 'hashtags': p.hashtags})
+    except Exception as ex:
+        return jsonify({'error': str(ex)}), 500
+    return jsonify({'error': 'KI-Fehler'}), 500
+
+@app.route('/api/vorrat/from-job/<int:job_id>', methods=['POST'])
+@login_required
+def api_vorrat_from_job(job_id):
+    job = RenderJob.query.get_or_404(job_id)
+    if MemePost.query.filter_by(render_job_id=job_id).first():
+        return jsonify({'error': 'Bereits im Vorrat'}), 409
+    p = MemePost(
+        city_id=job.city_id,
+        render_job_id=job.id,
+        template_id=job.template_id,
+        title=f"{job.city.name} — {job.template.name}",
+        image_url=job.image_url or '',
+        status='bereit',
+    )
+    db.session.add(p)
+    db.session.commit()
+    return jsonify(p.to_dict()), 201
+
+@app.route('/api/kalender', methods=['GET'])
+@login_required
+def api_kalender():
+    from_str = request.args.get('from')
+    to_str   = request.args.get('to')
+    try:
+        from_dt = datetime.fromisoformat(from_str) if from_str else datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
+        to_dt   = datetime.fromisoformat(to_str)   if to_str   else datetime(from_dt.year, from_dt.month % 12 + 1, 1)
+    except:
+        from_dt = datetime.utcnow()
+        to_dt   = from_dt
+    posts = MemePost.query.filter(
+        MemePost.scheduled_at >= from_dt,
+        MemePost.scheduled_at < to_dt
+    ).order_by(MemePost.scheduled_at).all()
+    return jsonify([p.to_dict() for p in posts])
+
+@app.route('/api/performance', methods=['GET'])
+@login_required
+def api_performance():
+    published = MemePost.query.filter_by(status='veroeffentlicht').all()
+    with_perf = [p for p in published if p.perf_likes is not None]
+    top_posts = sorted(with_perf, key=lambda p: p.perf_likes or 0, reverse=True)[:20]
+
+    city_stats = {}
+    for p in published:
+        cid = p.city_id
+        if cid not in city_stats:
+            city_stats[cid] = {
+                'city_name': p.city.name if p.city else '',
+                'city_color': p.city.accent_color if p.city else '#3b82f6',
+                'count': 0, 'total_likes': 0, 'total_saves': 0, 'total_reach': 0
+            }
+        s = city_stats[cid]
+        s['count']       += 1
+        s['total_likes'] += (p.perf_likes or 0)
+        s['total_saves'] += (p.perf_saves or 0)
+        s['total_reach'] += (p.perf_reach or 0)
+    for s in city_stats.values():
+        s['avg_likes'] = round(s['total_likes'] / s['count'], 1) if s['count'] else 0
+
+    tmpl_stats = {}
+    for p in published:
+        if not p.template_id: continue
+        tid = p.template_id
+        if tid not in tmpl_stats:
+            tmpl_stats[tid] = {'template_name': p.template.name if p.template else '',
+                                'count': 0, 'total_likes': 0, 'total_saves': 0}
+        t = tmpl_stats[tid]
+        t['count']       += 1
+        t['total_likes'] += (p.perf_likes or 0)
+        t['total_saves'] += (p.perf_saves or 0)
+    for t in tmpl_stats.values():
+        t['avg_likes'] = round(t['total_likes'] / t['count'], 1) if t['count'] else 0
+
+    return jsonify({
+        'top_posts':   [p.to_dict() for p in top_posts],
+        'city_stats':  sorted(city_stats.values(), key=lambda x: x['avg_likes'], reverse=True),
+        'tmpl_stats':  sorted(tmpl_stats.values(), key=lambda x: x['avg_likes'], reverse=True),
+        'total_posts': len(published),
+        'total_likes': sum(p.perf_likes or 0 for p in with_perf),
+        'total_saves': sum(p.perf_saves or 0 for p in with_perf),
+        'avg_engagement': round(sum(p.engagement_rate or 0 for p in with_perf) / len(with_perf), 2) if with_perf else 0,
+    })
+
+@app.route('/api/bulk/multi', methods=['POST'])
+@login_required
+def api_bulk_multi():
+    d = request.json or {}
+    template_ids = d.get('template_ids', [])
+    city_ids     = d.get('city_ids', [])
+    if not template_ids or not city_ids:
+        return jsonify({'error': 'template_ids und city_ids erforderlich'}), 400
+    created = []
+    for tid in template_ids:
+        tmpl = MemeTemplate.query.get(tid)
+        if not tmpl: continue
+        for cid in city_ids:
+            city = City.query.get(cid)
+            if not city: continue
+            job = RenderJob(template_id=tid, city_id=cid, status='pending')
+            db.session.add(job)
+            db.session.flush()
+            created.append(job.id)
+            threading.Thread(target=_run_generate_job, args=(job.id,), daemon=True).start()
+    db.session.commit()
+    return jsonify({'created': len(created), 'job_ids': created})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STARTUP
