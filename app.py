@@ -36,6 +36,28 @@ os.makedirs(os.path.join(_BASE_DIR, 'static', 'uploads'), exist_ok=True)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{_DB_PATH}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ── Cloudinary ──────────────────────────────────────────────────────────────────
+def _upload_cloudinary(source, folder='memeos', resource_type='auto'):
+    """Upload local path, bytes, or URL to Cloudinary. Returns secure_url or None."""
+    cloud_env = os.getenv('CLOUDINARY_URL', '')
+    if not cloud_env:
+        return None
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        cloudinary.config(url=cloud_env)
+        result = cloudinary.uploader.upload(source, folder=folder, resource_type=resource_type)
+        return result.get('secure_url')
+    except ImportError:
+        log.warning('cloudinary not installed — run: pip install cloudinary')
+        return None
+    except Exception as e:
+        log.error(f'Cloudinary upload failed: {e}')
+        return None
+
+def _cloudinary_connected():
+    return bool(os.getenv('CLOUDINARY_URL', ''))
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 db.init_app(app)
@@ -645,6 +667,10 @@ def _run_generate_job(flask_app, job_id):
                     with open(path, 'wb') as f:
                         f.write(png_bytes)
                     job.image_filename = filename
+                    cloud_url = _upload_cloudinary(path, folder='memeos/renders')
+                    if cloud_url:
+                        job.image_url = cloud_url
+                        log.info(f'Job {job_id}: uploaded to Cloudinary → {cloud_url}')
                     job.status = 'done'
                 else:
                     job.status = 'done'
@@ -1764,11 +1790,15 @@ def api_upload_batch():
         path  = os.path.join(upload_dir, fname)
         f.save(path)
         ftype = 'video' if ext in ('mp4', 'mov') else 'image'
+        # Try Cloudinary, fall back to local path
+        rtype = 'video' if ftype == 'video' else 'image'
+        cloud_url = _upload_cloudinary(path, folder='memeos/uploads', resource_type=rtype)
+        final_url = cloud_url or f'/uploads/{fname}'
         # Create draft MemePost
         post = MemePost(
             city_id=city_id or 0,
             title=f.filename.rsplit('.', 1)[0],
-            image_url=f'/uploads/{fname}',
+            image_url=final_url,
             image_path=fname,
             post_type='feed',
             status='entwurf',
@@ -1776,11 +1806,12 @@ def api_upload_batch():
         db.session.add(post)
         db.session.flush()
         created.append({
-            'id':    post.id,
-            'fname': fname,
-            'title': post.title,
-            'url':   post.image_url,
-            'ftype': ftype,
+            'id':       post.id,
+            'fname':    fname,
+            'title':    post.title,
+            'url':      post.image_url,
+            'ftype':    ftype,
+            'cloudinary': bool(cloud_url),
         })
     db.session.commit()
     return jsonify({'ok': True, 'created': created})
@@ -1845,6 +1876,64 @@ Nur JSON."""
     return jsonify({'error': 'KI-Fehler'}), 500
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CLOUDINARY STATUS + MIGRATE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/cloudinary/status')
+@login_required
+def api_cloudinary_status():
+    connected = _cloudinary_connected()
+    return jsonify({'connected': connected, 'url_set': connected})
+
+
+@app.route('/api/cloudinary/migrate', methods=['POST'])
+@login_required
+def api_cloudinary_migrate():
+    """Upload all local images (MemePost + RenderJob) to Cloudinary."""
+    if not _cloudinary_connected():
+        return jsonify({'error': 'CLOUDINARY_URL nicht gesetzt'}), 400
+
+    migrated, skipped, failed = 0, 0, 0
+
+    # MemePost — local /uploads/ paths
+    posts = MemePost.query.filter(
+        MemePost.image_url.like('/uploads/%')
+    ).all()
+    for p in posts:
+        fname = p.image_url.lstrip('/')
+        local = os.path.join(_BASE_DIR, 'static', fname)
+        if not os.path.exists(local):
+            skipped += 1
+            continue
+        url = _upload_cloudinary(local, folder='memeos/uploads')
+        if url:
+            p.image_url = url
+            migrated += 1
+        else:
+            failed += 1
+
+    # RenderJob — local /static/renders/
+    jobs = RenderJob.query.filter(
+        RenderJob.image_filename.isnot(None),
+        db.or_(RenderJob.image_url == None, RenderJob.image_url == '')
+    ).all()
+    for j in jobs:
+        local = os.path.join(_BASE_DIR, 'static', 'renders', j.image_filename)
+        if not os.path.exists(local):
+            skipped += 1
+            continue
+        url = _upload_cloudinary(local, folder='memeos/renders')
+        if url:
+            j.image_url = url
+            migrated += 1
+        else:
+            failed += 1
+
+    db.session.commit()
+    return jsonify({'migrated': migrated, 'skipped': skipped, 'failed': failed})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # VORRAT API
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1854,12 +1943,38 @@ def api_vorrat_list():
     status    = request.args.get('status', '')
     city_id   = request.args.get('city_id', type=int)
     post_type = request.args.get('post_type', '')
+    search    = request.args.get('q', '').strip()
+    page      = max(1, request.args.get('page', 1, type=int))
+    per_page  = min(50, max(10, request.args.get('per_page', 20, type=int)))
+
     q = MemePost.query
     if status:    q = q.filter_by(status=status)
     if city_id:   q = q.filter_by(city_id=city_id)
     if post_type: q = q.filter_by(post_type=post_type)
-    posts = q.order_by(MemePost.created_at.desc()).limit(500).all()
-    return jsonify([p.to_dict() for p in posts])
+    if search:
+        like = f'%{search}%'
+        q = q.filter(db.or_(MemePost.title.ilike(like), MemePost.caption.ilike(like)))
+
+    total = q.count()
+    posts = q.order_by(MemePost.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+    # Status-Counts immer über alle Posts (unabhängig vom Filter)
+    from sqlalchemy import func
+    raw_counts = db.session.query(MemePost.status, func.count(MemePost.id))\
+        .group_by(MemePost.status).all()
+    counts = {s: 0 for s in ['entwurf', 'bereit', 'geplant', 'veroeffentlicht', 'archiviert']}
+    for s, c in raw_counts:
+        if s in counts:
+            counts[s] = c
+
+    return jsonify({
+        'items':    [p.to_dict() for p in posts],
+        'total':    total,
+        'page':     page,
+        'per_page': per_page,
+        'pages':    max(1, (total + per_page - 1) // per_page),
+        'counts':   counts,
+    })
 
 @app.route('/api/vorrat', methods=['POST'])
 @login_required

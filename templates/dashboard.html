@@ -231,6 +231,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .survey-q-text{font-size:13px;font-weight:600;margin-bottom:8px;}
 .survey-answer{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--muted2);}
 
+/* ── Pagination ── */
+.page-btn{min-width:32px;height:32px;padding:0 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;}
+.page-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text);}
+.page-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent2);font-weight:700;}
+.page-btn:disabled{opacity:.35;cursor:default;}
+.page-dots{color:var(--muted);padding:0 4px;font-size:12px;align-self:center;}
+
 /* ── Trending ── */
 .trend-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;transition:border-color .15s;}
 .trend-card:hover{border-color:var(--border2);}
@@ -846,6 +853,27 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
 
     <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Cloudinary (Bildspeicherung)</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <div class="dot" id="cloudinary-dot" style="background:var(--muted)"></div>
+        <div>
+          <div style="font-size:13px;font-weight:600;" id="cloudinary-status-text">Wird geprüft…</div>
+          <div style="font-size:11px;color:var(--muted);">Bilder permanent in der Cloud speichern (cloudinary.com)</div>
+        </div>
+      </div>
+      <div id="cloudinary-actions" style="display:none;flex-direction:column;gap:8px;">
+        <div style="font-size:12px;color:var(--muted);">Bestehende lokale Bilder zu Cloudinary migrieren:</div>
+        <button class="btn btn-ghost btn-sm" onclick="cloudinaryMigrate(this)" id="cloudinary-migrate-btn">
+          ↑ Bestehende Bilder hochladen
+        </button>
+        <div id="cloudinary-migrate-result" style="font-size:12px;color:var(--muted);"></div>
+      </div>
+      <div id="cloudinary-setup-hint" style="display:none;font-size:12px;color:var(--muted);">
+        CLOUDINARY_URL in .env setzen → kostenlos auf cloudinary.com registrieren → Dashboard → "API Environment variable" kopieren
+      </div>
+    </div>
+
+    <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">ContentOS Bridge</div>
       <div class="form-group">
         <label>ContentOS URL</label>
@@ -1010,7 +1038,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
   <div class="page-header">
     <div class="page-title">CONTENT <span>VORRAT</span></div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <select id="vorrat-status-filter" onchange="loadVorrat()">
+      <select id="vorrat-status-filter" onchange="_vorratPage=1;loadVorrat()">
         <option value="">Alle Status</option>
         <option value="entwurf">Entwurf</option>
         <option value="bereit">Bereit</option>
@@ -1018,11 +1046,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <option value="veroeffentlicht">Veröffentlicht</option>
         <option value="archiviert">Archiviert</option>
       </select>
-      <select id="vorrat-city-filter" onchange="loadVorrat()">
+      <select id="vorrat-city-filter" onchange="_vorratPage=1;loadVorrat()">
         <option value="">Alle Städte</option>
         {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
       </select>
-      <select id="vorrat-type-filter" onchange="loadVorrat()">
+      <select id="vorrat-type-filter" onchange="_vorratPage=1;loadVorrat()">
         <option value="">Alle Typen</option>
         <option value="feed">Feed</option>
         <option value="reel">Reel</option>
@@ -1053,8 +1081,25 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
   </div>
 
+  <!-- Suche -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+    <div style="position:relative;flex:1;max-width:340px;">
+      <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+      <input id="vorrat-search" type="search" placeholder="Titel, Caption suchen…"
+        oninput="_vorratSearchDebounced()"
+        style="width:100%;padding:7px 10px 7px 32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--font-body);font-size:13px;">
+    </div>
+    <div id="vorrat-total-info" style="font-size:12px;color:var(--muted);white-space:nowrap;"></div>
+  </div>
+
   <div id="vorrat-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">
     <div class="empty"><p>Lade…</p></div>
+  </div>
+
+  <!-- Pagination -->
+  <div id="vorrat-pagination" style="display:none;align-items:center;justify-content:space-between;margin-top:20px;padding-top:14px;border-top:1px solid var(--border);">
+    <div id="vorrat-page-info" style="font-size:12px;color:var(--muted);"></div>
+    <div id="vorrat-page-btns" style="display:flex;gap:4px;"></div>
   </div>
 </div>
 
@@ -1811,7 +1856,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') loadUsers();
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
@@ -2488,6 +2533,39 @@ async function saveSettings() {
   toast('Einstellungen gespeichert!','success');
 }
 
+async function loadCloudinaryStatus() {
+  const r = await fetch('/api/cloudinary/status').then(r => r.json()).catch(() => null);
+  if (!r) return;
+  const dot  = document.getElementById('cloudinary-dot');
+  const text = document.getElementById('cloudinary-status-text');
+  const acts = document.getElementById('cloudinary-actions');
+  const hint = document.getElementById('cloudinary-setup-hint');
+  if (r.connected) {
+    dot.style.background  = '#22c55e';
+    text.textContent      = 'Cloudinary verbunden — Bilder werden automatisch hochgeladen';
+    acts.style.display    = 'flex';
+    hint.style.display    = 'none';
+  } else {
+    dot.style.background  = '#ef4444';
+    text.textContent      = 'Cloudinary nicht verbunden — Bilder lokal (gehen bei Render-Deploy verloren)';
+    acts.style.display    = 'none';
+    hint.style.display    = 'block';
+  }
+}
+
+async function cloudinaryMigrate(btn) {
+  btn.disabled = true;
+  btn.textContent = '↑ Wird hochgeladen…';
+  const r = await fetch('/api/cloudinary/migrate', {method:'POST'}).then(r => r.json()).catch(() => null);
+  btn.disabled = false;
+  btn.textContent = '↑ Bestehende Bilder hochladen';
+  const res = document.getElementById('cloudinary-migrate-result');
+  if (!r) { if (res) res.textContent = 'Fehler beim Migrieren'; return; }
+  if (r.error) { if (res) res.textContent = r.error; return; }
+  if (res) res.textContent = `✓ ${r.migrated} hochgeladen, ${r.skipped} übersprungen${r.failed ? `, ${r.failed} fehlgeschlagen` : ''}`;
+  toast(`Migration abgeschlossen: ${r.migrated} Bilder zu Cloudinary`, 'success');
+}
+
 async function loadUsers() {
   const users = await api('GET','/api/users');
   const el = document.getElementById('users-list');
@@ -2884,30 +2962,82 @@ const VORRAT_STATUS = {
 
 let _vorratData = [];
 
-async function loadVorrat() {
-  const status    = document.getElementById('vorrat-status-filter')?.value || '';
-  const cityId    = document.getElementById('vorrat-city-filter')?.value || '';
-  const postType  = document.getElementById('vorrat-type-filter')?.value || '';
-  let url = '/api/vorrat?';
-  if (status)   url += `status=${status}&`;
-  if (cityId)   url += `city_id=${cityId}&`;
-  if (postType) url += `post_type=${postType}&`;
-  _vorratData = await api('GET', url);
-  renderVorratGrid(_vorratData);
-  updateVorratCounts(_vorratData);
+let _vorratPage = 1;
+let _vorratSearch = '';
+const _vorratSearchDebounced = _debounce(() => { _vorratPage = 1; loadVorrat(); }, 280);
+
+function _debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-function updateVorratCounts(data) {
-  const counts = { entwurf:0, bereit:0, geplant:0, veroeffentlicht:0 };
-  data.forEach(p => { if (p.status in counts) counts[p.status]++; });
-  document.getElementById('vorrat-count-entwurf').textContent = counts.entwurf;
-  document.getElementById('vorrat-count-bereit').textContent  = counts.bereit;
-  document.getElementById('vorrat-count-geplant').textContent = counts.geplant;
-  document.getElementById('vorrat-count-pub').textContent     = counts.veroeffentlicht;
+async function loadVorrat() {
+  const status   = document.getElementById('vorrat-status-filter')?.value || '';
+  const cityId   = document.getElementById('vorrat-city-filter')?.value || '';
+  const postType = document.getElementById('vorrat-type-filter')?.value || '';
+  const search   = document.getElementById('vorrat-search')?.value.trim() || '';
+  const params   = new URLSearchParams({ page: _vorratPage, per_page: 20 });
+  if (status)   params.set('status', status);
+  if (cityId)   params.set('city_id', cityId);
+  if (postType) params.set('post_type', postType);
+  if (search)   params.set('q', search);
+
+  const res = await fetch(`/api/vorrat?${params}`).then(r => r.json()).catch(() => null);
+  if (!res) return;
+  _vorratData = res.items;
+  renderVorratGrid(res.items);
+  updateVorratCounts(res.counts);
+  renderVorratPagination(res);
+
+  const info = document.getElementById('vorrat-total-info');
+  if (info) {
+    const from = (_vorratPage - 1) * res.per_page + 1;
+    const to   = Math.min(_vorratPage * res.per_page, res.total);
+    info.textContent = res.total ? `${from}–${to} von ${res.total}` : '';
+  }
+}
+
+function updateVorratCounts(counts) {
+  if (!counts) return;
+  document.getElementById('vorrat-count-entwurf').textContent = counts.entwurf ?? '—';
+  document.getElementById('vorrat-count-bereit').textContent  = counts.bereit  ?? '—';
+  document.getElementById('vorrat-count-geplant').textContent = counts.geplant ?? '—';
+  document.getElementById('vorrat-count-pub').textContent     = counts.veroeffentlicht ?? '—';
+}
+
+function renderVorratPagination(res) {
+  const wrap = document.getElementById('vorrat-pagination');
+  const info = document.getElementById('vorrat-page-info');
+  const btns = document.getElementById('vorrat-page-btns');
+  if (!wrap) return;
+
+  if (res.pages <= 1) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+  if (info) info.textContent = `Seite ${res.page} von ${res.pages}`;
+
+  const p = res.page, total = res.pages;
+  let pages = new Set([1, total, p-1, p, p+1].filter(x => x >= 1 && x <= total));
+  let sorted = [...pages].sort((a,b) => a-b);
+
+  let html = `<button class="page-btn" onclick="vorratGoPage(${p-1})" ${p<=1?'disabled':''}>←</button>`;
+  let prev = 0;
+  for (const pg of sorted) {
+    if (pg - prev > 1) html += `<span class="page-dots">…</span>`;
+    html += `<button class="page-btn ${pg===p?'active':''}" onclick="vorratGoPage(${pg})">${pg}</button>`;
+    prev = pg;
+  }
+  html += `<button class="page-btn" onclick="vorratGoPage(${p+1})" ${p>=total?'disabled':''}>→</button>`;
+  if (btns) btns.innerHTML = html;
+}
+
+function vorratGoPage(page) {
+  _vorratPage = page;
+  loadVorrat();
+  document.getElementById('page-vorrat').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function setVorratFilter(status) {
   document.getElementById('vorrat-status-filter').value = status;
+  _vorratPage = 1;
   loadVorrat();
 }
 
