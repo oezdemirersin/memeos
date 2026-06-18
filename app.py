@@ -1738,6 +1738,113 @@ Antworte mit JSON:
     return jsonify({'error': 'KI-Fehler'}), 500
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# HOCHLADEN & EINPLANEN API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ALLOWED_UPLOAD = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov'}
+
+@app.route('/api/upload/batch', methods=['POST'])
+@login_required
+def api_upload_batch():
+    files   = request.files.getlist('files')
+    city_id = request.form.get('city_id', type=int)
+    if not files:
+        return jsonify({'error': 'Keine Dateien'}), 400
+
+    created = []
+    upload_dir = os.path.join(_BASE_DIR, 'static', 'uploads')
+
+    for f in files:
+        if not f.filename:
+            continue
+        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+        if ext not in ALLOWED_UPLOAD:
+            continue
+        fname = f'upload_{int(time.time())}_{secrets.token_hex(4)}.{ext}'
+        path  = os.path.join(upload_dir, fname)
+        f.save(path)
+        ftype = 'video' if ext in ('mp4', 'mov') else 'image'
+        # Create draft MemePost
+        post = MemePost(
+            city_id=city_id or 0,
+            title=f.filename.rsplit('.', 1)[0],
+            image_url=f'/uploads/{fname}',
+            image_path=fname,
+            post_type='feed',
+            status='entwurf',
+        )
+        db.session.add(post)
+        db.session.flush()
+        created.append({
+            'id':    post.id,
+            'fname': fname,
+            'title': post.title,
+            'url':   post.image_url,
+            'ftype': ftype,
+        })
+    db.session.commit()
+    return jsonify({'ok': True, 'created': created})
+
+@app.route('/api/upload/schedule', methods=['POST'])
+@login_required
+def api_upload_schedule():
+    d     = request.json or {}
+    items = d.get('items', [])  # [{post_id, city_id, caption, scheduled_at, post_type, title}]
+    saved = []
+    for item in items:
+        pid = item.get('post_id')
+        if not pid:
+            continue
+        p = MemePost.query.get(pid)
+        if not p:
+            continue
+        p.city_id   = item.get('city_id', p.city_id)
+        p.caption   = item.get('caption', '')
+        p.title     = item.get('title', p.title)
+        p.post_type = item.get('post_type', p.post_type)
+        p.status    = 'geplant'
+        if item.get('scheduled_at'):
+            try:
+                p.scheduled_at = datetime.fromisoformat(item['scheduled_at'])
+            except:
+                p.status = 'bereit'
+        else:
+            p.status = 'bereit'
+        saved.append({'post_id': p.id, 'scheduled_at': p.scheduled_at.isoformat() if p.scheduled_at else None})
+    db.session.commit()
+    return jsonify({'ok': True, 'saved': len(saved), 'posts': saved})
+
+@app.route('/api/upload/caption/<int:post_id>', methods=['POST'])
+@login_required
+def api_upload_caption(post_id):
+    p = MemePost.query.get_or_404(post_id)
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Kein API Key'}), 400
+    city = p.city or (City.query.get(p.city_id) if p.city_id else None)
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = f"""Du bist Social-Media-Manager einer deutschen Stadt-Meme-Seite.
+Stadt: {city.name if city else 'Unbekannt'}
+Dateiname: {p.title}
+
+Erstelle 3 verschiedene Instagram-Captions auf Deutsch (locker, witzig, lokaler Humor).
+Format: {{"captions": ["...", "...", "..."]}}
+Nur JSON."""
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001', max_tokens=500,
+            messages=[{'role':'user','content':prompt}]
+        )
+        raw = msg.content[0].text
+        _log_ai_usage('upload_caption', msg.usage.input_tokens, msg.usage.output_tokens)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            return jsonify({'ok': True, 'captions': data.get('captions', [])})
+    except Exception as ex:
+        return jsonify({'error': str(ex)}), 500
+    return jsonify({'error': 'KI-Fehler'}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # VORRAT API
 # ═══════════════════════════════════════════════════════════════════════════════
 
