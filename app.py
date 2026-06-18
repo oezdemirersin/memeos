@@ -16,7 +16,7 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
-                    MemePost,
+                    MemePost, TrendingTopic, RecycleJob,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
 import anthropic
 import logging
@@ -2055,6 +2055,356 @@ def api_bulk_multi():
             threading.Thread(target=_run_generate_job, args=(job.id,), daemon=True).start()
     db.session.commit()
     return jsonify({'created': len(created), 'job_ids': created})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRENDING MONITOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _recycle_score(post):
+    """Recycle-Score 0–100 basierend auf Performance + Zeit seit Veröffentlichung."""
+    if not post.published_at:
+        return 0
+    er = post.engagement_rate or 0
+    days_ago = (datetime.utcnow() - post.published_at).days
+    if days_ago < 14:
+        time_factor = 0.0
+    elif days_ago < 30:
+        time_factor = 0.5
+    elif days_ago <= 90:
+        time_factor = 1.0
+    elif days_ago <= 180:
+        time_factor = 0.85
+    else:
+        time_factor = 0.7
+    er_score = min(100, er * 15)
+    base = er_score * time_factor
+    penalty = min(40, (post.recycle_count or 0) * 20)
+    return max(0, min(100, int(base - penalty)))
+
+
+@app.route('/api/trending')
+@login_required
+def api_trending_list():
+    city_id = request.args.get('city_id', type=int)
+    show_ignored = request.args.get('ignored', 'false') == 'true'
+    q = TrendingTopic.query
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    if not show_ignored:
+        q = q.filter_by(ignored=False)
+    topics = q.order_by(TrendingTopic.trend_score.desc(), TrendingTopic.created_at.desc()).all()
+    return jsonify([t.to_dict() for t in topics])
+
+
+@app.route('/api/trending/refresh/<int:city_id>', methods=['POST'])
+@login_required
+def api_trending_refresh(city_id):
+    city = City.query.get_or_404(city_id)
+    if not city.rss_url:
+        return jsonify({'error': f'Keine RSS-URL für {city.name} konfiguriert. Bitte in Städte-Einstellungen eintragen.'}), 400
+    try:
+        feed = feedparser.parse(city.rss_url)
+        headlines = [e.title for e in feed.entries[:20] if hasattr(e, 'title') and e.title]
+        if not headlines:
+            return jsonify({'error': 'Keine Artikel im RSS-Feed gefunden'}), 400
+
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        prompt = f"""Du analysierst aktuelle Schlagzeilen aus {city.name} auf ihr Meme-Potenzial für Instagram-Stadtmemes.
+
+Schlagzeilen:
+{chr(10).join(f'- {h}' for h in headlines)}
+
+Extrahiere die Top 5 Trending-Themen die sich am besten für virale Stadtmemes eignen.
+Antworte NUR mit validem JSON (kein Markdown, kein Text davor/danach):
+{{"topics":[{{"keyword":"kurzes prägnantes Schlagwort (max 4 Wörter)","description":"1-2 Sätze Kontext warum das trending ist","trend_score":85}},{{"keyword":"...","description":"...","trend_score":70}}]}}
+
+trend_score: 0-100, wie gut geeignet für einen viralen Stadtmeme."""
+
+        resp = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=800,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        start, end = raw.find('{'), raw.rfind('}') + 1
+        data = json.loads(raw[start:end])
+
+        added = 0
+        for t in data.get('topics', []):
+            kw = (t.get('keyword') or '').strip()[:200]
+            if not kw:
+                continue
+            topic = TrendingTopic(
+                city_id=city_id, keyword=kw,
+                description=t.get('description', ''),
+                trend_score=max(0, min(100, int(t.get('trend_score', 50)))),
+                source='rss', fetched_at=datetime.utcnow()
+            )
+            db.session.add(topic)
+            added += 1
+        db.session.commit()
+        return jsonify({'added': added, 'city': city.name, 'headlines_used': len(headlines)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trending', methods=['POST'])
+@login_required
+def api_trending_create():
+    d = request.json or {}
+    keyword = (d.get('keyword') or '').strip()
+    if not keyword:
+        return jsonify({'error': 'keyword fehlt'}), 400
+    topic = TrendingTopic(
+        city_id=d.get('city_id') or None,
+        keyword=keyword[:200],
+        description=d.get('description', ''),
+        trend_score=max(0, min(100, int(d.get('trend_score', 60)))),
+        source='manual', fetched_at=datetime.utcnow()
+    )
+    db.session.add(topic)
+    db.session.commit()
+    return jsonify(topic.to_dict()), 201
+
+
+@app.route('/api/trending/<int:tid>/idea', methods=['POST'])
+@login_required
+def api_trending_idea(tid):
+    topic = TrendingTopic.query.get_or_404(tid)
+    city_name = topic.city.name if topic.city else 'der Stadt'
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        prompt = f"""Generiere 3 kreative Meme-Ideen für das Thema "{topic.keyword}" aus {city_name}.
+
+Kontext: {topic.description or 'Lokales Trending-Thema'}
+
+Format: kurze, prägnante Instagram-Meme-Konzepte (z.B. "POV: ..." oder "Wenn ..." oder direkte Aussage).
+Antworte NUR mit JSON: {{"ideas":["Idee 1","Idee 2","Idee 3"]}}"""
+
+        resp = client.messages.create(
+            model='claude-haiku-4-5-20251001', max_tokens=400,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        start, end = raw.find('{'), raw.rfind('}') + 1
+        data = json.loads(raw[start:end])
+        topic.meme_idea = '\n'.join(data.get('ideas', []))
+        db.session.commit()
+        return jsonify({'ideas': data.get('ideas', []), 'topic': topic.to_dict()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trending/<int:tid>/ignore', methods=['POST'])
+@login_required
+def api_trending_ignore(tid):
+    topic = TrendingTopic.query.get_or_404(tid)
+    topic.ignored = not topic.ignored
+    db.session.commit()
+    return jsonify({'ignored': topic.ignored})
+
+
+@app.route('/api/trending/<int:tid>/use', methods=['POST'])
+@login_required
+def api_trending_use(tid):
+    topic = TrendingTopic.query.get_or_404(tid)
+    topic.used_in_post_id = (request.json or {}).get('post_id')
+    db.session.commit()
+    return jsonify(topic.to_dict())
+
+
+@app.route('/api/trending/<int:tid>', methods=['DELETE'])
+@login_required
+def api_trending_delete(tid):
+    topic = TrendingTopic.query.get_or_404(tid)
+    db.session.delete(topic)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTENT RECYCLING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/recycle/candidates')
+@login_required
+def api_recycle_candidates():
+    city_id  = request.args.get('city_id', type=int)
+    min_days = request.args.get('min_days', 14, type=int)
+    cutoff   = datetime.utcnow() - timedelta(days=min_days)
+    q = MemePost.query.filter(
+        MemePost.status == 'veroeffentlicht',
+        MemePost.published_at <= cutoff
+    )
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    posts = q.order_by(MemePost.published_at.desc()).all()
+    result = []
+    for p in posts:
+        d = p.to_dict()
+        d['recycle_score'] = _recycle_score(p)
+        d['days_since_post'] = (datetime.utcnow() - p.published_at).days if p.published_at else None
+        d['open_recycle_jobs'] = RecycleJob.query.filter(
+            RecycleJob.source_post_id == p.id,
+            RecycleJob.status.in_(['vorschlag', 'geplant'])
+        ).count()
+        result.append(d)
+    result.sort(key=lambda x: x['recycle_score'], reverse=True)
+    return jsonify(result)
+
+
+@app.route('/api/recycle/jobs')
+@login_required
+def api_recycle_jobs_list():
+    status   = request.args.get('status', 'vorschlag')
+    city_id  = request.args.get('city_id', type=int)
+    q = RecycleJob.query
+    if status != 'alle':
+        q = q.filter_by(status=status)
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    jobs = q.order_by(RecycleJob.created_at.desc()).all()
+    return jsonify([j.to_dict() for j in jobs])
+
+
+@app.route('/api/recycle/jobs', methods=['POST'])
+@login_required
+def api_recycle_jobs_create():
+    d = request.json or {}
+    source_id = d.get('source_post_id')
+    if not source_id:
+        return jsonify({'error': 'source_post_id fehlt'}), 400
+    source = MemePost.query.get_or_404(source_id)
+    job = RecycleJob(
+        source_post_id=source_id,
+        city_id=d.get('city_id') or source.city_id,
+        new_caption=d.get('new_caption') or source.caption or '',
+        scheduled_for=datetime.fromisoformat(d['scheduled_for']) if d.get('scheduled_for') else None,
+        recycle_score=_recycle_score(source),
+        notes=d.get('notes', ''),
+        status='vorschlag'
+    )
+    db.session.add(job)
+    db.session.commit()
+    return jsonify(job.to_dict()), 201
+
+
+@app.route('/api/recycle/jobs/<int:jid>/approve', methods=['POST'])
+@login_required
+def api_recycle_approve(jid):
+    job = RecycleJob.query.get_or_404(jid)
+    d   = request.json or {}
+    if d.get('scheduled_for'):
+        job.scheduled_for = datetime.fromisoformat(d['scheduled_for'])
+    if d.get('new_caption'):
+        job.new_caption = d['new_caption']
+    source = job.source_post
+    new_post = MemePost(
+        city_id=job.city_id,
+        render_job_id=source.render_job_id,
+        template_id=source.template_id,
+        title=source.title,
+        image_path=source.image_path,
+        image_url=source.image_url,
+        caption=job.new_caption or source.caption,
+        hashtags=source.hashtags,
+        post_type=source.post_type,
+        status='geplant',
+        scheduled_at=job.scheduled_for,
+        notes=f'Recycelt aus Post #{source.id}'
+    )
+    db.session.add(new_post)
+    db.session.flush()
+    job.target_post_id = new_post.id
+    job.status = 'geplant'
+    source.recycle_count = (source.recycle_count or 0) + 1
+    source.last_recycled_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'job': job.to_dict(), 'new_post': new_post.to_dict()})
+
+
+@app.route('/api/recycle/jobs/<int:jid>/reject', methods=['POST'])
+@login_required
+def api_recycle_reject(jid):
+    job = RecycleJob.query.get_or_404(jid)
+    job.status = 'abgelehnt'
+    job.rejection_reason = (request.json or {}).get('reason', '')
+    db.session.commit()
+    return jsonify(job.to_dict())
+
+
+@app.route('/api/recycle/jobs/<int:jid>', methods=['PUT'])
+@login_required
+def api_recycle_job_update(jid):
+    job = RecycleJob.query.get_or_404(jid)
+    d   = request.json or {}
+    for field in ('new_caption', 'notes'):
+        if field in d:
+            setattr(job, field, d[field])
+    if 'scheduled_for' in d:
+        job.scheduled_for = datetime.fromisoformat(d['scheduled_for']) if d['scheduled_for'] else None
+    db.session.commit()
+    return jsonify(job.to_dict())
+
+
+@app.route('/api/recycle/jobs/<int:jid>', methods=['DELETE'])
+@login_required
+def api_recycle_job_delete(jid):
+    job = RecycleJob.query.get_or_404(jid)
+    db.session.delete(job)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/recycle/history')
+@login_required
+def api_recycle_history():
+    jobs = RecycleJob.query.filter(
+        RecycleJob.status.in_(['geplant', 'veroeffentlicht'])
+    ).order_by(RecycleJob.updated_at.desc()).limit(100).all()
+    result = []
+    for j in jobs:
+        d = j.to_dict()
+        sp = j.source_post
+        tp = j.target_post
+        if sp and sp.engagement_rate and tp and tp.engagement_rate:
+            d['perf_delta'] = round(tp.engagement_rate - sp.engagement_rate, 2)
+            d['perf_delta_pct'] = round((tp.engagement_rate - sp.engagement_rate) / sp.engagement_rate * 100, 1) if sp.engagement_rate else None
+        else:
+            d['perf_delta'] = None
+            d['perf_delta_pct'] = None
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route('/api/recycle/caption/<int:jid>', methods=['POST'])
+@login_required
+def api_recycle_caption(jid):
+    job    = RecycleJob.query.get_or_404(jid)
+    source = job.source_post
+    city_name = job.city.name if job.city else 'der Stadt'
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        prompt = f"""Generiere 3 neue Instagram-Captions für einen recycelten Meme-Post aus {city_name}.
+
+Original-Caption: "{source.caption or ''}"
+Post-Typ: {source.post_type or 'feed'}
+
+Die neue Caption soll frisch klingen, nicht identisch mit dem Original sein, aber zum selben Bild passen.
+Antworte NUR mit JSON: {{"captions":["Caption 1","Caption 2","Caption 3"]}}"""
+
+        resp = client.messages.create(
+            model='claude-haiku-4-5-20251001', max_tokens=500,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        start, end = raw.find('{'), raw.rfind('}') + 1
+        data = json.loads(raw[start:end])
+        return jsonify({'captions': data.get('captions', [])})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STARTUP

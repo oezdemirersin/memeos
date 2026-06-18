@@ -230,6 +230,61 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .survey-q:last-child{border-bottom:none;}
 .survey-q-text{font-size:13px;font-weight:600;margin-bottom:8px;}
 .survey-answer{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--muted2);}
+
+/* ── Trending ── */
+.trend-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;transition:border-color .15s;}
+.trend-card:hover{border-color:var(--border2);}
+.trend-card.ignored{opacity:.4;}
+.trend-keyword{font-size:15px;font-weight:700;margin-bottom:3px;}
+.trend-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px;}
+.trend-score-bar{height:4px;background:var(--surface3);border-radius:2px;width:100%;margin-bottom:6px;}
+.trend-score-fill{height:100%;border-radius:2px;transition:width .4s;}
+.trend-meta{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.trend-idea-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:10px;font-size:13px;line-height:1.6;grid-column:1/-1;}
+.trend-idea-line{padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+.trend-idea-line:last-child{border-bottom:none;}
+.city-tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;}
+.city-tab{padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);font-size:12px;cursor:pointer;transition:all .15s;color:var(--muted);}
+.city-tab.active{color:var(--text);border-color:var(--border2);background:var(--surface3);}
+.trend-city-block{margin-bottom:28px;}
+.trend-city-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.trend-city-name{font-family:var(--font-display);font-size:16px;letter-spacing:1px;display:flex;align-items:center;gap:8px;}
+.trend-city-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+/* ── Recycling ── */
+.rc-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;}
+.rc-tab{padding:8px 20px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);transition:all .15s;background:none;border-top:none;border-left:none;border-right:none;}
+.rc-tab.active{color:var(--text);border-bottom-color:var(--accent);}
+.rc-tab:hover:not(.active){color:var(--muted2);}
+.rc-candidate{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:grid;grid-template-columns:120px 1fr;transition:border-color .15s;}
+.rc-candidate:hover{border-color:var(--border2);}
+.rc-thumb{width:120px;height:100%;min-height:100px;object-fit:cover;background:var(--surface3);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;}
+.rc-thumb img{width:100%;height:100%;object-fit:cover;}
+.rc-body{padding:12px 14px;}
+.rc-title{font-size:13px;font-weight:600;margin-bottom:4px;}
+.rc-stats{display:flex;gap:14px;margin:6px 0;font-size:12px;color:var(--muted);}
+.rc-stats span{display:flex;align-items:center;gap:4px;}
+.rc-score-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;gap:4px;}
+.rc-score-high{background:rgba(34,197,94,.15);color:#22c55e;}
+.rc-score-mid{background:rgba(245,158,11,.15);color:#f59e0b;}
+.rc-score-low{background:rgba(100,116,139,.15);color:#64748b;}
+.rc-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.recycle-job-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:grid;grid-template-columns:100px 1fr;gap:0;margin-bottom:12px;}
+.recycle-job-card.status-geplant{border-color:rgba(59,130,246,.3);}
+.recycle-job-card.status-abgelehnt{opacity:.5;}
+.rj-img{width:100px;min-height:90px;background:var(--surface3);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;}
+.rj-img img{width:100%;height:100%;object-fit:cover;}
+.rj-body{padding:12px;}
+.rj-caption-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-body);font-size:12px;padding:6px 8px;resize:vertical;min-height:50px;margin:6px 0;}
+.rc-history-row{display:grid;grid-template-columns:1fr 40px 1fr;gap:0;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px;}
+.rc-hist-side{padding:12px 14px;}
+.rc-hist-arrow{text-align:center;color:var(--muted);font-size:18px;}
+.rc-delta{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:2px 7px;border-radius:8px;}
+.rc-delta.pos{background:rgba(34,197,94,.15);color:#22c55e;}
+.rc-delta.neg{background:rgba(239,68,68,.15);color:#ef4444;}
+.rc-delta.neu{background:var(--surface2);color:var(--muted);}
+.er-pill{display:inline-flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:2px 8px;font-size:12px;gap:4px;}
+.recycle-count-badge{display:inline-flex;align-items:center;background:rgba(139,92,246,.15);color:#8b5cf6;border-radius:8px;padding:1px 7px;font-size:11px;}
 </style>
 </head>
 <body>
@@ -300,6 +355,16 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <button class="nav-item" onclick="showPage('performance')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
       Performance
+    </button>
+    <button class="nav-item" onclick="showPage('trending')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Trending
+      <span class="nav-badge" id="nav-trending-badge" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('recycling')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Recycling
+      <span class="nav-badge" id="nav-recycle-badge" style="display:none"></span>
     </button>
     <button class="nav-item" onclick="showPage('markt')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
@@ -1198,7 +1263,151 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- ═══════════════════════════ TRENDING ═══════════════════════════ -->
+<div class="page" id="page-trending" style="display:none">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div>
+      <h1 class="page-title">Trending Monitor</h1>
+      <p style="font-size:13px;color:var(--muted);margin-top:3px;">Was ist gerade in deinen Städten los — Meme-Potenzial aus lokalen RSS-Feeds</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <label class="chip" style="cursor:pointer;">
+        <input type="checkbox" id="trend-show-ignored" onchange="loadTrending()" style="display:none;">
+        <span id="trend-ignored-label">Ignorierte anzeigen</span>
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="openTrendManualModal()">+ Manuell</button>
+    </div>
+  </div>
+
+  <!-- City filter tabs -->
+  <div class="city-tab-row" id="trend-city-tabs">
+    <button class="city-tab active" data-city-id="" onclick="setTrendCity(this, '')">Alle</button>
+  </div>
+
+  <div id="trend-content">
+    <div class="empty"><p>Lade Trending-Daten…</p></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ RECYCLING ═══════════════════════════ -->
+<div class="page" id="page-recycling" style="display:none">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div>
+      <h1 class="page-title">Content Recycling</h1>
+      <p style="font-size:13px;color:var(--muted);margin-top:3px;">Top-Performer erkennen, recyceln und den Erfolg direkt vergleichen</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="rc-city-filter" onchange="loadRcView()" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--text);font-size:13px;">
+        <option value="">Alle Städte</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Sub-navigation -->
+  <div class="rc-tabs">
+    <button class="rc-tab active" id="rct-candidates" onclick="switchRcTab('candidates')">Top Performer</button>
+    <button class="rc-tab" id="rct-vorschlaege" onclick="switchRcTab('vorschlaege')">Vorschläge <span id="rct-badge" style="background:var(--accent-dim);color:var(--accent2);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+    <button class="rc-tab" id="rct-verlauf" onclick="switchRcTab('verlauf')">Verlauf</button>
+  </div>
+
+  <!-- Zeitraum-Filter (nur bei candidates) -->
+  <div id="rc-timefilter" style="display:flex;gap:6px;margin-bottom:16px;">
+    <span style="font-size:12px;color:var(--muted);align-self:center;">Mindest-Abstand:</span>
+    <button class="chip selected" data-days="14" onclick="setRcDays(this,14)">2 Wo</button>
+    <button class="chip" data-days="30" onclick="setRcDays(this,30)">1 Monat</button>
+    <button class="chip" data-days="60" onclick="setRcDays(this,60)">2 Monate</button>
+    <button class="chip" data-days="90" onclick="setRcDays(this,90)">3 Monate</button>
+  </div>
+
+  <div id="rc-content">
+    <div class="empty"><p>Lade…</p></div>
+  </div>
+</div>
+
 </main><!-- /main -->
+
+<!-- Trending: Meme-Idee Modal -->
+<div class="modal-overlay" id="modal-trend-idea">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-trend-idea-title">Meme-Ideen</span>
+      <button class="modal-close" onclick="closeModal('modal-trend-idea')">✕</button>
+    </div>
+    <div style="margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-size:13px;color:var(--muted);" id="modal-trend-idea-ctx"></div>
+    <div id="modal-trend-idea-body">
+      <div class="empty"><p>Generiere Ideen…</p></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-trend-idea')">Schließen</button>
+      <button class="btn btn-primary" id="modal-trend-idea-regen" onclick="">↺ Neu generieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Trending: Manuell Modal -->
+<div class="modal-overlay" id="modal-trend-manual">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Manuelles Thema</span>
+      <button class="modal-close" onclick="closeModal('modal-trend-manual')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Stadt</label>
+      <select id="tm-city" class="form-control">
+        <option value="">Überregional</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Schlagwort / Thema *</label>
+      <input id="tm-keyword" class="form-control" placeholder="z.B. Bahnhof Chaos, Sommerfest">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Beschreibung</label>
+      <textarea id="tm-desc" class="form-control" rows="2" placeholder="Kurzer Kontext…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Meme-Potenzial Score (0–100)</label>
+      <input id="tm-score" type="number" class="form-control" value="60" min="0" max="100">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-trend-manual')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveTrendManual()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recycling: Vorschlag erstellen Modal -->
+<div class="modal-overlay" id="modal-recycle-create">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title">Post recyceln</span>
+      <button class="modal-close" onclick="closeModal('modal-recycle-create')">✕</button>
+    </div>
+    <div id="modal-rc-preview" style="display:grid;grid-template-columns:120px 1fr;gap:12px;background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;">
+      <div id="modal-rc-img" style="height:100px;background:var(--surface3);border-radius:6px;overflow:hidden;"></div>
+      <div id="modal-rc-info"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Neue Caption (leer = Original übernehmen)</label>
+      <textarea id="rc-new-caption" class="form-control" rows="3" placeholder="Neue Caption eingeben oder leer lassen…"></textarea>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="generateRcCaption()">✦ KI-Caption generieren</button>
+      <div id="rc-caption-suggestions" style="display:none;margin-top:8px;"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Einplan-Datum</label>
+      <input id="rc-schedule-date" type="datetime-local" class="form-control">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notizen</label>
+      <input id="rc-notes" class="form-control" placeholder="Optionale Notiz…">
+    </div>
+    <input type="hidden" id="rc-source-id">
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-recycle-create')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveRecycleJob()">Als Vorschlag speichern</button>
+    </div>
+  </div>
+</div>
 
 <!-- Vorrat: Erstellen Modal -->
 <div class="modal-overlay" id="modal-vorrat-create">
@@ -1606,6 +1815,8 @@ function showPage(name) {
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
+  if(name==='trending') loadTrending();
+  if(name==='recycling') { loadRcCityFilter(); loadRcView(); loadRcBadge(); }
   if(name==='markt') loadMarkt();
   if(name==='inspiration') { loadInspoSources(); loadInspoPosts(); }
   if(name==='vorrat') loadVorrat();
@@ -2952,6 +3163,588 @@ async function loadPerformance() {
     </div>`).join('') :
     '<div style="padding:10px;color:var(--muted);font-size:12px;">Keine Daten</div>';
 }
+
+// ══════════════════════════════════════════
+// TRENDING MONITOR
+// ══════════════════════════════════════════
+
+let _trendCityId = '';
+let _trendTopics = [];
+
+async function loadTrending() {
+  const showIgnored = document.getElementById('trend-show-ignored').checked;
+  document.getElementById('trend-ignored-label').textContent = showIgnored ? 'Ignorierte ausblenden' : 'Ignorierte anzeigen';
+  const params = new URLSearchParams();
+  if (_trendCityId) params.set('city_id', _trendCityId);
+  if (showIgnored) params.set('ignored', 'true');
+  const topics = await fetch(`/api/trending?${params}`).then(r => r.json()).catch(() => []);
+  _trendTopics = topics;
+  await _buildTrendCityTabs();
+  _renderTrending(topics);
+  _updateTrendBadge(topics);
+}
+
+async function _buildTrendCityTabs() {
+  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
+  const tabRow = document.getElementById('trend-city-tabs');
+  const allBtn = `<button class="city-tab ${_trendCityId==='' ? 'active' : ''}" data-city-id="" onclick="setTrendCity(this,'')">Alle</button>`;
+  const cityBtns = cities.map(c =>
+    `<button class="city-tab ${_trendCityId==c.id ? 'active' : ''}" data-city-id="${c.id}" onclick="setTrendCity(this,${c.id})" style="border-left:3px solid ${c.accent_color||'#3b82f6'}">${c.name}</button>`
+  ).join('');
+  tabRow.innerHTML = allBtn + cityBtns;
+
+  // Also populate manual modal city select
+  const sel = document.getElementById('tm-city');
+  if (sel) sel.innerHTML = '<option value="">Überregional</option>' + cities.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+function setTrendCity(btn, cityId) {
+  _trendCityId = cityId ? String(cityId) : '';
+  document.querySelectorAll('.city-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _renderTrending(_trendTopics);
+}
+
+function _updateTrendBadge(topics) {
+  const active = topics.filter(t => !t.ignored && !t.used_in_post_id).length;
+  const badge = document.getElementById('nav-trending-badge');
+  if (badge) { badge.textContent = active; badge.style.display = active > 0 ? '' : 'none'; }
+}
+
+function _trendScoreColor(score) {
+  if (score >= 70) return '#22c55e';
+  if (score >= 45) return '#f59e0b';
+  return '#64748b';
+}
+
+function _renderTrending(allTopics) {
+  const showIgnored = document.getElementById('trend-show-ignored').checked;
+  const filterCityId = _trendCityId ? parseInt(_trendCityId) : null;
+  const topics = allTopics.filter(t => {
+    if (!showIgnored && t.ignored) return false;
+    if (filterCityId && t.city_id !== filterCityId) return false;
+    return true;
+  });
+
+  const box = document.getElementById('trend-content');
+  if (!topics.length) {
+    box.innerHTML = '<div class="empty"><p>Keine Trending-Themen — klicke "Aktualisieren" bei einer Stadt mit RSS-Feed.</p></div>';
+    return;
+  }
+
+  // Group by city
+  const byCity = {};
+  for (const t of topics) {
+    const key = t.city_id || 0;
+    if (!byCity[key]) byCity[key] = { name: t.city_name, color: t.city_color, id: t.city_id, topics: [] };
+    byCity[key].topics.push(t);
+  }
+
+  box.innerHTML = Object.values(byCity).map(g => `
+    <div class="trend-city-block">
+      <div class="trend-city-header">
+        <div class="trend-city-name">
+          <span class="trend-city-dot" style="background:${g.color}"></span>
+          ${g.name}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${g.id ? `<span style="font-size:11px;color:var(--muted);" id="trend-refresh-ts-${g.id}"></span>
+          <button class="btn btn-ghost btn-sm" onclick="refreshTrending(${g.id}, this)">↻ Aktualisieren</button>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${g.topics.map(t => _trendCard(t)).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function _trendCard(t) {
+  const color = _trendScoreColor(t.trend_score);
+  const usedBadge = t.used_in_post_id ? `<span style="background:rgba(34,197,94,.15);color:#22c55e;border-radius:8px;padding:1px 7px;font-size:11px;">✓ Verwendet</span>` : '';
+  const ignoredBadge = t.ignored ? `<span style="background:var(--surface2);color:var(--muted);border-radius:8px;padding:1px 7px;font-size:11px;">Ignoriert</span>` : '';
+  const srcBadge = t.source === 'manual'
+    ? `<span style="background:rgba(139,92,246,.12);color:#8b5cf6;border-radius:6px;padding:1px 6px;font-size:10px;">Manuell</span>`
+    : `<span style="background:var(--surface2);color:var(--muted);border-radius:6px;padding:1px 6px;font-size:10px;">RSS</span>`;
+
+  const ideaHtml = t.meme_idea ? `
+    <div class="trend-idea-box" id="idea-box-${t.id}">
+      ${t.meme_idea.split('\n').filter(Boolean).map((line, i) => `
+        <div class="trend-idea-line">
+          <span style="color:var(--accent);font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</span>
+          <span style="flex:1;font-size:13px;">${_esc(line)}</span>
+          <button class="btn btn-ghost btn-xs" onclick="copyText('${_esc(line).replace(/'/g,"\\'")}')">Kopieren</button>
+        </div>`).join('')}
+    </div>` : `<div class="trend-idea-box" id="idea-box-${t.id}" style="display:none"></div>`;
+
+  return `
+    <div class="trend-card ${t.ignored ? 'ignored' : ''}" id="tcard-${t.id}">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span class="trend-keyword">${_esc(t.keyword)}</span>
+          ${usedBadge}${ignoredBadge}${srcBadge}
+        </div>
+        ${t.description ? `<div class="trend-desc">${_esc(t.description)}</div>` : ''}
+        <div class="trend-score-bar"><div class="trend-score-fill" style="width:${t.trend_score}%;background:${color}"></div></div>
+        <div class="trend-meta">
+          <span style="color:${color};font-weight:700;">${t.trend_score}/100</span>
+          <span>·</span>
+          <span>${_relTime(t.fetched_at)}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;min-width:100px;">
+        <button class="btn btn-primary btn-xs" onclick="openTrendIdea(${t.id})">✦ Meme-Idee</button>
+        <button class="btn btn-ghost btn-xs" onclick="toggleTrendIgnore(${t.id})">${t.ignored ? '↩ Zurück' : 'Ignorieren'}</button>
+        <button class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="deleteTrend(${t.id})">Löschen</button>
+      </div>
+      ${ideaHtml}
+    </div>`;
+}
+
+async function refreshTrending(cityId, btn) {
+  const orig = btn.textContent;
+  btn.textContent = '…'; btn.disabled = true;
+  const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST'}).then(r => r.json());
+  btn.textContent = orig; btn.disabled = false;
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast(`${r.added} neue Themen für ${r.city} geladen`, 'success');
+  const ts = document.getElementById(`trend-refresh-ts-${cityId}`);
+  if (ts) ts.textContent = `Zuletzt: gerade eben`;
+  loadTrending();
+}
+
+async function openTrendIdea(topicId) {
+  const topic = _trendTopics.find(t => t.id === topicId);
+  if (!topic) return;
+  document.getElementById('modal-trend-idea-title').textContent = `Meme-Ideen: ${topic.keyword}`;
+  document.getElementById('modal-trend-idea-ctx').textContent = topic.description || topic.city_name;
+  const bodyEl = document.getElementById('modal-trend-idea-body');
+  const regenBtn = document.getElementById('modal-trend-idea-regen');
+  regenBtn.onclick = () => _fetchTrendIdea(topicId, bodyEl);
+  document.getElementById('modal-trend-idea').classList.add('open');
+
+  if (topic.meme_idea) {
+    _showIdeaInModal(topic.meme_idea, bodyEl);
+  } else {
+    await _fetchTrendIdea(topicId, bodyEl);
+  }
+}
+
+async function _fetchTrendIdea(topicId, bodyEl) {
+  bodyEl.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
+  const r = await fetch(`/api/trending/${topicId}/idea`, {method:'POST'}).then(r => r.json());
+  if (r.error) { bodyEl.innerHTML = `<div class="empty"><p>${r.error}</p></div>`; return; }
+  const idx = _trendTopics.findIndex(t => t.id === topicId);
+  if (idx >= 0) _trendTopics[idx] = r.topic;
+  _showIdeaInModal(r.topic.meme_idea, bodyEl);
+}
+
+function _showIdeaInModal(ideaText, bodyEl) {
+  const lines = ideaText.split('\n').filter(Boolean);
+  bodyEl.innerHTML = lines.map((line, i) => `
+    <div class="trend-idea-line" style="padding:12px 8px;">
+      <span style="color:var(--accent);font-weight:700;min-width:20px;">${i+1}</span>
+      <span style="flex:1;font-size:14px;line-height:1.5;">${_esc(line)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="copyText('${_esc(line).replace(/'/g,"\\'")}')">Kopieren</button>
+    </div>`).join('');
+}
+
+async function toggleTrendIgnore(id) {
+  const r = await fetch(`/api/trending/${id}/ignore`, {method:'POST'}).then(r => r.json());
+  const t = _trendTopics.find(x => x.id === id);
+  if (t) t.ignored = r.ignored;
+  _renderTrending(_trendTopics);
+  _updateTrendBadge(_trendTopics);
+  toast(r.ignored ? 'Ignoriert' : 'Wiederhergestellt', 'info');
+}
+
+async function deleteTrend(id) {
+  if (!confirm('Thema löschen?')) return;
+  await fetch(`/api/trending/${id}`, {method:'DELETE'});
+  _trendTopics = _trendTopics.filter(t => t.id !== id);
+  _renderTrending(_trendTopics);
+  _updateTrendBadge(_trendTopics);
+}
+
+function openTrendManualModal() {
+  document.getElementById('tm-keyword').value = '';
+  document.getElementById('tm-desc').value = '';
+  document.getElementById('tm-score').value = '60';
+  document.getElementById('tm-city').value = '';
+  document.getElementById('modal-trend-manual').classList.add('open');
+}
+
+async function saveTrendManual() {
+  const keyword = document.getElementById('tm-keyword').value.trim();
+  if (!keyword) { toast('Schlagwort fehlt', 'error'); return; }
+  const r = await fetch('/api/trending', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      keyword,
+      description: document.getElementById('tm-desc').value.trim(),
+      trend_score: parseInt(document.getElementById('tm-score').value) || 60,
+      city_id: document.getElementById('tm-city').value || null
+    })
+  }).then(r => r.json());
+  if (r.error) { toast(r.error, 'error'); return; }
+  _trendTopics.unshift(r);
+  closeModal('modal-trend-manual');
+  _renderTrending(_trendTopics);
+  _updateTrendBadge(_trendTopics);
+  toast('Thema gespeichert', 'success');
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('Kopiert!', 'success'));
+}
+
+
+// ══════════════════════════════════════════
+// CONTENT RECYCLING
+// ══════════════════════════════════════════
+
+let _rcTab = 'candidates';
+let _rcMinDays = 14;
+let _rcCandidates = [];
+let _rcJobs = [];
+let _rcCurrentJobId = null;
+
+async function loadRcCityFilter() {
+  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
+  const sel = document.getElementById('rc-city-filter');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Alle Städte</option>' + cities.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  sel.value = cur;
+}
+
+async function loadRcBadge() {
+  const jobs = await fetch('/api/recycle/jobs?status=vorschlag').then(r => r.json()).catch(() => []);
+  const badge = document.getElementById('rct-badge');
+  if (badge) { badge.textContent = jobs.length || ''; badge.style.display = jobs.length ? '' : 'none'; }
+  const navBadge = document.getElementById('nav-recycle-badge');
+  if (navBadge) { navBadge.textContent = jobs.length; navBadge.style.display = jobs.length ? '' : 'none'; }
+}
+
+function switchRcTab(tab) {
+  _rcTab = tab;
+  document.querySelectorAll('.rc-tab').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById(`rct-${tab}`);
+  if (el) el.classList.add('active');
+  document.getElementById('rc-timefilter').style.display = tab === 'candidates' ? 'flex' : 'none';
+  loadRcView();
+}
+
+function setRcDays(btn, days) {
+  _rcMinDays = days;
+  document.querySelectorAll('[data-days]').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  loadRcView();
+}
+
+async function loadRcView() {
+  const cityId = document.getElementById('rc-city-filter').value;
+  const box = document.getElementById('rc-content');
+  box.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
+
+  if (_rcTab === 'candidates') {
+    const params = new URLSearchParams({ min_days: _rcMinDays });
+    if (cityId) params.set('city_id', cityId);
+    const posts = await fetch(`/api/recycle/candidates?${params}`).then(r => r.json()).catch(() => []);
+    _rcCandidates = posts;
+    _renderRcCandidates(posts, box);
+  } else if (_rcTab === 'vorschlaege') {
+    const params = new URLSearchParams({ status: 'vorschlag' });
+    if (cityId) params.set('city_id', cityId);
+    const jobs = await fetch(`/api/recycle/jobs?${params}`).then(r => r.json()).catch(() => []);
+    _rcJobs = jobs;
+    _renderRcVorschlaege(jobs, box);
+    loadRcBadge();
+  } else {
+    const params = cityId ? `?city_id=${cityId}` : '';
+    const hist = await fetch(`/api/recycle/history${params}`).then(r => r.json()).catch(() => []);
+    _renderRcHistory(hist, box);
+  }
+}
+
+function _rcScoreClass(score) {
+  if (score >= 65) return 'rc-score-high';
+  if (score >= 35) return 'rc-score-mid';
+  return 'rc-score-low';
+}
+
+function _renderRcCandidates(posts, box) {
+  if (!posts.length) {
+    box.innerHTML = '<div class="empty"><p>Keine veröffentlichten Posts im gewählten Zeitraum mit Performance-Daten.<br>Trage zuerst Performance-Werte im Vorrat-Tab ein.</p></div>';
+    return;
+  }
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+      ${posts.length} Posts — sortiert nach Recycle-Score
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${posts.map(p => _rcCandidateCard(p)).join('')}
+    </div>`;
+}
+
+function _rcCandidateCard(p) {
+  const score = p.recycle_score || 0;
+  const scoreClass = _rcScoreClass(score);
+  const hasPerf = p.perf_reach || p.perf_likes;
+  const recycleCount = p.recycle_count || 0;
+
+  return `
+    <div class="rc-candidate">
+      <div class="rc-thumb">
+        ${p.image_url ? `<img src="${_esc(p.image_url)}" loading="lazy">` : '<span>Kein Bild</span>'}
+      </div>
+      <div class="rc-body">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_esc(p.city_color)};flex-shrink:0;"></span>
+              <span style="font-size:12px;color:var(--muted);">${_esc(p.city_name)}</span>
+              <span class="rc-score-badge ${scoreClass}">Score ${score}</span>
+              ${recycleCount > 0 ? `<span class="recycle-count-badge">↻ ${recycleCount}× recycelt</span>` : ''}
+              ${p.open_recycle_jobs > 0 ? `<span style="background:rgba(59,130,246,.15);color:#3b82f6;border-radius:8px;padding:1px 7px;font-size:11px;">${p.open_recycle_jobs} Vorschlag offen</span>` : ''}
+            </div>
+            <div class="rc-title">${_esc(p.title || p.caption?.slice(0, 60) || '—')}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:12px;color:var(--muted);">vor ${p.days_since_post} Tagen</div>
+            <div style="font-size:11px;color:var(--muted);">${p.post_type}</div>
+          </div>
+        </div>
+        ${hasPerf ? `
+        <div class="rc-stats">
+          ${p.perf_likes != null ? `<span>❤ ${p.perf_likes.toLocaleString()}</span>` : ''}
+          ${p.perf_comments != null ? `<span>💬 ${p.perf_comments.toLocaleString()}</span>` : ''}
+          ${p.perf_saves != null ? `<span>🔖 ${p.perf_saves.toLocaleString()}</span>` : ''}
+          ${p.perf_reach != null ? `<span>👁 ${p.perf_reach.toLocaleString()}</span>` : ''}
+          ${p.engagement_rate != null ? `<span class="er-pill">ER ${p.engagement_rate}%</span>` : ''}
+        </div>` : `<div style="font-size:11px;color:var(--muted);margin:6px 0;">Keine Performance-Daten eingetragen</div>`}
+        ${p.caption ? `<div style="font-size:12px;color:var(--muted);margin:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px;">${_esc(p.caption.slice(0,100))}${p.caption.length>100?'…':''}</div>` : ''}
+        <div class="rc-actions">
+          <button class="btn btn-primary btn-sm" onclick="openRecycleModal(${p.id})">♻ Recyceln</button>
+          <button class="btn btn-ghost btn-sm" onclick="showPage('vorrat')">→ Vorrat</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderRcVorschlaege(jobs, box) {
+  if (!jobs.length) {
+    box.innerHTML = '<div class="empty"><p>Keine Recycling-Vorschläge — erstelle einen über "Top Performer".</p></div>';
+    return;
+  }
+  box.innerHTML = `<div style="display:flex;flex-direction:column;gap:0;">${jobs.map(j => _rcJobCard(j)).join('')}</div>`;
+}
+
+function _rcJobCard(j) {
+  const score = j.recycle_score || 0;
+  const scoreClass = _rcScoreClass(score);
+  const sp = j.source_perf || {};
+  const schedDate = j.scheduled_for ? new Date(j.scheduled_for).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : 'Kein Datum';
+
+  return `
+    <div class="recycle-job-card status-${j.status}" id="rjcard-${j.id}">
+      <div class="rj-img">
+        ${j.source_image ? `<img src="${_esc(j.source_image)}" style="width:100%;height:100%;object-fit:cover">` : '<span style="font-size:10px;color:var(--muted);padding:4px;text-align:center">Kein Bild</span>'}
+      </div>
+      <div class="rj-body">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_esc(j.source_city_color)}"></span>
+          <span style="font-size:12px;color:var(--muted);">${_esc(j.source_city)}</span>
+          <span class="rc-score-badge ${scoreClass}">Score ${score}</span>
+          <span style="font-size:11px;color:var(--muted);">Original: ${j.source_published_at ? new Date(j.source_published_at).toLocaleDateString('de-DE') : '—'}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${_esc(j.source_title || '—')}</div>
+        ${sp.likes != null || sp.reach != null ? `
+        <div class="rc-stats" style="margin-bottom:4px;">
+          ${sp.likes != null ? `<span>❤ ${sp.likes}</span>` : ''}
+          ${sp.comments != null ? `<span>💬 ${sp.comments}</span>` : ''}
+          ${sp.er != null ? `<span class="er-pill">ER ${sp.er}%</span>` : ''}
+        </div>` : ''}
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+          <label style="font-size:11px;color:var(--muted);">Neue Caption:</label>
+        </div>
+        <textarea class="rj-caption-input" id="rjcap-${j.id}" onblur="updateRjCaption(${j.id})">${_esc(j.new_caption)}</textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+          <div style="font-size:12px;color:var(--muted);">📅 ${schedDate}</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-xs" onclick="generateRcCaptionForJob(${j.id})">✦ KI-Caption</button>
+            <button class="btn btn-primary btn-xs" onclick="approveRcJob(${j.id})">✓ Einplanen</button>
+            <button class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="rejectRcJob(${j.id})">✗ Ablehnen</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderRcHistory(hist, box) {
+  if (!hist.length) {
+    box.innerHTML = '<div class="empty"><p>Noch keine recycelten Posts. Vorschläge erstellen und einplanen.</p></div>';
+    return;
+  }
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${hist.length} recycelte Posts</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+    ${hist.map(j => {
+      const sp = j.source_perf || {};
+      const tp = j.target_perf || {};
+      const hasDelta = j.perf_delta_pct != null;
+      const deltaClass = hasDelta ? (j.perf_delta_pct >= 0 ? 'pos' : 'neg') : 'neu';
+      const deltaLabel = hasDelta ? `${j.perf_delta_pct >= 0 ? '+' : ''}${j.perf_delta_pct}%` : 'Ausstehend';
+      const statusLabel = j.status === 'geplant' ? '📅 Geplant' : '✓ Veröffentlicht';
+
+      return `
+      <div class="rc-history-row">
+        <div class="rc-hist-side">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Original</div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${_esc(j.source_city)} · ${j.source_published_at ? new Date(j.source_published_at).toLocaleDateString('de-DE') : '—'}</div>
+          ${sp.er != null ? `<div class="er-pill" style="margin-bottom:4px;">ER ${sp.er}%</div>` : ''}
+          <div class="rc-stats" style="font-size:11px;">
+            ${sp.likes != null ? `<span>❤ ${sp.likes}</span>` : ''}
+            ${sp.reach != null ? `<span>👁 ${sp.reach}</span>` : ''}
+          </div>
+        </div>
+        <div class="rc-hist-arrow">
+          <div>→</div>
+          <div class="rc-delta ${deltaClass}" style="margin-top:4px;font-size:11px;">${deltaLabel}</div>
+        </div>
+        <div class="rc-hist-side">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">${statusLabel}</div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${j.scheduled_for ? new Date(j.scheduled_for).toLocaleDateString('de-DE') : '—'}</div>
+          ${tp.er != null ? `<div class="er-pill" style="margin-bottom:4px;">ER ${tp.er}%</div>` : `<div style="font-size:11px;color:var(--muted);">Noch keine Perf-Daten</div>`}
+          <div class="rc-stats" style="font-size:11px;">
+            ${tp.likes != null ? `<span>❤ ${tp.likes}</span>` : ''}
+            ${tp.reach != null ? `<span>👁 ${tp.reach}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+    </div>`;
+}
+
+async function openRecycleModal(postId) {
+  const post = _rcCandidates.find(p => p.id === postId);
+  if (!post) return;
+  document.getElementById('rc-source-id').value = postId;
+  document.getElementById('rc-new-caption').value = post.caption || '';
+  document.getElementById('rc-notes').value = '';
+  // Suggest date: 2 weeks from now
+  const suggest = new Date(); suggest.setDate(suggest.getDate() + 14);
+  suggest.setHours(18, 0, 0, 0);
+  document.getElementById('rc-schedule-date').value = suggest.toISOString().slice(0,16);
+
+  // Preview
+  document.getElementById('modal-rc-img').innerHTML = post.image_url
+    ? `<img src="${_esc(post.image_url)}" style="width:100%;height:100%;object-fit:cover">`
+    : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Kein Bild</div>';
+  document.getElementById('modal-rc-info').innerHTML = `
+    <div style="font-size:12px;color:var(--muted);">${_esc(post.city_name)}</div>
+    <div style="font-size:14px;font-weight:600;margin:4px 0;">${_esc(post.title || '—')}</div>
+    <div style="font-size:12px;color:var(--muted);">vor ${post.days_since_post} Tagen · ER ${post.engagement_rate ?? '—'}%</div>
+    <div style="margin-top:6px;"><span class="rc-score-badge ${_rcScoreClass(post.recycle_score || 0)}">Score ${post.recycle_score || 0}</span></div>`;
+
+  document.getElementById('rc-caption-suggestions').style.display = 'none';
+  _rcCurrentJobId = null;
+  document.getElementById('modal-recycle-create').classList.add('open');
+}
+
+async function saveRecycleJob() {
+  const sourceId = parseInt(document.getElementById('rc-source-id').value);
+  const caption  = document.getElementById('rc-new-caption').value.trim();
+  const schedRaw = document.getElementById('rc-schedule-date').value;
+  const notes    = document.getElementById('rc-notes').value.trim();
+  if (!sourceId) { toast('Kein Post ausgewählt', 'error'); return; }
+
+  const r = await fetch('/api/recycle/jobs', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      source_post_id: sourceId,
+      new_caption: caption,
+      scheduled_for: schedRaw ? new Date(schedRaw).toISOString() : null,
+      notes
+    })
+  }).then(r => r.json());
+
+  if (r.error) { toast(r.error, 'error'); return; }
+  closeModal('modal-recycle-create');
+  toast('Recycling-Vorschlag gespeichert', 'success');
+  _rcCurrentJobId = r.id;
+  loadRcBadge();
+  if (_rcTab === 'vorschlaege') loadRcView();
+}
+
+async function generateRcCaption() {
+  // Only works after saving the job — otherwise create first
+  if (!_rcCurrentJobId) {
+    toast('Erst speichern, dann KI-Caption generieren', 'info');
+    return;
+  }
+  await generateRcCaptionForJob(_rcCurrentJobId);
+}
+
+async function generateRcCaptionForJob(jobId) {
+  const r = await fetch(`/api/recycle/caption/${jobId}`, {method:'POST'}).then(r => r.json());
+  if (r.error) { toast(r.error, 'error'); return; }
+  const box = document.getElementById('rc-caption-suggestions');
+  const inputId = `rjcap-${jobId}`;
+  // Either modal box or job card textarea
+  const targetInput = document.getElementById('rc-new-caption') || document.getElementById(inputId);
+
+  const suggBox = box || document.createElement('div');
+  suggBox.style.display = '';
+  suggBox.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">KI-Vorschläge — anklicken zum Übernehmen:</div>` +
+    r.captions.map(c => `<div onclick="pickRcCaption('${jobId}','${c.replace(/'/g,"\\'")}',this)"
+      style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:5px;font-size:12px;cursor:pointer;transition:border-color .15s;"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">${_esc(c)}</div>`).join('');
+}
+
+function pickRcCaption(jobId, caption, el) {
+  const inp = document.getElementById('rc-new-caption') || document.getElementById(`rjcap-${jobId}`);
+  if (inp) inp.value = caption;
+  document.querySelectorAll('[onclick*="pickRcCaption"]').forEach(e => e.style.borderColor = 'var(--border)');
+  el.style.borderColor = 'var(--accent)';
+}
+
+async function updateRjCaption(jobId) {
+  const inp = document.getElementById(`rjcap-${jobId}`);
+  if (!inp) return;
+  await fetch(`/api/recycle/jobs/${jobId}`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ new_caption: inp.value })
+  });
+}
+
+async function approveRcJob(jobId) {
+  const job = _rcJobs.find(j => j.id === jobId);
+  const schedFor = job?.scheduled_for;
+  const r = await fetch(`/api/recycle/jobs/${jobId}/approve`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ scheduled_for: schedFor })
+  }).then(r => r.json());
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Einplant! Post wurde in Vorrat → Geplant gesetzt.', 'success');
+  loadRcView(); loadRcBadge();
+}
+
+async function rejectRcJob(jobId) {
+  const reason = prompt('Grund für Ablehnung (optional):') ?? '';
+  await fetch(`/api/recycle/jobs/${jobId}/reject`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ reason })
+  });
+  toast('Abgelehnt', 'info');
+  loadRcView(); loadRcBadge();
+}
+
 
 // ══════════════════════════════════════════
 // MARKT

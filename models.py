@@ -386,6 +386,9 @@ class MemePost(db.Model):
     perf_impressions = db.Column(db.Integer)
     perf_updated_at  = db.Column(db.DateTime)
 
+    recycle_count    = db.Column(db.Integer, default=0)
+    last_recycled_at = db.Column(db.DateTime)
+
     created_at       = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -423,6 +426,94 @@ class MemePost(db.Model):
             'perf_saves': self.perf_saves, 'perf_reach': self.perf_reach,
             'perf_impressions': self.perf_impressions,
             'engagement_rate': self.engagement_rate,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class TrendingTopic(db.Model):
+    """Trending-Themen pro Stadt — aus RSS extrahiert oder manuell."""
+    __tablename__ = 'trending_topic'
+    id          = db.Column(db.Integer, primary_key=True)
+    city_id     = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=True, index=True)
+    keyword     = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    trend_score = db.Column(db.Integer, default=50)   # 0–100 Meme-Potenzial
+    source      = db.Column(db.String(20), default='rss')  # rss | manual
+    meme_idea   = db.Column(db.Text)
+    used_in_post_id = db.Column(db.Integer, db.ForeignKey('meme_post.id'), nullable=True)
+    ignored     = db.Column(db.Boolean, default=False, index=True)
+    fetched_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    city         = db.relationship('City', backref='trending_topics', foreign_keys=[city_id])
+    used_in_post = db.relationship('MemePost', backref='used_for_trend', foreign_keys=[used_in_post_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'city_id': self.city_id,
+            'city_name': self.city.name if self.city else 'Überregional',
+            'city_color': self.city.accent_color if self.city else '#3b82f6',
+            'keyword': self.keyword, 'description': self.description or '',
+            'trend_score': self.trend_score, 'source': self.source,
+            'meme_idea': self.meme_idea or '', 'ignored': self.ignored,
+            'used_in_post_id': self.used_in_post_id,
+            'fetched_at': self.fetched_at.isoformat() if self.fetched_at else None,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class RecycleJob(db.Model):
+    """Recycling-Vorschlag: ein veröffentlichter Post soll nochmal gepostet werden."""
+    __tablename__ = 'recycle_job'
+    id               = db.Column(db.Integer, primary_key=True)
+    source_post_id   = db.Column(db.Integer, db.ForeignKey('meme_post.id'), nullable=False, index=True)
+    target_post_id   = db.Column(db.Integer, db.ForeignKey('meme_post.id'), nullable=True)
+    city_id          = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False)
+    status           = db.Column(db.String(20), default='vorschlag', index=True)
+    # vorschlag | geplant | veroeffentlicht | abgelehnt
+    scheduled_for    = db.Column(db.DateTime)
+    new_caption      = db.Column(db.Text)
+    recycle_score    = db.Column(db.Integer)
+    rejection_reason = db.Column(db.String(200))
+    notes            = db.Column(db.Text)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    source_post = db.relationship('MemePost', foreign_keys=[source_post_id], backref='recycle_jobs_as_source')
+    target_post = db.relationship('MemePost', foreign_keys=[target_post_id], backref='recycle_job_as_target')
+    city        = db.relationship('City', backref='recycle_jobs')
+
+    def to_dict(self):
+        sp = self.source_post
+        tp = self.target_post
+        return {
+            'id': self.id,
+            'source_post_id': self.source_post_id,
+            'source_title': sp.title if sp else '',
+            'source_image': (sp.image_url or sp.image_path or '') if sp else '',
+            'source_city': sp.city.name if sp and sp.city else '',
+            'source_city_color': sp.city.accent_color if sp and sp.city else '#3b82f6',
+            'source_published_at': sp.published_at.isoformat() if sp and sp.published_at else None,
+            'source_perf': {
+                'likes': sp.perf_likes, 'comments': sp.perf_comments,
+                'saves': sp.perf_saves, 'reach': sp.perf_reach,
+                'er': sp.engagement_rate,
+            } if sp else {},
+            'target_post_id': self.target_post_id,
+            'target_perf': {
+                'likes': tp.perf_likes, 'comments': tp.perf_comments,
+                'saves': tp.perf_saves, 'reach': tp.perf_reach,
+                'er': tp.engagement_rate,
+            } if tp else {},
+            'city_id': self.city_id,
+            'city_name': self.city.name if self.city else '',
+            'city_color': self.city.accent_color if self.city else '#3b82f6',
+            'status': self.status,
+            'scheduled_for': self.scheduled_for.isoformat() if self.scheduled_for else None,
+            'new_caption': self.new_caption or '',
+            'recycle_score': self.recycle_score,
+            'rejection_reason': self.rejection_reason or '',
+            'notes': self.notes or '',
             'created_at': self.created_at.isoformat(),
         }
 
