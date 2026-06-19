@@ -2065,6 +2065,187 @@ Nur JSON."""
         return jsonify({'error': str(ex)}), 500
     return jsonify({'error': 'KI-Fehler'}), 500
 
+@app.route('/api/vorrat/bulk', methods=['POST'])
+@login_required
+def api_vorrat_bulk():
+    d      = request.json or {}
+    ids    = d.get('ids', [])
+    action = d.get('action', '')
+    new_status = d.get('status', '')
+    if not ids or not action:
+        return jsonify({'error': 'ids und action fehlen'}), 400
+    posts = MemePost.query.filter(MemePost.id.in_(ids)).all()
+    count = 0
+    if action == 'delete':
+        for p in posts:
+            db.session.delete(p)
+            count += 1
+    elif action == 'archive':
+        for p in posts:
+            p.status = 'archiviert'
+            count += 1
+    elif action == 'status' and new_status:
+        for p in posts:
+            p.status = new_status
+            if new_status == 'veroeffentlicht' and not p.published_at:
+                p.published_at = datetime.utcnow()
+            count += 1
+    db.session.commit()
+    return jsonify({'ok': True, 'affected': count})
+
+
+@app.route('/api/vorrat/<int:post_id>/duplicate', methods=['POST'])
+@login_required
+def api_vorrat_duplicate(post_id):
+    p = MemePost.query.get_or_404(post_id)
+    d = request.json or {}
+    new_post = MemePost(
+        city_id=d.get('city_id', p.city_id),
+        render_job_id=p.render_job_id,
+        template_id=p.template_id,
+        title=d.get('title', p.title),
+        image_path=p.image_path,
+        image_url=p.image_url,
+        caption=p.caption,
+        hashtags=p.hashtags,
+        post_type=p.post_type,
+        status='entwurf',
+        notes=f'Dupliziert von Post #{p.id}',
+    )
+    db.session.add(new_post)
+    db.session.commit()
+    return jsonify(new_post.to_dict()), 201
+
+
+@app.route('/api/vorrat/export-zip')
+@login_required
+def api_vorrat_export_zip():
+    import zipfile, io, csv as csv_mod
+    status  = request.args.get('status', 'geplant')
+    city_id = request.args.get('city_id', type=int)
+    ids     = request.args.getlist('ids', type=int)
+
+    q = MemePost.query
+    if ids:
+        q = q.filter(MemePost.id.in_(ids))
+    else:
+        if status:  q = q.filter_by(status=status)
+        if city_id: q = q.filter_by(city_id=city_id)
+    posts = q.order_by(MemePost.scheduled_at, MemePost.created_at).all()
+    if not posts:
+        return jsonify({'error': 'Keine Posts gefunden'}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        csv_buf = io.StringIO()
+        writer = csv_mod.DictWriter(csv_buf, fieldnames=[
+            'id','city','title','caption','hashtags','post_type',
+            'scheduled_at','status','image_file'
+        ])
+        writer.writeheader()
+
+        for p in posts:
+            city_slug = (p.city.name if p.city else 'unbekannt').lower().replace(' ', '_')
+            img_filename = f'kein_bild'
+            img_bytes = None
+
+            if p.image_url and p.image_url.startswith('http'):
+                try:
+                    resp = requests.get(p.image_url, timeout=12)
+                    if resp.ok:
+                        img_bytes = resp.content
+                        raw_ext = p.image_url.split('?')[0].rsplit('.', 1)[-1].lower()
+                        ext = raw_ext if raw_ext in ('jpg','jpeg','png','webp','gif') else 'jpg'
+                        img_filename = f'post_{p.id}_{city_slug}.{ext}'
+                except Exception:
+                    pass
+            elif p.image_path:
+                base = os.path.basename(p.image_path)
+                for folder in ('static/uploads', 'static/renders'):
+                    candidate = os.path.join(_BASE_DIR, folder, base)
+                    if os.path.exists(candidate):
+                        with open(candidate, 'rb') as f:
+                            img_bytes = f.read()
+                        ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
+                        img_filename = f'post_{p.id}_{city_slug}.{ext}'
+                        break
+
+            if img_bytes:
+                zf.writestr(f'images/{img_filename}', img_bytes)
+
+            writer.writerow({
+                'id': p.id, 'city': p.city.name if p.city else '',
+                'title': p.title or '', 'caption': p.caption or '',
+                'hashtags': p.hashtags or '', 'post_type': p.post_type or 'feed',
+                'scheduled_at': p.scheduled_at.strftime('%Y-%m-%d %H:%M') if p.scheduled_at else '',
+                'status': p.status, 'image_file': img_filename,
+            })
+        zf.writestr('manifest.csv', csv_buf.getvalue())
+
+    buf.seek(0)
+    from flask import send_file
+    fname = f'memeos_export_{datetime.utcnow().strftime("%Y%m%d_%H%M")}.zip'
+    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name=fname)
+
+
+@app.route('/api/city/<int:city_id>/dashboard')
+@login_required
+def api_city_dashboard(city_id):
+    city = City.query.get_or_404(city_id)
+    from sqlalchemy import func as sqlfunc
+
+    raw = db.session.query(MemePost.status, sqlfunc.count(MemePost.id))\
+          .filter(MemePost.city_id == city_id).group_by(MemePost.status).all()
+    counts = {s: 0 for s in ['entwurf','bereit','geplant','veroeffentlicht','archiviert']}
+    for s, c in raw:
+        if s in counts: counts[s] = c
+
+    upcoming = MemePost.query.filter(
+        MemePost.city_id == city_id, MemePost.status == 'geplant',
+        MemePost.scheduled_at >= datetime.utcnow()
+    ).order_by(MemePost.scheduled_at).limit(5).all()
+
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    pub = MemePost.query.filter(
+        MemePost.city_id == city_id, MemePost.status == 'veroeffentlicht',
+        MemePost.published_at >= cutoff, MemePost.perf_reach.isnot(None)
+    ).all()
+    ers = [p.engagement_rate for p in pub if p.engagement_rate]
+    best = max(pub, key=lambda p: p.engagement_rate or 0) if pub else None
+
+    trending = TrendingTopic.query.filter_by(city_id=city_id, ignored=False)\
+        .order_by(TrendingTopic.trend_score.desc()).limit(5).all()
+
+    rc_posts = MemePost.query.filter(
+        MemePost.city_id == city_id, MemePost.status == 'veroeffentlicht',
+        MemePost.published_at <= datetime.utcnow() - timedelta(days=14)
+    ).all()
+    candidates = sorted([
+        {**p.to_dict(), 'recycle_score': _recycle_score(p),
+         'days_since_post': (datetime.utcnow()-p.published_at).days if p.published_at else None}
+        for p in rc_posts
+    ], key=lambda x: x['recycle_score'], reverse=True)[:3]
+
+    return jsonify({
+        'city': {
+            'id': city.id, 'name': city.name, 'state': city.state or '',
+            'accent_color': city.accent_color or '#3b82f6',
+            'population': city.population, 'instagram_handle': city.instagram_handle or '',
+        },
+        'post_counts': counts,
+        'upcoming': [p.to_dict() for p in upcoming],
+        'performance_30d': {
+            'post_count': len(pub), 'avg_er': round(sum(ers)/len(ers), 2) if ers else None,
+            'total_reach': sum(p.perf_reach or 0 for p in pub),
+            'best_post': best.to_dict() if best else None,
+        },
+        'trending': [t.to_dict() for t in trending],
+        'recycle_candidates': candidates,
+        'wiki_count': CityKnowledge.query.filter_by(city_id=city_id, active=True).count(),
+        'render_count': RenderJob.query.filter_by(city_id=city_id, status='done').count(),
+    })
+
+
 @app.route('/api/vorrat/from-job/<int:job_id>', methods=['POST'])
 @login_required
 def api_vorrat_from_job(job_id):

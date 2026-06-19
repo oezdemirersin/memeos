@@ -231,6 +231,36 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .survey-q-text{font-size:13px;font-weight:600;margin-bottom:8px;}
 .survey-answer{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--muted2);}
 
+/* ── Bulk-Aktionen ── */
+.vorrat-card{position:relative;}
+.vorrat-cb{position:absolute;top:8px;left:8px;z-index:10;width:18px;height:18px;cursor:pointer;accent-color:var(--accent);opacity:0;transition:opacity .15s;}
+.vorrat-card:hover .vorrat-cb,.vorrat-card.selected .vorrat-cb{opacity:1;}
+.vorrat-card.selected{outline:2px solid var(--accent);outline-offset:0;}
+.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:12px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 40px rgba(0,0,0,.6);z-index:400;white-space:nowrap;transition:opacity .2s,transform .2s;}
+.bulk-bar.hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(12px);}
+
+/* ── Stadt-Dashboard ── */
+.city-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;}
+.city-card:hover{border-color:var(--border2);transform:translateY(-2px);}
+.city-card-bar{height:5px;}
+.city-card-body{padding:14px;}
+.city-card-name{font-family:var(--font-display);font-size:18px;letter-spacing:1px;margin-bottom:4px;}
+.city-card-state{font-size:11px;color:var(--muted);margin-bottom:12px;}
+.city-stat-row{display:flex;gap:12px;flex-wrap:wrap;}
+.city-stat{display:flex;flex-direction:column;align-items:center;flex:1;background:var(--surface2);border-radius:8px;padding:8px 6px;min-width:50px;}
+.city-stat-val{font-size:18px;font-weight:700;line-height:1;}
+.city-stat-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-align:center;}
+.city-dash-section{margin-bottom:20px;}
+.city-dash-section-title{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.upcoming-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);}
+.upcoming-row:last-child{border-bottom:none;}
+.perf-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+.perf-kpi-box{background:var(--surface2);border-radius:8px;padding:10px;text-align:center;}
+.perf-kpi-val{font-size:20px;font-weight:700;font-family:var(--font-display);}
+.perf-kpi-lbl{font-size:10px;color:var(--muted);margin-top:2px;}
+.rc-mini-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);}
+.rc-mini-row:last-child{border-bottom:none;}
+
 /* ── Pagination ── */
 .page-btn{min-width:32px;height:32px;padding:0 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;}
 .page-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text);}
@@ -362,6 +392,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <button class="nav-item" onclick="showPage('performance')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
       Performance
+    </button>
+    <button class="nav-item" onclick="showPage('staedte')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+      Städte
     </button>
     <button class="nav-item" onclick="showPage('trending')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -1057,6 +1091,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <option value="story">Story</option>
         <option value="carousel">Carousel</option>
       </select>
+      <button class="btn btn-ghost btn-sm" onclick="toggleVorratSelectMode()" id="vorrat-select-btn">☑ Auswählen</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportVorratZip()" title="Geplante Posts als ZIP herunterladen">↓ ZIP</button>
       <button class="btn btn-primary btn-sm" onclick="openVorratCreateModal()">+ Post hinzufügen</button>
     </div>
   </div>
@@ -1308,6 +1344,20 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- ═══════════════════════════ STÄDTE-DASHBOARD ═══════════════════════════ -->
+<div class="page" id="page-staedte" style="display:none">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div>
+      <h1 class="page-title">STÄDTE <span>DASHBOARD</span></h1>
+      <p style="font-size:13px;color:var(--muted);margin-top:3px;">Alle Städte auf einen Blick — Posts, Performance, Trends</p>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="loadStaedte()">↻ Aktualisieren</button>
+  </div>
+  <div id="staedte-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;">
+    <div class="empty"><p>Lade…</p></div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════ TRENDING ═══════════════════════════ -->
 <div class="page" id="page-trending" style="display:none">
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
@@ -1370,6 +1420,107 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 </main><!-- /main -->
+
+<!-- ── Floating Bulk-Action-Bar ── -->
+<div class="bulk-bar hidden" id="bulk-bar">
+  <span style="font-size:13px;font-weight:600;" id="bulk-count">0 ausgewählt</span>
+  <div style="width:1px;height:20px;background:var(--border);"></div>
+  <button class="btn btn-ghost btn-sm" onclick="selectAllVorrat()">Alle</button>
+  <button class="btn btn-ghost btn-sm" onclick="clearVorratSelection()">Keine</button>
+  <div style="width:1px;height:20px;background:var(--border);"></div>
+  <select id="bulk-status-select" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--text);font-size:12px;">
+    <option value="">Status setzen…</option>
+    <option value="entwurf">Entwurf</option>
+    <option value="bereit">Bereit</option>
+    <option value="geplant">Geplant</option>
+    <option value="veroeffentlicht">Veröffentlicht</option>
+    <option value="archiviert">Archiviert</option>
+  </select>
+  <button class="btn btn-ghost btn-sm" onclick="bulkSetStatus()">✓ Setzen</button>
+  <button class="btn btn-ghost btn-sm" onclick="bulkExportZip()" title="Ausgewählte als ZIP exportieren">↓ ZIP</button>
+  <button class="btn btn-ghost btn-sm" onclick="bulkArchive()" style="color:var(--muted);">Archivieren</button>
+  <button class="btn btn-ghost btn-sm" onclick="bulkDelete()" style="color:var(--danger);">Löschen</button>
+</div>
+
+<!-- ── Post duplizieren Modal ── -->
+<div class="modal-overlay" id="modal-duplicate">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Post duplizieren</span>
+      <button class="modal-close" onclick="closeModal('modal-duplicate')">✕</button>
+    </div>
+    <div id="dup-preview" style="display:grid;grid-template-columns:80px 1fr;gap:10px;background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:16px;"></div>
+    <div class="form-group">
+      <label class="form-label">Ziel-Stadt</label>
+      <select id="dup-city" class="form-control"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Titel (optional anpassen)</label>
+      <input id="dup-title" class="form-control" placeholder="Gleicher Titel wie Original">
+    </div>
+    <input type="hidden" id="dup-source-id">
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-duplicate')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveDuplicate()">Duplizieren → Entwurf</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Stadt-Detail Modal ── -->
+<div class="modal-overlay" id="modal-city-dashboard">
+  <div class="modal modal-lg" style="width:700px;max-height:88vh;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div id="cdash-dot" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;"></div>
+        <span class="modal-title" id="cdash-name">—</span>
+        <span style="font-size:12px;color:var(--muted);" id="cdash-state"></span>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-city-dashboard')">✕</button>
+    </div>
+
+    <!-- Quick KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:20px;" id="cdash-kpis"></div>
+
+    <!-- Status-Übersicht -->
+    <div class="city-dash-section">
+      <div class="city-dash-section-title">Posts nach Status</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;" id="cdash-status"></div>
+    </div>
+
+    <!-- Nächste geplante Posts -->
+    <div class="city-dash-section" id="cdash-upcoming-section">
+      <div class="city-dash-section-title">Nächste geplante Posts</div>
+      <div id="cdash-upcoming"></div>
+    </div>
+
+    <!-- Performance 30 Tage -->
+    <div class="city-dash-section" id="cdash-perf-section">
+      <div class="city-dash-section-title">Performance — letzte 30 Tage</div>
+      <div class="perf-kpi" id="cdash-perf-kpis"></div>
+      <div id="cdash-best-post"></div>
+    </div>
+
+    <!-- Trending -->
+    <div class="city-dash-section" id="cdash-trending-section">
+      <div class="city-dash-section-title">Aktive Trends</div>
+      <div id="cdash-trending"></div>
+    </div>
+
+    <!-- Recycle Kandidaten -->
+    <div class="city-dash-section" id="cdash-recycle-section">
+      <div class="city-dash-section-title">Top Recycle-Kandidaten</div>
+      <div id="cdash-recycle"></div>
+    </div>
+
+    <div class="modal-footer" style="justify-content:space-between;">
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" id="cdash-btn-vorrat" onclick="">Im Vorrat</button>
+        <button class="btn btn-ghost btn-sm" id="cdash-btn-trending" onclick="">Trending laden</button>
+      </div>
+      <button class="btn btn-ghost" onclick="closeModal('modal-city-dashboard')">Schließen</button>
+    </div>
+  </div>
+</div>
 
 <!-- Trending: Meme-Idee Modal -->
 <div class="modal-overlay" id="modal-trend-idea">
@@ -1860,6 +2011,7 @@ function showPage(name) {
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
+  if(name==='staedte') loadStaedte();
   if(name==='trending') loadTrending();
   if(name==='recycling') { loadRcCityFilter(); loadRcView(); loadRcBadge(); }
   if(name==='markt') loadMarkt();
@@ -3048,15 +3200,19 @@ function renderVorratGrid(data) {
     return;
   }
   grid.innerHTML = data.map(p => {
-    const st = VORRAT_STATUS[p.status] || VORRAT_STATUS.entwurf;
+    const st  = VORRAT_STATUS[p.status] || VORRAT_STATUS.entwurf;
     const dot = `<span class="vorrat-status-dot" style="background:${st.color}"></span>`;
     const img = p.image_url
-      ? `<img src="${p.image_url}" onerror="this.parentElement.innerHTML='<div class=\\'vorrat-img-placeholder\\'>Kein Bild</div>'">`
+      ? `<img src="${p.image_url}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'vorrat-img-placeholder\\'>Kein Bild</div>'">`
       : `<div class="vorrat-img-placeholder">Kein Bild</div>`;
-    return `<div class="vorrat-card">
+    const isSel = _vorratSelected.has(p.id);
+    return `<div class="vorrat-card ${isSel?'selected':''}" id="vcard-${p.id}">
+      <input type="checkbox" class="vorrat-cb" data-id="${p.id}" ${isSel?'checked':''}
+        onchange="toggleVorratSelect(${p.id},this)"
+        style="${_vorratSelectMode?'opacity:1;':''}" title="Auswählen">
       <div class="vorrat-img">${img}
         <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.post_type}</div>
-        <div style="position:absolute;top:6px;left:6px;background:${p.city_color||'#3b82f6'};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.city_name}</div>
+        <div style="position:absolute;top:6px;left:30px;background:${p.city_color||'#3b82f6'};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.city_name}</div>
       </div>
       <div class="vorrat-body">
         <div style="font-size:12px;font-weight:600;">${p.title || p.city_name + ' Meme'}</div>
@@ -3066,7 +3222,8 @@ function renderVorratGrid(data) {
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           ${dot}<span style="font-size:11px;color:${st.color};">${st.label}</span>
           <div style="flex:1;"></div>
-          <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})">✏</button>
+          <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})" title="Bearbeiten">✏</button>
+          <button class="btn btn-xs btn-ghost" onclick="openDuplicateModal(${p.id})" title="Duplizieren">⧉</button>
           <button class="btn btn-xs btn-ghost" onclick="openPerfModal(${p.id},'${(p.title||p.city_name).replace(/'/g,"\\'")}')">📊</button>
           <button class="btn btn-xs btn-ghost" onclick="deleteVorratPost(${p.id})" style="color:var(--muted)">✕</button>
         </div>
@@ -3293,6 +3450,321 @@ async function loadPerformance() {
     </div>`).join('') :
     '<div style="padding:10px;color:var(--muted);font-size:12px;">Keine Daten</div>';
 }
+
+// ══════════════════════════════════════════
+// STÄDTE-DASHBOARD
+// ══════════════════════════════════════════
+
+let _staedteData = [];
+
+async function loadStaedte() {
+  const grid = document.getElementById('staedte-grid');
+  grid.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
+  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
+  if (!cities.length) { grid.innerHTML = '<div class="empty"><p>Keine Städte vorhanden</p></div>'; return; }
+
+  // Load basic counts per city in parallel (lightweight)
+  const dashboards = await Promise.all(
+    cities.map(c => fetch(`/api/city/${c.id}/dashboard`).then(r => r.json()).catch(() => null))
+  );
+  _staedteData = dashboards.filter(Boolean);
+
+  grid.innerHTML = _staedteData.map(d => {
+    const c = d.city;
+    const pc = d.post_counts;
+    const total = Object.values(pc).reduce((a, b) => a + b, 0);
+    const er = d.performance_30d.avg_er;
+    const upcoming = pc.geplant || 0;
+    return `
+    <div class="city-card" onclick="openCityDashboard(${c.id})">
+      <div class="city-card-bar" style="background:${c.accent_color}"></div>
+      <div class="city-card-body">
+        <div class="city-card-name">${_esc(c.name)}</div>
+        <div class="city-card-state">${_esc(c.state || '—')}${c.population ? ' · ' + c.population.toLocaleString('de-DE') + ' Einw.' : ''}</div>
+        <div class="city-stat-row">
+          <div class="city-stat">
+            <div class="city-stat-val">${total}</div>
+            <div class="city-stat-lbl">Posts</div>
+          </div>
+          <div class="city-stat">
+            <div class="city-stat-val" style="${upcoming>0?'color:#fbbf24':''}">${upcoming}</div>
+            <div class="city-stat-lbl">Geplant</div>
+          </div>
+          <div class="city-stat">
+            <div class="city-stat-val" style="${er?'color:#22c55e':''}">${er != null ? er+'%' : '—'}</div>
+            <div class="city-stat-lbl">Ø ER</div>
+          </div>
+          <div class="city-stat">
+            <div class="city-stat-val">${d.wiki_count}</div>
+            <div class="city-stat-lbl">Wiki</div>
+          </div>
+        </div>
+        ${d.trending.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">🔥 ${d.trending.slice(0,2).map(t=>_esc(t.keyword)).join(' · ')}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openCityDashboard(cityId) {
+  const d = _staedteData.find(x => x.city.id === cityId);
+  if (!d) return;
+  _renderCityModal(d);
+  document.getElementById('modal-city-dashboard').classList.add('open');
+  // Set quick-action buttons
+  document.getElementById('cdash-btn-vorrat').onclick = () => {
+    closeModal('modal-city-dashboard');
+    document.getElementById('vorrat-city-filter').value = cityId;
+    _vorratPage = 1; showPage('vorrat');
+  };
+  document.getElementById('cdash-btn-trending').onclick = async () => {
+    const btn = document.getElementById('cdash-btn-trending');
+    btn.disabled = true; btn.textContent = '…';
+    const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST'}).then(r=>r.json());
+    btn.disabled = false; btn.textContent = 'Trending laden';
+    toast(r.error ? r.error : `${r.added} Trends geladen für ${r.city}`, r.error ? 'error' : 'success');
+    if (!r.error) loadStaedte();
+  };
+}
+
+function _renderCityModal(d) {
+  const c = d.city;
+  document.getElementById('cdash-dot').style.background = c.accent_color;
+  document.getElementById('cdash-name').textContent     = c.name;
+  document.getElementById('cdash-state').textContent    = c.state || '';
+
+  // Top KPIs
+  const totalPosts = Object.values(d.post_counts).reduce((a,b)=>a+b,0);
+  document.getElementById('cdash-kpis').innerHTML = [
+    { v: totalPosts, l: 'Posts gesamt' },
+    { v: d.post_counts.veroeffentlicht || 0, l: 'Veröffentlicht' },
+    { v: d.wiki_count, l: 'Wiki-Einträge' },
+    { v: d.render_count, l: 'Memes generiert' },
+    { v: d.trending.length, l: 'Aktive Trends' },
+  ].map(({ v, l }) => `
+    <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:700;font-family:var(--font-display);">${v}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">${l}</div>
+    </div>`).join('');
+
+  // Status breakdown
+  const STATUS_COLORS = { entwurf:'#64748b', bereit:'#6366f1', geplant:'#f59e0b', veroeffentlicht:'#22c55e', archiviert:'#374151' };
+  const STATUS_LABELS = { entwurf:'Entwurf', bereit:'Bereit', geplant:'Geplant', veroeffentlicht:'Verö.', archiviert:'Archiv' };
+  document.getElementById('cdash-status').innerHTML = Object.entries(d.post_counts).map(([s, c_]) =>
+    `<div style="background:var(--surface2);border-radius:8px;padding:8px;text-align:center;border-top:3px solid ${STATUS_COLORS[s]||'#374151'};">
+      <div style="font-size:18px;font-weight:700;">${c_}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">${STATUS_LABELS[s]||s}</div>
+    </div>`
+  ).join('');
+
+  // Upcoming posts
+  const upEl = document.getElementById('cdash-upcoming');
+  if (d.upcoming.length) {
+    upEl.innerHTML = d.upcoming.map(p => `
+      <div class="upcoming-row">
+        ${p.image_url ? `<img src="${_esc(p.image_url)}" style="width:40px;height:40px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : '<div style="width:40px;height:40px;border-radius:5px;background:var(--surface3);flex-shrink:0;"></div>'}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(p.title || '—')}</div>
+          <div style="font-size:11px;color:var(--muted);">${p.post_type}</div>
+        </div>
+        <div style="font-size:11px;color:#fbbf24;flex-shrink:0;">${p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString('de-DE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—'}</div>
+      </div>`).join('');
+  } else {
+    upEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px 0;">Keine geplanten Posts</div>';
+  }
+
+  // Performance
+  const pf = d.performance_30d;
+  document.getElementById('cdash-perf-kpis').innerHTML = [
+    { v: pf.avg_er != null ? pf.avg_er + '%' : '—', l: 'Ø Engagement Rate' },
+    { v: pf.total_reach ? pf.total_reach.toLocaleString('de-DE') : '—', l: 'Gesamtreach 30 Tage' },
+    { v: pf.post_count, l: 'Posts mit Perf.-Daten' },
+  ].map(({ v, l }) => `
+    <div class="perf-kpi-box">
+      <div class="perf-kpi-val">${v}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">${l}</div>
+    </div>`).join('');
+
+  const bp = pf.best_post;
+  document.getElementById('cdash-best-post').innerHTML = bp ? `
+    <div style="display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:8px;padding:10px;">
+      ${bp.image_url ? `<img src="${_esc(bp.image_url)}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0;">` : ''}
+      <div>
+        <div style="font-size:11px;color:var(--muted);">🏆 Bester Post</div>
+        <div style="font-size:12px;font-weight:600;">${_esc(bp.title || bp.caption?.slice(0,50) || '—')}</div>
+        <div style="font-size:11px;color:#22c55e;">ER ${bp.engagement_rate}% · ❤ ${bp.perf_likes||0} · 👁 ${(bp.perf_reach||0).toLocaleString('de-DE')}</div>
+      </div>
+    </div>` : '<div style="font-size:12px;color:var(--muted);">Noch keine Performance-Daten</div>';
+
+  // Trending
+  const trEl = document.getElementById('cdash-trending');
+  trEl.innerHTML = d.trending.length ? d.trending.map(t => `
+    <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:13px;font-weight:600;">${_esc(t.keyword)}</div>
+      <div style="font-size:11px;color:${_trendScoreColor(t.trend_score)};font-weight:700;">${t.trend_score}</div>
+      <button class="btn btn-ghost btn-xs" onclick="openTrendIdea(${t.id})">Idee</button>
+    </div>`).join('') : '<div style="font-size:12px;color:var(--muted);">Keine aktiven Trends</div>';
+
+  // Recycle
+  const rcEl = document.getElementById('cdash-recycle');
+  rcEl.innerHTML = d.recycle_candidates.length ? d.recycle_candidates.map(p => `
+    <div class="rc-mini-row">
+      ${p.image_url ? `<img src="${_esc(p.image_url)}" style="width:40px;height:40px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : '<div style="width:40px;height:40px;border-radius:5px;background:var(--surface3);flex-shrink:0;"></div>'}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(p.title||'—')}</div>
+        <div style="font-size:11px;color:var(--muted);">vor ${p.days_since_post} Tagen · ER ${p.engagement_rate||'—'}%</div>
+      </div>
+      <span class="rc-score-badge ${_rcScoreClass(p.recycle_score)}">Score ${p.recycle_score}</span>
+      <button class="btn btn-ghost btn-xs" onclick="closeModal('modal-city-dashboard');openRecycleModal(${p.id})">↻</button>
+    </div>`).join('') : '<div style="font-size:12px;color:var(--muted);">Keine Kandidaten (min. 14 Tage alt + Perf.-Daten nötig)</div>';
+}
+
+
+// ══════════════════════════════════════════
+// BULK-AKTIONEN
+// ══════════════════════════════════════════
+
+let _vorratSelected = new Set();
+let _vorratSelectMode = false;
+
+function toggleVorratSelectMode() {
+  _vorratSelectMode = !_vorratSelectMode;
+  const btn = document.getElementById('vorrat-select-btn');
+  if (btn) btn.textContent = _vorratSelectMode ? '✕ Abbrechen' : '☑ Auswählen';
+  if (!_vorratSelectMode) { clearVorratSelection(); }
+  renderVorratGrid(_vorratData);
+}
+
+function toggleVorratSelect(id, cb) {
+  if (cb.checked) _vorratSelected.add(id);
+  else _vorratSelected.delete(id);
+  const card = document.getElementById(`vcard-${id}`);
+  if (card) card.classList.toggle('selected', cb.checked);
+  updateBulkBar();
+}
+
+function selectAllVorrat() {
+  document.querySelectorAll('.vorrat-cb').forEach(cb => {
+    cb.checked = true;
+    _vorratSelected.add(parseInt(cb.dataset.id));
+    const card = document.getElementById(`vcard-${cb.dataset.id}`);
+    if (card) card.classList.add('selected');
+  });
+  updateBulkBar();
+}
+
+function clearVorratSelection() {
+  _vorratSelected.clear();
+  document.querySelectorAll('.vorrat-cb').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('.vorrat-card.selected').forEach(c => c.classList.remove('selected'));
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  const cnt = document.getElementById('bulk-count');
+  if (!bar) return;
+  const n = _vorratSelected.size;
+  bar.classList.toggle('hidden', n === 0);
+  if (cnt) cnt.textContent = `${n} Post${n !== 1 ? 's' : ''} ausgewählt`;
+}
+
+async function bulkSetStatus() {
+  const status = document.getElementById('bulk-status-select').value;
+  if (!status) { toast('Bitte Status auswählen', 'error'); return; }
+  if (!_vorratSelected.size) return;
+  const r = await fetch('/api/vorrat/bulk', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ids: [..._vorratSelected], action: 'status', status })
+  }).then(r => r.json());
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast(`${r.affected} Posts → ${status}`, 'success');
+  clearVorratSelection(); loadVorrat();
+}
+
+async function bulkArchive() {
+  if (!_vorratSelected.size) return;
+  if (!confirm(`${_vorratSelected.size} Posts archivieren?`)) return;
+  const r = await fetch('/api/vorrat/bulk', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ids: [..._vorratSelected], action: 'archive' })
+  }).then(r => r.json());
+  toast(`${r.affected} Posts archiviert`, 'info');
+  clearVorratSelection(); loadVorrat();
+}
+
+async function bulkDelete() {
+  if (!_vorratSelected.size) return;
+  if (!confirm(`${_vorratSelected.size} Posts unwiderruflich löschen?`)) return;
+  const r = await fetch('/api/vorrat/bulk', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ids: [..._vorratSelected], action: 'delete' })
+  }).then(r => r.json());
+  toast(`${r.affected} Posts gelöscht`, 'info');
+  clearVorratSelection(); loadVorrat();
+}
+
+function bulkExportZip() {
+  if (!_vorratSelected.size) { exportVorratZip(); return; }
+  const ids = [..._vorratSelected].map(id => `ids=${id}`).join('&');
+  window.location.href = `/api/vorrat/export-zip?${ids}`;
+}
+
+function exportVorratZip() {
+  const status  = document.getElementById('vorrat-status-filter')?.value || 'geplant';
+  const cityId  = document.getElementById('vorrat-city-filter')?.value || '';
+  let url = `/api/vorrat/export-zip?status=${status}`;
+  if (cityId) url += `&city_id=${cityId}`;
+  window.location.href = url;
+  toast('ZIP wird erstellt…', 'info');
+}
+
+
+// ══════════════════════════════════════════
+// POST DUPLIZIEREN
+// ══════════════════════════════════════════
+
+async function openDuplicateModal(postId) {
+  const post = _vorratData.find(p => p.id === postId)
+    || await fetch(`/api/vorrat/${postId}`).then(r => r.json()).catch(() => null);
+  if (!post) return;
+
+  document.getElementById('dup-source-id').value = postId;
+  document.getElementById('dup-title').value = post.title || '';
+
+  // Preview
+  document.getElementById('dup-preview').innerHTML = `
+    ${post.image_url ? `<img src="${_esc(post.image_url)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;">` : '<div style="width:80px;height:80px;background:var(--surface3);border-radius:6px;"></div>'}
+    <div>
+      <div style="font-size:12px;color:var(--muted);">${_esc(post.city_name)} · ${_esc(post.post_type)}</div>
+      <div style="font-size:13px;font-weight:600;margin-top:2px;">${_esc(post.title || '—')}</div>
+      ${post.caption ? `<div style="font-size:11px;color:var(--muted2);margin-top:4px;">${_esc(post.caption.slice(0,80))}${post.caption.length>80?'…':''}</div>` : ''}
+    </div>`;
+
+  // City selector
+  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
+  document.getElementById('dup-city').innerHTML = cities.map(c =>
+    `<option value="${c.id}" ${c.id === post.city_id ? 'selected' : ''}>${_esc(c.name)}</option>`
+  ).join('');
+
+  document.getElementById('modal-duplicate').classList.add('open');
+}
+
+async function saveDuplicate() {
+  const sourceId = parseInt(document.getElementById('dup-source-id').value);
+  const cityId   = parseInt(document.getElementById('dup-city').value);
+  const title    = document.getElementById('dup-title').value.trim();
+  const r = await fetch(`/api/vorrat/${sourceId}/duplicate`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ city_id: cityId, title: title || undefined })
+  }).then(r => r.json());
+  if (r.error) { toast(r.error, 'error'); return; }
+  closeModal('modal-duplicate');
+  toast(`Post dupliziert → ${r.city_name} (Entwurf)`, 'success');
+  _vorratPage = 1;
+  document.getElementById('vorrat-status-filter').value = 'entwurf';
+  loadVorrat();
+}
+
 
 // ══════════════════════════════════════════
 // TRENDING MONITOR
