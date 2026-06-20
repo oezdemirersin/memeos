@@ -33,6 +33,10 @@ _DB_PATH  = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
 os.makedirs(os.path.join(_BASE_DIR, 'instance'), exist_ok=True)
 os.makedirs(os.path.join(_BASE_DIR, 'static', 'renders'), exist_ok=True)
 os.makedirs(os.path.join(_BASE_DIR, 'static', 'uploads'), exist_ok=True)
+os.makedirs(os.path.join(_BASE_DIR, 'static', 'exports'), exist_ok=True)
+
+# In-memory ZIP job store: job_id -> {status, path, filename, post_count, error}
+_zip_jobs: dict = {}
 
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{_DB_PATH}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -58,6 +62,80 @@ def _upload_cloudinary(source, folder='memeos', resource_type='auto'):
 
 def _cloudinary_connected():
     return bool(os.getenv('CLOUDINARY_URL', ''))
+
+
+def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_filter):
+    import zipfile, io, csv as csv_mod
+    with app.app_context():
+        try:
+            _zip_jobs[job_id]['status'] = 'building'
+            q = MemePost.query
+            if post_ids:
+                q = q.filter(MemePost.id.in_(post_ids))
+            else:
+                if status_filter:
+                    q = q.filter_by(status=status_filter)
+                if city_id_filter:
+                    q = q.filter_by(city_id=city_id_filter)
+            posts = q.order_by(MemePost.scheduled_at, MemePost.created_at).all()
+            if not posts:
+                _zip_jobs[job_id].update({'status': 'error', 'error': 'Keine Posts gefunden'})
+                return
+
+            fname = f'memeos_export_{datetime.utcnow().strftime("%Y%m%d_%H%M")}_{job_id[:6]}.zip'
+            zip_path = os.path.join(_BASE_DIR, 'static', 'exports', fname)
+
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                csv_buf = io.StringIO()
+                writer = csv_mod.DictWriter(csv_buf, fieldnames=[
+                    'id', 'city', 'title', 'caption', 'hashtags', 'post_type',
+                    'scheduled_at', 'status', 'image_file'
+                ])
+                writer.writeheader()
+                for p in posts:
+                    city_slug = (p.city.name if p.city else 'unbekannt').lower().replace(' ', '_')
+                    img_filename = 'kein_bild'
+                    img_bytes = None
+                    if p.image_url and p.image_url.startswith('http'):
+                        try:
+                            resp = requests.get(p.image_url, timeout=15)
+                            if resp.ok:
+                                img_bytes = resp.content
+                                raw_ext = p.image_url.split('?')[0].rsplit('.', 1)[-1].lower()
+                                ext = raw_ext if raw_ext in ('jpg', 'jpeg', 'png', 'webp', 'gif') else 'jpg'
+                                img_filename = f'post_{p.id}_{city_slug}.{ext}'
+                        except Exception:
+                            pass
+                    elif p.image_path:
+                        base = os.path.basename(p.image_path)
+                        for folder in ('static/uploads', 'static/renders'):
+                            candidate = os.path.join(_BASE_DIR, folder, base)
+                            if os.path.exists(candidate):
+                                with open(candidate, 'rb') as fh:
+                                    img_bytes = fh.read()
+                                ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
+                                img_filename = f'post_{p.id}_{city_slug}.{ext}'
+                                break
+                    if img_bytes:
+                        zf.writestr(f'images/{img_filename}', img_bytes)
+                    writer.writerow({
+                        'id': p.id, 'city': p.city.name if p.city else '',
+                        'title': p.title or '', 'caption': p.caption or '',
+                        'hashtags': p.hashtags or '', 'post_type': p.post_type or 'feed',
+                        'scheduled_at': p.scheduled_at.strftime('%Y-%m-%d %H:%M') if p.scheduled_at else '',
+                        'status': p.status, 'image_file': img_filename,
+                    })
+                zf.writestr('manifest.csv', csv_buf.getvalue())
+
+            _zip_jobs[job_id].update({
+                'status': 'ready', 'path': zip_path,
+                'filename': fname, 'post_count': len(posts),
+            })
+        except Exception as e:
+            log.error(f'ZIP build failed for job {job_id}: {e}')
+            _zip_jobs[job_id].update({'status': 'error', 'error': str(e)})
+
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 db.init_app(app)
@@ -220,6 +298,72 @@ def api_cities_list():
         'knowledge_count': c.knowledge_count(),
         'render_count': c.render_count(),
     } for c in cities])
+
+
+@app.route('/api/cities/stats')
+@login_required
+def api_cities_stats():
+    """Single-query aggregated city overview — replaces N parallel /api/city/<id>/dashboard calls."""
+    from sqlalchemy import func as sqlfunc
+    cities = City.query.filter_by(active=True).order_by(City.name).all()
+    city_ids = [c.id for c in cities]
+
+    # Post counts per city+status in one query
+    raw_counts = db.session.query(
+        MemePost.city_id, MemePost.status, sqlfunc.count(MemePost.id)
+    ).filter(MemePost.city_id.in_(city_ids)).group_by(MemePost.city_id, MemePost.status).all()
+    counts_map: dict = {}
+    for cid, status, cnt in raw_counts:
+        counts_map.setdefault(cid, {})[status] = cnt
+
+    # Avg engagement_rate per city (last 30 days, published posts with reach data)
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    er_rows = db.session.query(
+        MemePost.city_id, sqlfunc.avg(MemePost.engagement_rate)
+    ).filter(
+        MemePost.city_id.in_(city_ids),
+        MemePost.status == 'veroeffentlicht',
+        MemePost.published_at >= cutoff,
+        MemePost.perf_reach.isnot(None),
+    ).group_by(MemePost.city_id).all()
+    er_map = {cid: round(float(er), 2) if er else None for cid, er in er_rows}
+
+    # Wiki-knowledge count per city in one query
+    wiki_rows = db.session.query(
+        CityKnowledge.city_id, sqlfunc.count(CityKnowledge.id)
+    ).filter(CityKnowledge.city_id.in_(city_ids), CityKnowledge.active == True)\
+     .group_by(CityKnowledge.city_id).all()
+    wiki_map = {cid: cnt for cid, cnt in wiki_rows}
+
+    # Top-2 trending keywords per city (ignoring hidden topics)
+    trend_rows = db.session.query(TrendingTopic).filter(
+        TrendingTopic.city_id.in_(city_ids), TrendingTopic.ignored == False
+    ).order_by(TrendingTopic.city_id, TrendingTopic.trend_score.desc()).all()
+    trend_map: dict = {}
+    for t in trend_rows:
+        lst = trend_map.setdefault(t.city_id, [])
+        if len(lst) < 2:
+            lst.append(t.keyword)
+
+    result = []
+    for c in cities:
+        pc = counts_map.get(c.id, {})
+        total = sum(pc.values())
+        result.append({
+            'city': {
+                'id': c.id, 'name': c.name, 'state': c.state or '',
+                'accent_color': c.accent_color or '#3b82f6',
+                'population': c.population, 'instagram_handle': c.instagram_handle or '',
+            },
+            'post_counts': {s: pc.get(s, 0)
+                            for s in ['entwurf', 'bereit', 'geplant', 'veroeffentlicht', 'archiviert']},
+            'total_posts': total,
+            'avg_er': er_map.get(c.id),
+            'wiki_count': wiki_map.get(c.id, 0),
+            'trending_keywords': trend_map.get(c.id, []),
+        })
+    return jsonify(result)
+
 
 @app.route('/api/cities', methods=['POST'])
 @login_required
@@ -1796,7 +1940,7 @@ def api_upload_batch():
         final_url = cloud_url or f'/uploads/{fname}'
         # Create draft MemePost
         post = MemePost(
-            city_id=city_id or 0,
+            city_id=city_id,
             title=f.filename.rsplit('.', 1)[0],
             image_url=final_url,
             image_path=fname,
@@ -2117,75 +2261,56 @@ def api_vorrat_duplicate(post_id):
     return jsonify(new_post.to_dict()), 201
 
 
-@app.route('/api/vorrat/export-zip')
+@app.route('/api/vorrat/export-zip/start', methods=['POST'])
 @login_required
-def api_vorrat_export_zip():
-    import zipfile, io, csv as csv_mod
-    status  = request.args.get('status', 'geplant')
-    city_id = request.args.get('city_id', type=int)
-    ids     = request.args.getlist('ids', type=int)
+def api_vorrat_export_zip_start():
+    d = request.json or {}
+    job_id = str(uuid.uuid4())
+    _zip_jobs[job_id] = {'status': 'pending', 'path': None, 'filename': None,
+                          'post_count': 0, 'error': None}
+    t = threading.Thread(
+        target=_build_zip_async,
+        args=(job_id, d.get('ids', []), d.get('status', 'geplant'), d.get('city_id')),
+        daemon=True
+    )
+    t.start()
+    return jsonify({'job_id': job_id})
 
-    q = MemePost.query
-    if ids:
-        q = q.filter(MemePost.id.in_(ids))
-    else:
-        if status:  q = q.filter_by(status=status)
-        if city_id: q = q.filter_by(city_id=city_id)
-    posts = q.order_by(MemePost.scheduled_at, MemePost.created_at).all()
-    if not posts:
-        return jsonify({'error': 'Keine Posts gefunden'}), 404
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        csv_buf = io.StringIO()
-        writer = csv_mod.DictWriter(csv_buf, fieldnames=[
-            'id','city','title','caption','hashtags','post_type',
-            'scheduled_at','status','image_file'
-        ])
-        writer.writeheader()
+@app.route('/api/vorrat/export-zip/status/<job_id>')
+@login_required
+def api_vorrat_export_zip_status(job_id):
+    job = _zip_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job nicht gefunden'}), 404
+    return jsonify({
+        'status': job['status'],
+        'ready': job['status'] == 'ready',
+        'filename': job.get('filename'),
+        'post_count': job.get('post_count', 0),
+        'error': job.get('error'),
+    })
 
-        for p in posts:
-            city_slug = (p.city.name if p.city else 'unbekannt').lower().replace(' ', '_')
-            img_filename = f'kein_bild'
-            img_bytes = None
 
-            if p.image_url and p.image_url.startswith('http'):
-                try:
-                    resp = requests.get(p.image_url, timeout=12)
-                    if resp.ok:
-                        img_bytes = resp.content
-                        raw_ext = p.image_url.split('?')[0].rsplit('.', 1)[-1].lower()
-                        ext = raw_ext if raw_ext in ('jpg','jpeg','png','webp','gif') else 'jpg'
-                        img_filename = f'post_{p.id}_{city_slug}.{ext}'
-                except Exception:
-                    pass
-            elif p.image_path:
-                base = os.path.basename(p.image_path)
-                for folder in ('static/uploads', 'static/renders'):
-                    candidate = os.path.join(_BASE_DIR, folder, base)
-                    if os.path.exists(candidate):
-                        with open(candidate, 'rb') as f:
-                            img_bytes = f.read()
-                        ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
-                        img_filename = f'post_{p.id}_{city_slug}.{ext}'
-                        break
-
-            if img_bytes:
-                zf.writestr(f'images/{img_filename}', img_bytes)
-
-            writer.writerow({
-                'id': p.id, 'city': p.city.name if p.city else '',
-                'title': p.title or '', 'caption': p.caption or '',
-                'hashtags': p.hashtags or '', 'post_type': p.post_type or 'feed',
-                'scheduled_at': p.scheduled_at.strftime('%Y-%m-%d %H:%M') if p.scheduled_at else '',
-                'status': p.status, 'image_file': img_filename,
-            })
-        zf.writestr('manifest.csv', csv_buf.getvalue())
-
-    buf.seek(0)
+@app.route('/api/vorrat/export-zip/download/<job_id>')
+@login_required
+def api_vorrat_export_zip_download(job_id):
+    job = _zip_jobs.get(job_id)
+    if not job or job['status'] != 'ready':
+        return jsonify({'error': 'ZIP nicht bereit'}), 400
     from flask import send_file
-    fname = f'memeos_export_{datetime.utcnow().strftime("%Y%m%d_%H%M")}.zip'
-    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name=fname)
+
+    def _cleanup():
+        time.sleep(60)
+        try:
+            os.remove(job['path'])
+        except Exception:
+            pass
+        _zip_jobs.pop(job_id, None)
+
+    threading.Thread(target=_cleanup, daemon=True).start()
+    return send_file(job['path'], mimetype='application/zip',
+                     as_attachment=True, download_name=job['filename'])
 
 
 @app.route('/api/city/<int:city_id>/dashboard')
@@ -2426,10 +2551,20 @@ trend_score: 0-100, wie gut geeignet für einen viralen Stadtmeme."""
         start, end = raw.find('{'), raw.rfind('}') + 1
         data = json.loads(raw[start:end])
 
+        dedup_cutoff = datetime.utcnow() - timedelta(hours=48)
         added = 0
+        skipped = 0
         for t in data.get('topics', []):
             kw = (t.get('keyword') or '').strip()[:200]
             if not kw:
+                continue
+            already = db.session.query(TrendingTopic).filter(
+                TrendingTopic.city_id == city_id,
+                db.func.lower(TrendingTopic.keyword) == kw.lower(),
+                TrendingTopic.created_at >= dedup_cutoff,
+            ).first()
+            if already:
+                skipped += 1
                 continue
             topic = TrendingTopic(
                 city_id=city_id, keyword=kw,
@@ -2440,7 +2575,8 @@ trend_score: 0-100, wie gut geeignet für einen viralen Stadtmeme."""
             db.session.add(topic)
             added += 1
         db.session.commit()
-        return jsonify({'added': added, 'city': city.name, 'headlines_used': len(headlines)})
+        return jsonify({'added': added, 'skipped': skipped, 'city': city.name,
+                        'headlines_used': len(headlines)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -2452,8 +2588,17 @@ def api_trending_create():
     keyword = (d.get('keyword') or '').strip()
     if not keyword:
         return jsonify({'error': 'keyword fehlt'}), 400
+    city_id = d.get('city_id') or None
+    dedup_cutoff = datetime.utcnow() - timedelta(hours=48)
+    already = db.session.query(TrendingTopic).filter(
+        TrendingTopic.city_id == city_id,
+        db.func.lower(TrendingTopic.keyword) == keyword.lower(),
+        TrendingTopic.created_at >= dedup_cutoff,
+    ).first()
+    if already:
+        return jsonify({'error': f'"{keyword}" existiert bereits (letzte 48h)', 'existing': already.to_dict()}), 409
     topic = TrendingTopic(
-        city_id=d.get('city_id') or None,
+        city_id=city_id,
         keyword=keyword[:200],
         description=d.get('description', ''),
         trend_score=max(0, min(100, int(d.get('trend_score', 60)))),

@@ -3460,20 +3460,15 @@ let _staedteData = [];
 async function loadStaedte() {
   const grid = document.getElementById('staedte-grid');
   grid.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
-  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
-  if (!cities.length) { grid.innerHTML = '<div class="empty"><p>Keine Städte vorhanden</p></div>'; return; }
+  // Single aggregated query — no N+1
+  const stats = await fetch('/api/cities/stats').then(r => r.json()).catch(() => []);
+  if (!stats.length) { grid.innerHTML = '<div class="empty"><p>Keine Städte vorhanden</p></div>'; return; }
+  _staedteData = stats;
 
-  // Load basic counts per city in parallel (lightweight)
-  const dashboards = await Promise.all(
-    cities.map(c => fetch(`/api/city/${c.id}/dashboard`).then(r => r.json()).catch(() => null))
-  );
-  _staedteData = dashboards.filter(Boolean);
-
-  grid.innerHTML = _staedteData.map(d => {
+  grid.innerHTML = stats.map(d => {
     const c = d.city;
     const pc = d.post_counts;
-    const total = Object.values(pc).reduce((a, b) => a + b, 0);
-    const er = d.performance_30d.avg_er;
+    const er = d.avg_er;
     const upcoming = pc.geplant || 0;
     return `
     <div class="city-card" onclick="openCityDashboard(${c.id})">
@@ -3483,7 +3478,7 @@ async function loadStaedte() {
         <div class="city-card-state">${_esc(c.state || '—')}${c.population ? ' · ' + c.population.toLocaleString('de-DE') + ' Einw.' : ''}</div>
         <div class="city-stat-row">
           <div class="city-stat">
-            <div class="city-stat-val">${total}</div>
+            <div class="city-stat-val">${d.total_posts}</div>
             <div class="city-stat-lbl">Posts</div>
           </div>
           <div class="city-stat">
@@ -3499,18 +3494,23 @@ async function loadStaedte() {
             <div class="city-stat-lbl">Wiki</div>
           </div>
         </div>
-        ${d.trending.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">🔥 ${d.trending.slice(0,2).map(t=>_esc(t.keyword)).join(' · ')}</div>` : ''}
+        ${d.trending_keywords.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">🔥 ${d.trending_keywords.map(k=>_esc(k)).join(' · ')}</div>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
 async function openCityDashboard(cityId) {
-  const d = _staedteData.find(x => x.city.id === cityId);
-  if (!d) return;
-  _renderCityModal(d);
+  // Fetch full detail on-demand (only when user actually clicks a city)
   document.getElementById('modal-city-dashboard').classList.add('open');
-  // Set quick-action buttons
+  document.getElementById('cdash-name').textContent = '…';
+  const d = await fetch(`/api/city/${cityId}/dashboard`).then(r => r.json()).catch(() => null);
+  if (!d || d.error) {
+    toast('Stadt-Daten konnten nicht geladen werden', 'error');
+    closeModal('modal-city-dashboard');
+    return;
+  }
+  _renderCityModal(d);
   document.getElementById('cdash-btn-vorrat').onclick = () => {
     closeModal('modal-city-dashboard');
     document.getElementById('vorrat-city-filter').value = cityId;
@@ -3521,7 +3521,8 @@ async function openCityDashboard(cityId) {
     btn.disabled = true; btn.textContent = '…';
     const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST'}).then(r=>r.json());
     btn.disabled = false; btn.textContent = 'Trending laden';
-    toast(r.error ? r.error : `${r.added} Trends geladen für ${r.city}`, r.error ? 'error' : 'success');
+    const msg = r.error ? r.error : `${r.added} neu, ${r.skipped||0} übersprungen für ${r.city}`;
+    toast(msg, r.error ? 'error' : 'success');
     if (!r.error) loadStaedte();
   };
 }
@@ -3705,17 +3706,43 @@ async function bulkDelete() {
 
 function bulkExportZip() {
   if (!_vorratSelected.size) { exportVorratZip(); return; }
-  const ids = [..._vorratSelected].map(id => `ids=${id}`).join('&');
-  window.location.href = `/api/vorrat/export-zip?${ids}`;
+  _startZipExport({ ids: [..._vorratSelected] });
 }
 
 function exportVorratZip() {
-  const status  = document.getElementById('vorrat-status-filter')?.value || 'geplant';
-  const cityId  = document.getElementById('vorrat-city-filter')?.value || '';
-  let url = `/api/vorrat/export-zip?status=${status}`;
-  if (cityId) url += `&city_id=${cityId}`;
-  window.location.href = url;
+  const status = document.getElementById('vorrat-status-filter')?.value || 'geplant';
+  const cityId = document.getElementById('vorrat-city-filter')?.value || '';
+  _startZipExport({ status, city_id: cityId ? parseInt(cityId) : undefined });
+}
+
+async function _startZipExport(params) {
   toast('ZIP wird erstellt…', 'info');
+  try {
+    const r = await fetch('/api/vorrat/export-zip/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    }).then(r => r.json());
+    if (!r.job_id) { toast('ZIP-Start fehlgeschlagen', 'error'); return; }
+    _pollZipJob(r.job_id);
+  } catch(e) {
+    toast('ZIP-Fehler: ' + e.message, 'error');
+  }
+}
+
+function _pollZipJob(jobId, attempts = 0) {
+  if (attempts > 60) { toast('ZIP-Timeout — bitte erneut versuchen', 'error'); return; }
+  setTimeout(async () => {
+    const s = await fetch(`/api/vorrat/export-zip/status/${jobId}`).then(r => r.json()).catch(() => null);
+    if (!s) { toast('ZIP-Status unbekannt', 'error'); return; }
+    if (s.error) { toast('ZIP-Fehler: ' + s.error, 'error'); return; }
+    if (s.ready) {
+      toast(`ZIP fertig — ${s.post_count} Posts`, 'success');
+      window.location.href = `/api/vorrat/export-zip/download/${jobId}`;
+    } else {
+      _pollZipJob(jobId, attempts + 1);
+    }
+  }, 1500);
 }
 
 
