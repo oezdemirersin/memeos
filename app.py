@@ -16,7 +16,7 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
-                    MemePost, TrendingTopic, RecycleJob,
+                    MemePost, TrendingTopic, RecycleJob, CityFollowerSnapshot,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
 import anthropic
 import logging
@@ -335,25 +335,58 @@ def api_cities_stats():
      .group_by(CityKnowledge.city_id).all()
     wiki_map = {cid: cnt for cid, cnt in wiki_rows}
 
-    # Top-2 trending keywords per city (ignoring hidden topics)
+    # Top-3 trending keywords per city (ignoring hidden topics)
     trend_rows = db.session.query(TrendingTopic).filter(
         TrendingTopic.city_id.in_(city_ids), TrendingTopic.ignored == False
     ).order_by(TrendingTopic.city_id, TrendingTopic.trend_score.desc()).all()
     trend_map: dict = {}
     for t in trend_rows:
         lst = trend_map.setdefault(t.city_id, [])
-        if len(lst) < 2:
+        if len(lst) < 3:
             lst.append(t.keyword)
+
+    # Latest published post date per city
+    last_pub_rows = db.session.query(
+        MemePost.city_id, db.func.max(MemePost.published_at)
+    ).filter(
+        MemePost.city_id.in_(city_ids), MemePost.status == 'veroeffentlicht'
+    ).group_by(MemePost.city_id).all()
+    last_pub_map = {cid: dt for cid, dt in last_pub_rows if dt}
+
+    # Latest follower snapshot + previous-week snapshot for growth
+    latest_snap_rows = db.session.query(
+        CityFollowerSnapshot.city_id,
+        db.func.max(CityFollowerSnapshot.recorded_at).label('latest_at')
+    ).filter(CityFollowerSnapshot.city_id.in_(city_ids)).group_by(CityFollowerSnapshot.city_id).all()
+    latest_counts: dict = {}
+    week_ago_counts: dict = {}
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    for cid, lat in latest_snap_rows:
+        snap = CityFollowerSnapshot.query.filter_by(city_id=cid)\
+               .order_by(CityFollowerSnapshot.recorded_at.desc()).first()
+        if snap:
+            latest_counts[cid] = snap.count
+        prev = CityFollowerSnapshot.query.filter(
+            CityFollowerSnapshot.city_id == cid,
+            CityFollowerSnapshot.recorded_at <= week_ago
+        ).order_by(CityFollowerSnapshot.recorded_at.desc()).first()
+        if prev:
+            week_ago_counts[cid] = prev.count
 
     result = []
     for c in cities:
         pc = counts_map.get(c.id, {})
         total = sum(pc.values())
+        followers = latest_counts.get(c.id)
+        prev_followers = week_ago_counts.get(c.id)
+        growth = (followers - prev_followers) if (followers is not None and prev_followers is not None) else None
+        last_pub = last_pub_map.get(c.id)
         result.append({
             'city': {
                 'id': c.id, 'name': c.name, 'state': c.state or '',
                 'accent_color': c.accent_color or '#3b82f6',
                 'population': c.population, 'instagram_handle': c.instagram_handle or '',
+                'rss_url': c.rss_url or '',
             },
             'post_counts': {s: pc.get(s, 0)
                             for s in ['entwurf', 'bereit', 'geplant', 'veroeffentlicht', 'archiviert']},
@@ -361,8 +394,30 @@ def api_cities_stats():
             'avg_er': er_map.get(c.id),
             'wiki_count': wiki_map.get(c.id, 0),
             'trending_keywords': trend_map.get(c.id, []),
+            'followers': followers,
+            'followers_growth_7d': growth,
+            'last_published_at': last_pub.isoformat() if last_pub else None,
         })
     return jsonify(result)
+
+
+@app.route('/api/city/<int:city_id>/followers', methods=['POST'])
+@login_required
+def api_city_save_followers(city_id):
+    City.query.get_or_404(city_id)
+    d = request.json or {}
+    count = d.get('count')
+    if count is None or not isinstance(count, int) or count < 0:
+        return jsonify({'error': 'count muss eine positive Ganzzahl sein'}), 400
+    snap = CityFollowerSnapshot(city_id=city_id, count=count)
+    db.session.add(snap)
+    db.session.commit()
+    prev = CityFollowerSnapshot.query.filter(
+        CityFollowerSnapshot.city_id == city_id,
+        CityFollowerSnapshot.recorded_at < snap.recorded_at
+    ).order_by(CityFollowerSnapshot.recorded_at.desc()).first()
+    growth = (count - prev.count) if prev else None
+    return jsonify({'ok': True, 'count': count, 'growth': growth})
 
 
 @app.route('/api/cities', methods=['POST'])

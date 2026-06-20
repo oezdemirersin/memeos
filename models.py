@@ -77,11 +77,28 @@ class City(db.Model):
             result.setdefault(e.category, []).append(e)
         return result
 
+    follower_snapshots = db.relationship('CityFollowerSnapshot', backref='city',
+                                          lazy='dynamic', cascade='all,delete')
+
     def knowledge_count(self):
         return self.knowledge.filter_by(active=True).count()
 
     def render_count(self):
         return self.render_jobs.filter_by(status='done').count()
+
+    def latest_followers(self):
+        snap = self.follower_snapshots.order_by(
+            CityFollowerSnapshot.recorded_at.desc()
+        ).first()
+        return snap.count if snap else None
+
+
+class CityFollowerSnapshot(db.Model):
+    __tablename__ = 'city_follower_snapshot'
+    id          = db.Column(db.Integer, primary_key=True)
+    city_id     = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False, index=True)
+    count       = db.Column(db.Integer, nullable=False)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
 class CityKnowledge(db.Model):

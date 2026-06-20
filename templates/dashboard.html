@@ -239,14 +239,43 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:12px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 40px rgba(0,0,0,.6);z-index:400;white-space:nowrap;transition:opacity .2s,transform .2s;}
 .bulk-bar.hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(12px);}
 
-/* ── Stadt-Dashboard ── */
-.city-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;}
-.city-card:hover{border-color:var(--border2);transform:translateY(-2px);}
-.city-card-bar{height:5px;}
-.city-card-body{padding:14px;}
-.city-card-name{font-family:var(--font-display);font-size:18px;letter-spacing:1px;margin-bottom:4px;}
-.city-card-state{font-size:11px;color:var(--muted);margin-bottom:12px;}
-.city-stat-row{display:flex;gap:12px;flex-wrap:wrap;}
+/* ── Meme-Seiten Karten ── */
+.city-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .15s,box-shadow .15s;display:flex;flex-direction:column;}
+.city-card:hover{border-color:var(--border2);box-shadow:0 4px 24px rgba(0,0,0,.35);}
+.city-card-bar{height:4px;flex-shrink:0;}
+.city-card-body{padding:16px;display:flex;flex-direction:column;gap:12px;flex:1;}
+.city-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+.city-card-name{font-family:var(--font-display);font-size:20px;letter-spacing:1.5px;line-height:1.1;cursor:pointer;}
+.city-card-name:hover{text-decoration:underline;text-underline-offset:3px;}
+.city-card-handle{font-size:11px;color:var(--muted);margin-top:2px;}
+.city-card-warn{background:rgba(239,68,68,.12);color:#ef4444;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;letter-spacing:.5px;white-space:nowrap;}
+/* Pipeline */
+.city-pipeline{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.city-pl-item{background:var(--surface2);border-radius:8px;padding:7px 5px;text-align:center;}
+.city-pl-val{font-size:16px;font-weight:700;line-height:1;}
+.city-pl-lbl{font-size:9px;color:var(--muted);margin-top:2px;letter-spacing:.3px;text-transform:uppercase;}
+/* Follower */
+.city-follower{display:flex;align-items:center;gap:8px;background:var(--surface2);border-radius:9px;padding:8px 10px;}
+.city-follower-icon{font-size:14px;opacity:.6;}
+.city-follower-label{font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;}
+.city-follower-num{font-family:var(--font-display);font-size:22px;line-height:1;flex:1;}
+.city-follower-input{background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font-display);font-size:20px;width:90px;padding:2px 0;outline:none;text-align:right;}
+.city-follower-input:focus{border-bottom-color:var(--accent);}
+.city-follower-growth{font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;}
+.city-follower-growth.pos{background:rgba(34,197,94,.15);color:#22c55e;}
+.city-follower-growth.neg{background:rgba(239,68,68,.15);color:#ef4444;}
+.city-follower-growth.neu{background:rgba(107,114,128,.15);color:var(--muted);}
+/* Performance + footer */
+.city-perf-row{display:flex;gap:10px;align-items:center;}
+.city-er-badge{background:rgba(34,197,94,.13);color:#22c55e;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;}
+.city-last-pub{font-size:11px;color:var(--muted);}
+.city-topics{display:flex;flex-wrap:wrap;gap:5px;}
+.city-topic-pill{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:10px;color:var(--muted);}
+.city-card-footer{display:flex;gap:6px;padding-top:4px;border-top:1px solid var(--border);}
+.city-card-btn{flex:1;background:none;border:1px solid var(--border);border-radius:7px;padding:5px 4px;font-size:11px;color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s;}
+.city-card-btn:hover{border-color:var(--border2);color:var(--text);}
+/* Grid */
+.city-card-stat-row{display:flex;gap:10px;flex-wrap:wrap;}
 .city-stat{display:flex;flex-direction:column;align-items:center;flex:1;background:var(--surface2);border-radius:8px;padding:8px 6px;min-width:50px;}
 .city-stat-val{font-size:18px;font-weight:700;line-height:1;}
 .city-stat-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-align:center;}
@@ -1353,7 +1382,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <button class="btn btn-ghost btn-sm" onclick="loadStaedte()">↻ Aktualisieren</button>
   </div>
-  <div id="staedte-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;">
+  <div id="staedte-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;align-items:start;">
     <div class="empty"><p>Lade…</p></div>
   </div>
 </div>
@@ -3465,39 +3494,131 @@ async function loadStaedte() {
   if (!stats.length) { grid.innerHTML = '<div class="empty"><p>Keine Städte vorhanden</p></div>'; return; }
   _staedteData = stats;
 
-  grid.innerHTML = stats.map(d => {
-    const c = d.city;
-    const pc = d.post_counts;
-    const er = d.avg_er;
-    const upcoming = pc.geplant || 0;
-    return `
-    <div class="city-card" onclick="openCityDashboard(${c.id})">
-      <div class="city-card-bar" style="background:${c.accent_color}"></div>
-      <div class="city-card-body">
-        <div class="city-card-name">${_esc(c.name)}</div>
-        <div class="city-card-state">${_esc(c.state || '—')}${c.population ? ' · ' + c.population.toLocaleString('de-DE') + ' Einw.' : ''}</div>
-        <div class="city-stat-row">
-          <div class="city-stat">
-            <div class="city-stat-val">${d.total_posts}</div>
-            <div class="city-stat-lbl">Posts</div>
-          </div>
-          <div class="city-stat">
-            <div class="city-stat-val" style="${upcoming>0?'color:#fbbf24':''}">${upcoming}</div>
-            <div class="city-stat-lbl">Geplant</div>
-          </div>
-          <div class="city-stat">
-            <div class="city-stat-val" style="${er?'color:#22c55e':''}">${er != null ? er+'%' : '—'}</div>
-            <div class="city-stat-lbl">Ø ER</div>
-          </div>
-          <div class="city-stat">
-            <div class="city-stat-val">${d.wiki_count}</div>
-            <div class="city-stat-lbl">Wiki</div>
-          </div>
+  grid.innerHTML = stats.map(d => _renderCityCard(d)).join('');
+}
+
+function _renderCityCard(d) {
+  const c  = d.city;
+  const pc = d.post_counts;
+  const geplant = pc.geplant || 0;
+  const bereit  = pc.bereit  || 0;
+  const entwurf = pc.entwurf || 0;
+  const pub     = pc.veroeffentlicht || 0;
+
+  // Warning wenn nichts in der Pipeline
+  const warn = (geplant === 0 && bereit === 0)
+    ? `<span class="city-card-warn">⚠ NICHTS GEPLANT</span>` : '';
+
+  // Follower
+  const fol = d.followers;
+  const growth = d.followers_growth_7d;
+  let growthHtml = '';
+  if (growth !== null && growth !== undefined) {
+    const cls = growth > 0 ? 'pos' : growth < 0 ? 'neg' : 'neu';
+    const sign = growth > 0 ? '+' : '';
+    growthHtml = `<span class="city-follower-growth ${cls}">${sign}${growth.toLocaleString('de-DE')}</span>`;
+  }
+
+  // Last published
+  let lastPubHtml = '';
+  if (d.last_published_at) {
+    const dt = new Date(d.last_published_at);
+    const diff = Math.round((Date.now() - dt) / 86400000);
+    const label = diff === 0 ? 'heute' : diff === 1 ? 'gestern' : `vor ${diff} Tagen`;
+    lastPubHtml = `<span class="city-last-pub">Letzter Post: ${label}</span>`;
+  }
+
+  // ER badge
+  const erHtml = d.avg_er
+    ? `<span class="city-er-badge">Ø ${d.avg_er}% ER</span>` : '';
+
+  // Trending pills
+  const trendHtml = d.trending_keywords.length
+    ? `<div class="city-topics">${d.trending_keywords.map(k =>
+        `<span class="city-topic-pill">🔥 ${_esc(k)}</span>`).join('')}</div>` : '';
+
+  // IG handle link
+  const handle = c.instagram_handle
+    ? `<div class="city-card-handle">@${_esc(c.instagram_handle)}</div>` : '';
+
+  return `
+  <div class="city-card" id="mcard-${c.id}">
+    <div class="city-card-bar" style="background:${c.accent_color}"></div>
+    <div class="city-card-body">
+
+      <div class="city-card-head">
+        <div>
+          <div class="city-card-name" onclick="openCityDashboard(${c.id})">${_esc(c.name.toUpperCase())}</div>
+          ${handle}
         </div>
-        ${d.trending_keywords.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">🔥 ${d.trending_keywords.map(k=>_esc(k)).join(' · ')}</div>` : ''}
+        ${warn}
       </div>
-    </div>`;
-  }).join('');
+
+      <div class="city-pipeline">
+        <div class="city-pl-item">
+          <div class="city-pl-val" style="color:#6b7280">${entwurf}</div>
+          <div class="city-pl-lbl">Entwurf</div>
+        </div>
+        <div class="city-pl-item">
+          <div class="city-pl-val" style="color:#3b82f6">${bereit}</div>
+          <div class="city-pl-lbl">Bereit</div>
+        </div>
+        <div class="city-pl-item">
+          <div class="city-pl-val" style="color:#fbbf24">${geplant}</div>
+          <div class="city-pl-lbl">Geplant</div>
+        </div>
+        <div class="city-pl-item">
+          <div class="city-pl-val" style="color:#22c55e">${pub}</div>
+          <div class="city-pl-lbl">Gepostet</div>
+        </div>
+      </div>
+
+      <div class="city-follower">
+        <span class="city-follower-icon">👥</span>
+        <div style="flex:1">
+          <div class="city-follower-label">Follower</div>
+          <input class="city-follower-input" id="fol-${c.id}"
+            type="number" min="0" placeholder="${fol !== null && fol !== undefined ? '' : '—'}"
+            value="${fol !== null && fol !== undefined ? fol : ''}"
+            onblur="saveCityFollowers(${c.id}, this)"
+            onkeydown="if(event.key==='Enter') this.blur()">
+        </div>
+        ${growthHtml}
+      </div>
+
+      ${(erHtml || lastPubHtml) ? `<div class="city-perf-row">${erHtml}${lastPubHtml}</div>` : ''}
+      ${trendHtml}
+
+      <div class="city-card-footer">
+        <button class="city-card-btn" onclick="event.stopPropagation();document.getElementById('vorrat-city-filter').value=${c.id};_vorratPage=1;showPage('vorrat')">📦 Vorrat</button>
+        <button class="city-card-btn" onclick="event.stopPropagation();setTrendCity(${c.id});showPage('trending')">🔥 Trending</button>
+        <button class="city-card-btn" onclick="openCityDashboard(${c.id})">📊 Details</button>
+      </div>
+
+    </div>
+  </div>`;
+}
+
+async function saveCityFollowers(cityId, inputEl) {
+  const val = parseInt(inputEl.value);
+  if (isNaN(val) || val < 0) return;
+  const r = await fetch(`/api/city/${cityId}/followers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count: val }),
+  }).then(r => r.json()).catch(() => null);
+  if (!r || r.error) { toast(r?.error || 'Speichern fehlgeschlagen', 'error'); return; }
+  toast(`Follower gespeichert: ${val.toLocaleString('de-DE')}`, 'success');
+  // Update growth badge inline without full reload
+  const card = document.getElementById(`mcard-${cityId}`);
+  if (card && r.growth !== null && r.growth !== undefined) {
+    const cls = r.growth > 0 ? 'pos' : r.growth < 0 ? 'neg' : 'neu';
+    const sign = r.growth > 0 ? '+' : '';
+    const existing = card.querySelector('.city-follower-growth');
+    const badge = `<span class="city-follower-growth ${cls}">${sign}${r.growth.toLocaleString('de-DE')}</span>`;
+    if (existing) existing.outerHTML = badge;
+    else card.querySelector('.city-follower').insertAdjacentHTML('beforeend', badge);
+  }
 }
 
 async function openCityDashboard(cityId) {
