@@ -351,6 +351,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .rc-delta.neu{background:var(--surface2);color:var(--muted);}
 .er-pill{display:inline-flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:2px 8px;font-size:12px;gap:4px;}
 .recycle-count-badge{display:inline-flex;align-items:center;background:rgba(139,92,246,.15);color:#8b5cf6;border-radius:8px;padding:1px 7px;font-size:11px;}
+.period-tabs{display:flex;gap:3px;background:var(--surface2);border-radius:8px;padding:3px;}
+.period-btn{border:none;background:none;color:var(--muted);font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;cursor:pointer;transition:all .15s;}
+.period-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3);}
+.period-btn:hover:not(.active){color:var(--text);}
 </style>
 </head>
 <body>
@@ -946,9 +950,45 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
 
     <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Telegram-Benachrichtigungen</div>
+      <div class="form-group">
+        <label>Bot-Token</label>
+        <input type="password" id="settings-telegram-token" placeholder="123456:ABC-DEFxxx">
+      </div>
+      <div class="form-group">
+        <label>Chat-ID</label>
+        <input type="text" id="settings-telegram-chat" placeholder="-100123456789">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Bot erstellen via @BotFather · Chat-ID via @userinfobot</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+        <button class="btn btn-primary btn-sm" onclick="saveTelegramSettings()">Speichern</button>
+        <button class="btn btn-ghost btn-sm" onclick="testTelegram(this)">🔔 Test-Nachricht</button>
+        <span id="telegram-test-result" style="font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Warnungen</div>
+      <div class="form-group">
+        <label>Warnung wenn Stadt X Tage ohne geplanten Post</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" id="settings-alert-days" min="1" max="30" value="3" style="width:80px;">
+          <span style="font-size:12px;color:var(--muted);">Tage (erscheint als ⚠ auf Karte)</span>
+          <button class="btn btn-ghost btn-sm" onclick="saveAlertDays()">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">KI-Kosten (Monat)</div>
       <div style="font-size:28px;font-family:var(--font-display);">€{{ "%.4f"|format(ai_cost_month) }}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px;">Claude Haiku API-Verbrauch diesen Monat</div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Daten-Backup</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">JSON-Export aller Posts, Städte, Follower-Snapshots und Trending-Daten</div>
+      <a href="/api/backup" class="btn btn-ghost btn-sm">⬇ Backup herunterladen</a>
     </div>
 
     <div class="card">
@@ -1196,13 +1236,21 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-performance">
   <div class="page-header">
     <div class="page-title">PERFORMANCE <span>TRACKING</span></div>
-    <button class="btn btn-ghost btn-sm" onclick="loadPerformance()">↻ Aktualisieren</button>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <div class="period-tabs" id="perf-period-tabs">
+        <button class="period-btn active" onclick="setPerfPeriod(7,this)">7T</button>
+        <button class="period-btn" onclick="setPerfPeriod(30,this)">30T</button>
+        <button class="period-btn" onclick="setPerfPeriod(90,this)">90T</button>
+        <button class="period-btn" onclick="setPerfPeriod(365,this)">1J</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadPerformance()">↻</button>
+    </div>
   </div>
 
   <!-- KPI-Row -->
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
     <div class="card" style="padding:16px;">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">VERÖFFENTLICHTE POSTS</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">POSTS</div>
       <div style="font-size:28px;font-weight:700;" id="perf-total-posts">—</div>
     </div>
     <div class="card" style="padding:16px;">
@@ -1219,20 +1267,51 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
   </div>
 
+  <!-- Follower-Wachstum Charts -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:600;">PORTFOLIO-WACHSTUM</div>
+        <div id="portfolio-total-badge" style="font-size:20px;font-family:var(--font-display);"></div>
+      </div>
+      <canvas id="chart-portfolio" height="120"></canvas>
+      <div id="chart-portfolio-empty" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:12px;">
+        Noch keine Follower-Daten — in den Städte-Karten eintragen
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:600;">FOLLOWER PRO STADT</div>
+        <select id="chart-city-select" onchange="loadCityFollowerChart()" style="width:auto;font-size:12px;">
+          <option value="">Alle</option>
+        </select>
+      </div>
+      <canvas id="chart-city-followers" height="120"></canvas>
+      <div id="chart-city-empty" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:12px;">
+        Noch keine Daten
+      </div>
+    </div>
+  </div>
+
+  <!-- ER Timeline -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;">ENGAGEMENT RATE VERLAUF</div>
+    <canvas id="chart-er-timeline" height="70"></canvas>
+    <div id="chart-er-empty" style="display:none;text-align:center;padding:20px;color:var(--muted);font-size:12px;">
+      Noch keine Performance-Daten — im Vorrat bei veröffentlichten Posts eintragen
+    </div>
+  </div>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-    <!-- Top Posts -->
     <div class="card">
       <div style="font-size:13px;font-weight:600;margin-bottom:14px;">TOP POSTS</div>
       <div id="perf-top-posts"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
     </div>
-
     <div style="display:flex;flex-direction:column;gap:16px;">
-      <!-- Stadt-Stats -->
       <div class="card">
         <div style="font-size:13px;font-weight:600;margin-bottom:14px;">NACH STADT</div>
         <div id="perf-city-stats"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
       </div>
-      <!-- Template-Stats -->
       <div class="card">
         <div style="font-size:13px;font-weight:600;margin-bottom:14px;">NACH TEMPLATE</div>
         <div id="perf-tmpl-stats"><div class="empty" style="padding:20px;"><p>Keine Daten</p></div></div>
@@ -2036,7 +2115,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
@@ -4759,6 +4838,268 @@ async function addInspoPostManual() {
   loadInspoPosts();
   loadInspoSources();
 }
+
+// ══════════════════════════════════════════
+// PERFORMANCE CHARTS (Chart.js)
+// ══════════════════════════════════════════
+let _perfPeriod = 30;
+let _chartPortfolio = null;
+let _chartCityFol   = null;
+let _chartER        = null;
+
+function setPerfPeriod(days, btn) {
+  _perfPeriod = days;
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadPerformance();
+  loadPortfolioChart();
+  loadCityFollowerChart();
+  loadErTimeline();
+}
+
+async function loadPortfolioChart() {
+  if (typeof Chart === 'undefined') return;
+  const data = await fetch(`/api/follower-chart?days=${_perfPeriod}`).then(r => r.json()).catch(() => null);
+  if (!data || !data.datasets.length) {
+    document.getElementById('chart-portfolio')?.classList.add('d-none');
+    document.getElementById('chart-portfolio-empty')?.style && (document.getElementById('chart-portfolio-empty').style.display = '');
+    return;
+  }
+  document.getElementById('chart-portfolio-empty').style.display = 'none';
+
+  // Build date labels union + sum per day
+  const allDates = new Set();
+  data.datasets.forEach(ds => ds.data.forEach(pt => allDates.add(pt.date)));
+  const labels = [...allDates].sort();
+
+  // Sum total per date (latest value per city per date)
+  const totalByDate = {};
+  data.datasets.forEach(ds => {
+    ds.data.forEach(pt => {
+      totalByDate[pt.date] = (totalByDate[pt.date] || 0) + pt.count;
+    });
+  });
+  const totalValues = labels.map(d => totalByDate[d] || null);
+
+  // Grand total from last data point
+  let grand = 0;
+  data.datasets.forEach(ds => { if (ds.data.length) grand += ds.data[ds.data.length - 1].count; });
+  const badge = document.getElementById('portfolio-total-badge');
+  if (badge) badge.textContent = grand ? grand.toLocaleString('de-DE') : '';
+
+  const ctx = document.getElementById('chart-portfolio').getContext('2d');
+  if (_chartPortfolio) _chartPortfolio.destroy();
+  _chartPortfolio = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Gesamt',
+        data: totalValues,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: labels.length > 14 ? 0 : 3,
+      }]
+    },
+    options: _chartOpts('Follower')
+  });
+}
+
+async function loadCityFollowerChart() {
+  if (typeof Chart === 'undefined') return;
+  const cityId = document.getElementById('chart-city-select')?.value || '';
+  const url = `/api/follower-chart?days=${_perfPeriod}${cityId ? '&city_id=' + cityId : ''}`;
+  const data = await fetch(url).then(r => r.json()).catch(() => null);
+  if (!data || !data.datasets.length) {
+    document.getElementById('chart-city-empty').style.display = '';
+    return;
+  }
+  document.getElementById('chart-city-empty').style.display = 'none';
+
+  const allDates = new Set();
+  data.datasets.forEach(ds => ds.data.forEach(pt => allDates.add(pt.date)));
+  const labels = [...allDates].sort();
+
+  const datasets = data.datasets.map(ds => {
+    const byDate = Object.fromEntries(ds.data.map(pt => [pt.date, pt.count]));
+    return {
+      label: ds.city_name,
+      data: labels.map(d => byDate[d] ?? null),
+      borderColor: ds.color,
+      backgroundColor: ds.color + '18',
+      fill: data.datasets.length === 1,
+      tension: 0.35,
+      pointRadius: labels.length > 14 ? 0 : 3,
+    };
+  });
+
+  const ctx = document.getElementById('chart-city-followers').getContext('2d');
+  if (_chartCityFol) _chartCityFol.destroy();
+  _chartCityFol = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: _chartOpts('Follower')
+  });
+}
+
+async function loadErTimeline() {
+  if (typeof Chart === 'undefined') return;
+  const data = await fetch(`/api/performance/timeline?days=${_perfPeriod}`).then(r => r.json()).catch(() => null);
+  if (!data || !data.timeline.length) {
+    document.getElementById('chart-er-empty').style.display = '';
+    return;
+  }
+  document.getElementById('chart-er-empty').style.display = 'none';
+  const labels  = data.timeline.map(w => w.week);
+  const values  = data.timeline.map(w => w.avg_er);
+  const ctx = document.getElementById('chart-er-timeline').getContext('2d');
+  if (_chartER) _chartER.destroy();
+  _chartER = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Ø ER %',
+        data: values,
+        backgroundColor: 'rgba(34,197,94,.5)',
+        borderColor: '#22c55e',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: _chartOpts('ER %')
+  });
+}
+
+function _chartOpts(unit) {
+  return {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255,255,255,.05)' },
+        ticks: { color: '#6b7280', font: { size: 10 }, maxTicksLimit: 8 }
+      },
+      y: {
+        grid: { color: 'rgba(255,255,255,.05)' },
+        ticks: { color: '#6b7280', font: { size: 10 } }
+      }
+    }
+  };
+}
+
+// Populate city select for chart
+async function _populateChartCitySelect() {
+  const sel = document.getElementById('chart-city-select');
+  if (!sel || sel.options.length > 1) return;
+  const cities = await fetch('/api/cities').then(r => r.json()).catch(() => []);
+  cities.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id; opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+}
+
+// Override loadPerformance to also load charts
+const _origLoadPerformance = typeof loadPerformance !== 'undefined' ? loadPerformance : null;
+async function loadPerformance() {
+  const data = await api('GET', `/api/performance?days=${_perfPeriod}`);
+  document.getElementById('perf-total-posts').textContent = data.total_posts || 0;
+  document.getElementById('perf-total-likes').textContent = (data.total_likes||0).toLocaleString('de-DE');
+  document.getElementById('perf-total-saves').textContent = (data.total_saves||0).toLocaleString('de-DE');
+  document.getElementById('perf-avg-eng').textContent = (data.avg_engagement||0) + '%';
+
+  const topEl = document.getElementById('perf-top-posts');
+  topEl.innerHTML = data.top_posts.length ? data.top_posts.map(p => `
+    <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      ${p.image_url ? `<img src="${p.image_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+        `<div style="width:44px;height:44px;background:var(--surface2);border-radius:6px;flex-shrink:0;"></div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${_esc(p.title||p.city_name)}</div>
+        <div style="font-size:11px;color:var(--muted);">${_esc(p.city_name)} · ${_esc(p.post_type)}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:12px;font-weight:700;color:var(--accent);">${p.perf_likes||0} ♥</div>
+        <div style="font-size:11px;color:var(--muted);">${p.perf_saves||0} ✦</div>
+      </div>
+    </div>`) .join('') :
+    '<div class="empty" style="padding:20px;"><p>Keine Daten</p></div>';
+
+  const cityEl = document.getElementById('perf-city-stats');
+  cityEl.innerHTML = data.city_stats.length ? data.city_stats.map(s => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;">${_esc(s.city_name)}</div>
+      <div style="display:flex;gap:12px;font-size:12px;">
+        <span style="color:var(--accent);">${s.avg_likes} ⌀♥</span>
+        <span style="color:var(--muted);">${s.count} Posts</span>
+      </div>
+    </div>`).join('') :
+    '<div class="empty" style="padding:20px;"><p>Keine Daten</p></div>';
+
+  const tmplEl = document.getElementById('perf-tmpl-stats');
+  tmplEl.innerHTML = data.tmpl_stats.length ? data.tmpl_stats.map(t => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;">${_esc(t.template_name)}</div>
+      <div style="display:flex;gap:12px;font-size:12px;">
+        <span style="color:var(--accent);">${t.avg_likes} ⌀♥</span>
+        <span style="color:var(--muted);">${t.count} Posts</span>
+      </div>
+    </div>`).join('') :
+    '<div class="empty" style="padding:20px;"><p>Keine Daten</p></div>';
+
+  // Load charts
+  await _populateChartCitySelect();
+  loadPortfolioChart();
+  loadCityFollowerChart();
+  loadErTimeline();
+}
+
+// ══════════════════════════════════════════
+// EINSTELLUNGEN — TELEGRAM + BACKUP
+// ══════════════════════════════════════════
+async function loadSettingsPage() {
+  const d = await api('GET', '/api/settings');
+  const tToken = document.getElementById('settings-telegram-token');
+  const tChat  = document.getElementById('settings-telegram-chat');
+  const aDay   = document.getElementById('settings-alert-days');
+  if (tToken && d.telegram_token) tToken.value = d.telegram_token;
+  if (tChat  && d.telegram_chat_id) tChat.value = d.telegram_chat_id;
+  if (aDay   && d.alert_threshold_days) aDay.value = d.alert_threshold_days;
+  const cosUrl = document.getElementById('settings-content-os-url');
+  if (cosUrl && d.content_os_url) cosUrl.value = d.content_os_url;
+}
+
+async function saveTelegramSettings() {
+  const token   = document.getElementById('settings-telegram-token')?.value.trim();
+  const chat_id = document.getElementById('settings-telegram-chat')?.value.trim();
+  const r = await api('POST', '/api/settings', { telegram_token: token, telegram_chat_id: chat_id });
+  toast(r.ok ? 'Telegram-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
+}
+
+async function saveAlertDays() {
+  const days = parseInt(document.getElementById('settings-alert-days')?.value);
+  if (!days || days < 1) return;
+  const r = await api('POST', '/api/settings', { alert_threshold_days: days });
+  toast(r.ok ? `Schwellwert: ${days} Tage gespeichert` : 'Fehler', r.ok ? 'success' : 'error');
+}
+
+async function testTelegram(btn) {
+  const result = document.getElementById('telegram-test-result');
+  btn.disabled = true; btn.textContent = '…';
+  const r = await api('POST', '/api/settings/telegram/test');
+  btn.disabled = false; btn.textContent = '🔔 Test-Nachricht';
+  if (r.ok) {
+    result.style.color = '#22c55e'; result.textContent = '✓ Nachricht gesendet!';
+  } else {
+    result.style.color = '#ef4444'; result.textContent = r.error || 'Fehler';
+  }
+  setTimeout(() => { result.textContent = ''; }, 5000);
+}
+
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </body>
 </html>

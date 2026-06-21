@@ -1593,20 +1593,132 @@ def api_todo_delete(todo_id):
 @login_required
 def api_settings_get():
     return jsonify({
-        'content_os_url':    CONTENT_OS_URL or AppSettings.get('content_os_url', ''),
-        'canva_connected':   _canva_is_connected(),
-        'canva_client_id':   bool(CANVA_CLIENT_ID),
-        'ai_key_set':        bool(ANTHROPIC_API_KEY),
-        'ai_cost_month':     _ai_cost_this_month(),
+        'content_os_url':       CONTENT_OS_URL or AppSettings.get('content_os_url', ''),
+        'canva_connected':      _canva_is_connected(),
+        'canva_client_id':      bool(CANVA_CLIENT_ID),
+        'ai_key_set':           bool(ANTHROPIC_API_KEY),
+        'ai_cost_month':        _ai_cost_this_month(),
+        'telegram_token':       AppSettings.get('telegram_token', ''),
+        'telegram_chat_id':     AppSettings.get('telegram_chat_id', ''),
+        'alert_threshold_days': AppSettings.get('alert_threshold_days', '3'),
     })
 
 @app.route('/api/settings', methods=['POST'])
 @login_required
 def api_settings_save():
     d = request.json or {}
-    if 'content_os_url' in d:
-        AppSettings.set('content_os_url', d['content_os_url'])
+    for key in ('content_os_url', 'telegram_token', 'telegram_chat_id', 'alert_threshold_days'):
+        if key in d:
+            AppSettings.set(key, d[key])
     return jsonify({'ok': True})
+
+
+@app.route('/api/settings/telegram/test', methods=['POST'])
+@login_required
+def api_telegram_test():
+    token   = AppSettings.get('telegram_token', '').strip()
+    chat_id = AppSettings.get('telegram_chat_id', '').strip()
+    if not token or not chat_id:
+        return jsonify({'error': 'Token und Chat-ID in Einstellungen speichern'}), 400
+    try:
+        resp = requests.post(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            json={'chat_id': chat_id, 'text': '✅ MemeOS Telegram-Verbindung funktioniert!', 'parse_mode': 'HTML'},
+            timeout=8
+        )
+        if resp.ok:
+            return jsonify({'ok': True})
+        return jsonify({'error': resp.json().get('description', 'Telegram API Fehler')}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/backup')
+@login_required
+def api_backup():
+    from flask import send_file
+    import io
+    data = {
+        'exported_at': datetime.utcnow().isoformat(),
+        'version': '1.0',
+        'cities': [{'id': c.id, 'name': c.name, 'state': c.state, 'population': c.population,
+                    'instagram_handle': c.instagram_handle, 'accent_color': c.accent_color,
+                    'rss_url': c.rss_url, 'notes': c.notes}
+                   for c in City.query.all()],
+        'posts': [{'id': p.id, 'city_id': p.city_id, 'title': p.title, 'caption': p.caption,
+                   'hashtags': p.hashtags, 'status': p.status, 'post_type': p.post_type,
+                   'image_url': p.image_url,
+                   'scheduled_at': p.scheduled_at.isoformat() if p.scheduled_at else None,
+                   'published_at': p.published_at.isoformat() if p.published_at else None,
+                   'perf_likes': p.perf_likes, 'perf_saves': p.perf_saves,
+                   'perf_reach': p.perf_reach, 'perf_comments': p.perf_comments}
+                  for p in MemePost.query.all()],
+        'trending': [{'id': t.id, 'city_id': t.city_id, 'keyword': t.keyword,
+                      'trend_score': t.trend_score, 'source': t.source, 'ignored': t.ignored}
+                     for t in TrendingTopic.query.all()],
+        'follower_snapshots': [{'city_id': s.city_id, 'count': s.count,
+                                 'recorded_at': s.recorded_at.isoformat()}
+                                for s in CityFollowerSnapshot.query.order_by(
+                                    CityFollowerSnapshot.city_id, CityFollowerSnapshot.recorded_at).all()],
+    }
+    buf = io.BytesIO(json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8'))
+    buf.seek(0)
+    fname = f'memeos_backup_{datetime.utcnow().strftime("%Y%m%d_%H%M")}.json'
+    return send_file(buf, mimetype='application/json', as_attachment=True, download_name=fname)
+
+
+@app.route('/api/follower-chart')
+@login_required
+def api_follower_chart():
+    from collections import defaultdict
+    city_id = request.args.get('city_id', type=int)
+    days    = request.args.get('days', 30, type=int)
+    cutoff  = datetime.utcnow() - timedelta(days=days)
+
+    cities = ([City.query.get_or_404(city_id)] if city_id
+              else City.query.filter_by(active=True).order_by(City.name).all())
+    city_ids = [c.id for c in cities]
+
+    snaps = CityFollowerSnapshot.query.filter(
+        CityFollowerSnapshot.city_id.in_(city_ids),
+        CityFollowerSnapshot.recorded_at >= cutoff,
+    ).order_by(CityFollowerSnapshot.city_id, CityFollowerSnapshot.recorded_at).all()
+
+    snap_map: dict = defaultdict(list)
+    for s in snaps:
+        snap_map[s.city_id].append({'date': s.recorded_at.strftime('%Y-%m-%d'), 'count': s.count})
+
+    datasets = [
+        {'city_id': c.id, 'city_name': c.name, 'color': c.accent_color or '#3b82f6',
+         'data': snap_map.get(c.id, [])}
+        for c in cities if c.id in snap_map
+    ]
+    return jsonify({'datasets': datasets, 'days': days})
+
+
+@app.route('/api/performance/timeline')
+@login_required
+def api_performance_timeline():
+    from collections import defaultdict
+    days   = request.args.get('days', 30, type=int)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    posts  = MemePost.query.filter(
+        MemePost.status == 'veroeffentlicht',
+        MemePost.published_at >= cutoff,
+        MemePost.perf_reach.isnot(None),
+    ).order_by(MemePost.published_at).all()
+
+    weekly: dict = defaultdict(list)
+    for p in posts:
+        if p.engagement_rate and p.published_at:
+            week = p.published_at.strftime('%Y-W%V')
+            weekly[week].append(p.engagement_rate)
+
+    return jsonify({'timeline': [
+        {'week': wk, 'avg_er': round(sum(ers) / len(ers), 2), 'count': len(ers)}
+        for wk, ers in sorted(weekly.items())
+    ]})
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STATS + KI-KOSTEN
