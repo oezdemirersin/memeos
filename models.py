@@ -172,6 +172,29 @@ TEMPLATE_CATEGORIES = [
 
 TEMPLATE_CAT_MAP = {k: (label, emoji, group) for k, label, emoji, group in TEMPLATE_CATEGORIES}
 
+TEMPLATE_GROUPS = [
+    ('seasonal', 'Saisonal',  '☀️'),
+    ('wetter',   'Wetter',    '🌧️'),
+    ('thema',    'Themen',    '🏙️'),
+    ('format',   'Formate',   '📋'),
+]
+
+
+class TemplateCategory(db.Model):
+    __tablename__ = 'template_category'
+    id         = db.Column(db.Integer, primary_key=True)
+    key        = db.Column(db.String(50), unique=True, nullable=False)
+    label      = db.Column(db.String(100), nullable=False)
+    emoji      = db.Column(db.String(10), default='📋')
+    group      = db.Column(db.String(20), default='format')
+    sort_order = db.Column(db.Integer, default=100)
+    active     = db.Column(db.Boolean, default=True)
+
+    def to_dict(self):
+        return {'id': self.id, 'key': self.key, 'label': self.label,
+                'emoji': self.emoji, 'group': self.group,
+                'sort_order': self.sort_order, 'active': self.active}
+
 
 class MemeTemplate(db.Model):
     id               = db.Column(db.Integer, primary_key=True)

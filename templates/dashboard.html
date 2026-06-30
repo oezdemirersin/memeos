@@ -666,7 +666,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-templates">
   <div class="page-header">
     <div class="page-title">TEMPLATE <span>BIBLIOTHEK</span></div>
-    <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">+ Template</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="openCategoryManager()">⚙ Kategorien</button>
+      <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">+ Template</button>
+    </div>
   </div>
 
   <!-- Stats Bar -->
@@ -1983,6 +1986,56 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 <!-- Template Modal -->
+<!-- ─── KATEGORIE MANAGER MODAL ─── -->
+<div class="modal-overlay" id="modal-cat-manager">
+  <div class="modal" style="max-width:560px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-header">
+      <div class="modal-title">KATEGORIEN VERWALTEN</div>
+      <button class="modal-close" onclick="closeModal('modal-cat-manager')">×</button>
+    </div>
+
+    <!-- Neue Kategorie hinzufügen -->
+    <div class="card-sm" style="margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Neue Kategorie</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Key (z.B. <code>sport_sommer</code>)</label>
+          <input type="text" id="catmgr-key" placeholder="meine_kategorie" style="font-size:13px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Label (Anzeigename)</label>
+          <input type="text" id="catmgr-label" placeholder="Meine Kategorie" style="font-size:13px;">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Emoji</label>
+          <input type="text" id="catmgr-emoji" placeholder="🎯" style="font-size:16px;width:60px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Gruppe</label>
+          <select id="catmgr-group" style="font-size:13px;">
+            {% for gkey, glabel, gemoji in template_groups %}
+            <option value="{{ gkey }}">{{ gemoji }} {{ glabel }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addCategory()">+ Hinzufügen</button>
+    </div>
+
+    <!-- Bestehende Kategorien -->
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Bestehende Kategorien</div>
+    <div id="catmgr-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:4px;">
+      <div class="empty" style="padding:20px;">Wird geladen…</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-cat-manager')">Schließen</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-template">
   <div class="modal modal-lg" style="max-height:90vh;overflow-y:auto;">
     <div class="modal-header" style="position:sticky;top:0;background:var(--surface);z-index:1;border-bottom:1px solid var(--border);margin-bottom:0;padding-bottom:16px;">
@@ -2403,8 +2456,13 @@ async function doBulkCityImport() {
 let _tlibGroup = '';
 
 async function loadTemplates() {
-  const templates = await api('GET','/api/templates');
+  const [templates, cats] = await Promise.all([
+    api('GET','/api/templates'),
+    api('GET','/api/template-categories'),
+  ]);
   _allTemplates = templates;
+  _allCategories = cats;
+  _refreshCategoryDropdowns();
   _updateTlibStats(templates);
   _applyTlibFilters();
 }
@@ -2627,6 +2685,107 @@ async function deleteTemplate(id) {
   toast('Template gelöscht','info');
   _updateTlibStats(_allTemplates);
   _applyTlibFilters();
+}
+
+// ── KATEGORIE MANAGER ──
+let _allCategories = [];
+
+async function openCategoryManager() {
+  openModal('modal-cat-manager');
+  await _loadCategoryList();
+}
+
+async function _loadCategoryList() {
+  _allCategories = await api('GET', '/api/template-categories');
+  const GROUPS = { seasonal:'☀️ Saisonal', wetter:'🌧️ Wetter', thema:'🏙️ Themen', format:'📋 Formate' };
+  const byGroup = {};
+  _allCategories.forEach(c => {
+    const g = c.group || 'format';
+    if(!byGroup[g]) byGroup[g] = [];
+    byGroup[g].push(c);
+  });
+  const groupOrder = ['seasonal','wetter','thema','format'];
+  let html = '';
+  groupOrder.forEach(g => {
+    const cats = byGroup[g] || [];
+    if(!cats.length) return;
+    html += `<div style="font-size:11px;color:var(--muted);font-weight:600;padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.05em;">${GROUPS[g]||g}</div>`;
+    cats.forEach(c => {
+      const inUseNote = c.active ? '' : `<span style="font-size:10px;color:var(--muted);margin-left:6px;">(inaktiv)</span>`;
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border-radius:7px;">
+          <input type="text" value="${c.emoji}" onchange="updateCatEmoji(${c.id},this.value)"
+            style="width:38px;font-size:16px;text-align:center;background:transparent;border:1px solid var(--border);border-radius:5px;padding:2px;cursor:pointer;">
+          <span style="font-size:13px;font-weight:600;flex:1;">${c.label}${inUseNote}
+            <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:4px;">(${c.key})</span>
+          </span>
+          <select onchange="updateCatGroup(${c.id},this.value)" style="font-size:11px;width:auto;padding:3px 6px;">
+            <option value="seasonal" ${c.group==='seasonal'?'selected':''}>☀️</option>
+            <option value="wetter"   ${c.group==='wetter'  ?'selected':''}>🌧️</option>
+            <option value="thema"    ${c.group==='thema'   ?'selected':''}>🏙️</option>
+            <option value="format"   ${c.group==='format'  ?'selected':''}>📋</option>
+          </select>
+          <button class="btn btn-xs" style="background:rgba(239,68,68,.12);color:#f87171;border:none;"
+            onclick="deleteCategory(${c.id},'${c.label.replace(/'/g,"\\'")}')">✕</button>
+        </div>`;
+    });
+  });
+  document.getElementById('catmgr-list').innerHTML = html || '<div class="empty" style="padding:20px;">Keine Kategorien</div>';
+  _refreshCategoryDropdowns();
+}
+
+async function addCategory() {
+  const key   = document.getElementById('catmgr-key').value.trim().toLowerCase().replace(/\s+/g,'_');
+  const label = document.getElementById('catmgr-label').value.trim();
+  const emoji = document.getElementById('catmgr-emoji').value.trim() || '📋';
+  const group = document.getElementById('catmgr-group').value;
+  if(!key || !label) { toast('Key und Label sind Pflicht','error'); return; }
+  const r = await api('POST', '/api/template-categories', {key, label, emoji, group});
+  if(r.error) { toast(r.error,'error'); return; }
+  toast(`Kategorie "${label}" hinzugefügt`, 'success');
+  document.getElementById('catmgr-key').value = '';
+  document.getElementById('catmgr-label').value = '';
+  document.getElementById('catmgr-emoji').value = '';
+  await _loadCategoryList();
+}
+
+async function updateCatEmoji(id, emoji) {
+  await api('PUT', `/api/template-categories/${id}`, {emoji});
+  const c = _allCategories.find(x=>x.id===id);
+  if(c) c.emoji = emoji;
+  _refreshCategoryDropdowns();
+}
+
+async function updateCatGroup(id, group) {
+  await api('PUT', `/api/template-categories/${id}`, {group});
+  await _loadCategoryList();
+}
+
+async function deleteCategory(id, label) {
+  if(!confirm(`Kategorie "${label}" löschen?`)) return;
+  const r = await api('DELETE', `/api/template-categories/${id}`);
+  if(r.error) { toast(r.error,'error'); return; }
+  toast('Kategorie gelöscht','info');
+  await _loadCategoryList();
+}
+
+function _refreshCategoryDropdowns() {
+  const sel = document.getElementById('tmpl-category');
+  if(!sel || !_allCategories.length) return;
+  const cur = sel.value;
+  sel.innerHTML = _allCategories
+    .filter(c => c.active)
+    .sort((a,b) => a.sort_order - b.sort_order)
+    .map(c => `<option value="${c.key}" ${c.key===cur?'selected':''}>${c.emoji} ${c.label}</option>`)
+    .join('');
+
+  const filterSel = document.getElementById('template-filter-cat');
+  if(filterSel) {
+    const filterCur = filterSel.value;
+    filterSel.innerHTML = '<option value="">Alle Kategorien</option>' +
+      _allCategories.filter(c=>c.active).sort((a,b)=>a.sort_order-b.sort_order)
+        .map(c=>`<option value="${c.key}" data-group="${c.group}" ${c.key===filterCur?'selected':''}>${c.emoji} ${c.label}</option>`).join('');
+  }
 }
 
 // ── GENERATOR ──

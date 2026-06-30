@@ -19,7 +19,8 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     MemoInspirationSource, MemoInspirationPost,
                     MemePost, TrendingTopic, RecycleJob, CityFollowerSnapshot,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP,
-                    TEMPLATE_CATEGORIES, TEMPLATE_CAT_MAP)
+                    TEMPLATE_CATEGORIES, TEMPLATE_CAT_MAP,
+                    TEMPLATE_GROUPS, TemplateCategory)
 import anthropic
 import logging
 
@@ -268,7 +269,9 @@ def dashboard():
         ai_cost_month=ai_cost_month,
         categories=KNOWLEDGE_CATEGORIES,
         category_map=CATEGORY_MAP,
-        template_categories=TEMPLATE_CATEGORIES,
+        template_categories=[(c.key, c.label, c.emoji, c.group)
+            for c in TemplateCategory.query.filter_by(active=True).order_by(TemplateCategory.sort_order).all()],
+        template_groups=TEMPLATE_GROUPS,
         market_summary=market_summary,
         inspo_counts=inspo_counts,
         vorrat_counts=vorrat_counts,
@@ -616,7 +619,8 @@ Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _tmpl_dict(t):
-    cat_info = TEMPLATE_CAT_MAP.get(t.category, (t.category, '', ''))
+    cat_row = TemplateCategory.query.filter_by(key=t.category).first()
+    cat_info = (cat_row.label, cat_row.emoji, cat_row.group) if cat_row else TEMPLATE_CAT_MAP.get(t.category, (t.category, '', ''))
     return {
         'id': t.id, 'name': t.name, 'description': t.description,
         'canva_template_id': t.canva_template_id,
@@ -705,6 +709,58 @@ def api_template_rate(tmpl_id):
     t.rating = stars
     db.session.commit()
     return jsonify({'ok': True, 'rating': t.rating})
+
+# ── TEMPLATE CATEGORIES ──────────────────────────────────────────────────────
+
+@app.route('/api/template-categories', methods=['GET'])
+@login_required
+def api_tcat_list():
+    cats = TemplateCategory.query.order_by(TemplateCategory.sort_order, TemplateCategory.label).all()
+    return jsonify([c.to_dict() for c in cats])
+
+@app.route('/api/template-categories', methods=['POST'])
+@login_required
+def api_tcat_create():
+    d = request.json or {}
+    key = (d.get('key') or '').strip().lower().replace(' ', '_')
+    if not key or not d.get('label'):
+        return jsonify({'error': 'key und label erforderlich'}), 400
+    if TemplateCategory.query.filter_by(key=key).first():
+        return jsonify({'error': f'Kategorie "{key}" existiert bereits'}), 409
+    max_order = db.session.query(db.func.max(TemplateCategory.sort_order)).scalar() or 0
+    c = TemplateCategory(
+        key=key, label=d['label'].strip(),
+        emoji=d.get('emoji', '📋'),
+        group=d.get('group', 'format'),
+        sort_order=max_order + 10,
+    )
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(c.to_dict()), 201
+
+@app.route('/api/template-categories/<int:cat_id>', methods=['PUT'])
+@login_required
+def api_tcat_update(cat_id):
+    c = TemplateCategory.query.get_or_404(cat_id)
+    d = request.json or {}
+    for f in ['label', 'emoji', 'group', 'sort_order', 'active']:
+        if f in d:
+            setattr(c, f, d[f])
+    db.session.commit()
+    return jsonify(c.to_dict())
+
+@app.route('/api/template-categories/<int:cat_id>', methods=['DELETE'])
+@login_required
+def api_tcat_delete(cat_id):
+    c = TemplateCategory.query.get_or_404(cat_id)
+    in_use = MemeTemplate.query.filter_by(category=c.key).count()
+    if in_use:
+        return jsonify({'error': f'Wird von {in_use} Template(s) verwendet — erst Templates umkategorisieren'}), 409
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+# ── TEMPLATE DELETE ───────────────────────────────────────────────────────────
 
 @app.route('/api/templates/<int:tmpl_id>', methods=['DELETE'])
 @login_required
@@ -1871,10 +1927,17 @@ def _seed_cities():
             db.session.add(City(name=name, state=state, population=pop))
         db.session.commit()
 
+def _seed_template_categories():
+    if TemplateCategory.query.count() == 0:
+        for i, (key, label, emoji, group) in enumerate(TEMPLATE_CATEGORIES):
+            db.session.add(TemplateCategory(key=key, label=label, emoji=emoji, group=group, sort_order=i))
+        db.session.commit()
+
 with app.app_context():
     db.create_all()
     _seed_todos()
     _seed_cities()
+    _seed_template_categories()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKT API
