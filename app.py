@@ -18,7 +18,8 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
                     MemePost, TrendingTopic, RecycleJob, CityFollowerSnapshot,
-                    KNOWLEDGE_CATEGORIES, CATEGORY_MAP)
+                    KNOWLEDGE_CATEGORIES, CATEGORY_MAP,
+                    TEMPLATE_CATEGORIES, TEMPLATE_CAT_MAP)
 import anthropic
 import logging
 
@@ -267,6 +268,7 @@ def dashboard():
         ai_cost_month=ai_cost_month,
         categories=KNOWLEDGE_CATEGORIES,
         category_map=CATEGORY_MAP,
+        template_categories=TEMPLATE_CATEGORIES,
         market_summary=market_summary,
         inspo_counts=inspo_counts,
         vorrat_counts=vorrat_counts,
@@ -613,25 +615,37 @@ Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
 # TEMPLATE API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _tmpl_dict(t):
+    cat_info = TEMPLATE_CAT_MAP.get(t.category, (t.category, '', ''))
+    return {
+        'id': t.id, 'name': t.name, 'description': t.description,
+        'canva_template_id': t.canva_template_id,
+        'canva_url': t.canva_url or '',
+        'render_type': t.render_type or 'canva',
+        'pil_config': t.pil_config or '{}',
+        'required_vars': t.get_required_vars(),
+        'tags': t.get_tags(),
+        'category': t.category,
+        'category_label': cat_info[0],
+        'category_emoji': cat_info[1],
+        'category_group': cat_info[2] if len(cat_info) > 2 else '',
+        'rating': t.rating or 0,
+        'preview_image': t.preview_image,
+        'example_text': t.example_text,
+        'notes': t.notes or '',
+        'has_canva': t.has_canva(),
+        'use_count': t.use_count,
+        'active': t.active,
+        'seasonal_from': t.seasonal_from or '',
+        'seasonal_to': t.seasonal_to or '',
+        'min_population': t.min_population,
+    }
+
 @app.route('/api/templates', methods=['GET'])
 @login_required
 def api_templates_list():
     templates = MemeTemplate.query.order_by(MemeTemplate.name).all()
-    return jsonify([{
-        'id': t.id, 'name': t.name, 'description': t.description,
-        'canva_template_id': t.canva_template_id,
-        'required_vars': t.get_required_vars(),
-        'tags': t.get_tags(),
-        'category': t.category,
-        'preview_image': t.preview_image,
-        'example_text': t.example_text,
-        'has_canva': t.has_canva(),
-        'use_count': t.use_count,
-        'active': t.active,
-        'seasonal_from': t.seasonal_from,
-        'seasonal_to': t.seasonal_to,
-        'min_population': t.min_population,
-    } for t in templates])
+    return jsonify([_tmpl_dict(t) for t in templates])
 
 @app.route('/api/templates', methods=['POST'])
 @login_required
@@ -643,26 +657,31 @@ def api_template_create():
         name=d['name'].strip(),
         description=d.get('description', ''),
         canva_template_id=d.get('canva_template_id', ''),
+        canva_url=d.get('canva_url', ''),
+        render_type=d.get('render_type', 'canva'),
         required_vars=json.dumps(d.get('required_vars', [])),
         canva_field_map=json.dumps(d.get('canva_field_map', {})),
         tags=json.dumps(d.get('tags', [])),
         category=d.get('category', 'allgemein'),
+        rating=int(d.get('rating', 0)),
         example_text=d.get('example_text', ''),
+        notes=d.get('notes', ''),
         seasonal_from=d.get('seasonal_from', ''),
         seasonal_to=d.get('seasonal_to', ''),
         min_population=int(d.get('min_population', 0)),
     )
     db.session.add(t)
     db.session.commit()
-    return jsonify({'id': t.id}), 201
+    return jsonify({'id': t.id, 'template': _tmpl_dict(t)}), 201
 
 @app.route('/api/templates/<int:tmpl_id>', methods=['PUT'])
 @login_required
 def api_template_update(tmpl_id):
     t = MemeTemplate.query.get_or_404(tmpl_id)
     d = request.json or {}
-    for field in ['name','description','canva_template_id','category',
-                  'example_text','seasonal_from','seasonal_to','min_population','active']:
+    for field in ['name','description','canva_template_id','canva_url','render_type',
+                  'category','rating','example_text','notes',
+                  'seasonal_from','seasonal_to','min_population','active']:
         if field in d:
             setattr(t, field, d[field])
     if 'required_vars' in d:
@@ -671,8 +690,21 @@ def api_template_update(tmpl_id):
         t.canva_field_map = json.dumps(d['canva_field_map'])
     if 'tags' in d:
         t.tags = json.dumps(d['tags'])
+    if 'pil_config' in d:
+        t.pil_config = json.dumps(d['pil_config']) if isinstance(d['pil_config'], dict) else d['pil_config']
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'template': _tmpl_dict(t)})
+
+@app.route('/api/templates/<int:tmpl_id>/rate', methods=['POST'])
+@login_required
+def api_template_rate(tmpl_id):
+    t = MemeTemplate.query.get_or_404(tmpl_id)
+    stars = int((request.json or {}).get('rating', 0))
+    if stars < 0 or stars > 5:
+        return jsonify({'error': 'Rating 0-5'}), 400
+    t.rating = stars
+    db.session.commit()
+    return jsonify({'ok': True, 'rating': t.rating})
 
 @app.route('/api/templates/<int:tmpl_id>', methods=['DELETE'])
 @login_required

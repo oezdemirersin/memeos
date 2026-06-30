@@ -133,17 +133,62 @@ class CityKnowledge(db.Model):
         return {'ai': 'KI', 'resident': 'Einwohner', 'verified': 'Verifiziert', 'manual': 'Manuell'}.get(self.source, self.source)
 
 
+TEMPLATE_CATEGORIES = [
+    # Saisonal
+    ('sommer',       'Sommer',         '☀️',  'seasonal'),
+    ('winter',       'Winter',         '❄️',  'seasonal'),
+    ('weihnachten',  'Weihnachten',    '🎄',  'seasonal'),
+    ('ostern',       'Ostern',         '🐣',  'seasonal'),
+    ('halloween',    'Halloween',      '🎃',  'seasonal'),
+    ('karneval',     'Karneval',       '🎭',  'seasonal'),
+    ('silvester',    'Silvester',      '🎆',  'seasonal'),
+    ('valentinstag', 'Valentinstag',   '❤️',  'seasonal'),
+    ('fruehling',    'Frühling',       '🌸',  'seasonal'),
+    ('herbst',       'Herbst',         '🍂',  'seasonal'),
+    # Wetter
+    ('hitze',        'Hitze',          '🌡️', 'wetter'),
+    ('regen',        'Regen',          '🌧️', 'wetter'),
+    ('schnee',       'Schnee',         '☃️', 'wetter'),
+    ('gewitter',     'Gewitter',       '⛈️', 'wetter'),
+    # Themen
+    ('uni',          'Uni / Studenten','🎓',  'thema'),
+    ('pendler',      'Pendler',        '🚇',  'thema'),
+    ('opnv',         'ÖPNV',           '🚌',  'thema'),
+    ('baustelle',    'Baustelle',      '🚧',  'thema'),
+    ('verkehr',      'Verkehr',        '🚗',  'thema'),
+    ('sport',        'Sport',          '⚽',  'thema'),
+    ('party',        'Party / Nacht',  '🎉',  'thema'),
+    ('stadtleben',   'Stadtleben',     '🏙️', 'thema'),
+    ('fussball',     'Fußball',        '⚽',  'thema'),
+    # Formate
+    ('pov',          'POV',            '📸',  'format'),
+    ('ranking',      'Ranking',        '🏆',  'format'),
+    ('vergleich',    'Vergleich',      '⚖️', 'format'),
+    ('klischee',     'Klischee',       '🎭',  'format'),
+    ('news',         'News-Meme',      '📰',  'format'),
+    ('viral',        'Viral-Format',   '🔥',  'format'),
+    ('allgemein',    'Allgemein',      '📋',  'format'),
+]
+
+TEMPLATE_CAT_MAP = {k: (label, emoji, group) for k, label, emoji, group in TEMPLATE_CATEGORIES}
+
+
 class MemeTemplate(db.Model):
     id               = db.Column(db.Integer, primary_key=True)
     name             = db.Column(db.String(200), nullable=False)
     description      = db.Column(db.Text)
     canva_template_id= db.Column(db.String(100))         # Canva Brand Template ID
+    canva_url        = db.Column(db.String(500))         # Direktlink zum Canva-Design
+    render_type      = db.Column(db.String(20), default='canva')  # canva | pil | manual
+    pil_config       = db.Column(db.Text, default='{}')  # JSON-Konfiguration für PIL-Rendering
     required_vars    = db.Column(db.Text, default='[]')  # JSON: ["problem_place", "landmark"]
     canva_field_map  = db.Column(db.Text, default='{}')  # JSON: {"problem_place": "feld_in_canva"}
     tags             = db.Column(db.Text, default='[]')  # JSON: ["pov", "klischee"]
-    category         = db.Column(db.String(50), default='allgemein')
+    category         = db.Column(db.String(50), default='allgemein', index=True)
+    rating           = db.Column(db.Integer, default=0)  # 0–5 Sterne
     preview_image    = db.Column(db.String(500))
     example_text     = db.Column(db.Text)                # Beispiel-Text wie das Template aussieht
+    notes            = db.Column(db.Text)                # Interne Notizen
     seasonal_from    = db.Column(db.String(5))           # "12-01"
     seasonal_to      = db.Column(db.String(5))           # "12-31"
     min_population   = db.Column(db.Integer, default=0)
