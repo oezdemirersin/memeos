@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import secrets
@@ -2177,7 +2178,7 @@ Nur JSON."""
             messages=[{'role':'user','content':prompt}]
         )
         raw = msg.content[0].text
-        _log_ai_usage('upload_caption', msg.usage.input_tokens, msg.usage.output_tokens)
+        _log_ai_usage('upload_caption', 'claude-haiku-4-5-20251001', msg.usage.input_tokens, msg.usage.output_tokens)
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             data = json.loads(match.group(0))
@@ -2364,7 +2365,7 @@ Nur JSON."""
             messages=[{'role':'user','content':prompt}]
         )
         raw = msg.content[0].text
-        _log_ai_usage('caption_gen', msg.usage.input_tokens, msg.usage.output_tokens)
+        _log_ai_usage('caption_gen', 'claude-haiku-4-5-20251001', msg.usage.input_tokens, msg.usage.output_tokens)
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             data = json.loads(match.group(0))
@@ -2576,7 +2577,11 @@ def api_kalender():
 @app.route('/api/performance', methods=['GET'])
 @login_required
 def api_performance():
-    published = MemePost.query.filter_by(status='veroeffentlicht').all()
+    days = request.args.get('days', type=int)
+    q = MemePost.query.filter_by(status='veroeffentlicht')
+    if days:
+        q = q.filter(MemePost.published_at >= datetime.utcnow() - timedelta(days=days))
+    published = q.all()
     with_perf = [p for p in published if p.perf_likes is not None]
     top_posts = sorted(with_perf, key=lambda p: p.perf_likes or 0, reverse=True)[:20]
 
@@ -2640,7 +2645,7 @@ def api_bulk_multi():
             db.session.add(job)
             db.session.flush()
             created.append(job.id)
-            threading.Thread(target=_run_generate_job, args=(job.id,), daemon=True).start()
+            threading.Thread(target=_run_generate_job, args=(app, job.id), daemon=True).start()
     db.session.commit()
     return jsonify({'created': len(created), 'job_ids': created})
 
