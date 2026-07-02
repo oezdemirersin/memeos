@@ -362,6 +362,15 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .tlib-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);transition:background .1s;cursor:default;}
 .tlib-row:hover{background:var(--surface2);}
 .tlib-row:last-child{border-bottom:none;}
+.tlib-row.inactive{opacity:.45;}
+.tlib-series-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;background:rgba(99,102,241,.04);transition:background .1s;}
+.tlib-series-row:hover{background:rgba(99,102,241,.1);}
+.tlib-series-arrow{font-size:11px;color:var(--accent);transition:transform .2s;width:16px;text-align:center;flex-shrink:0;}
+.tlib-series-arrow.open{transform:rotate(90deg);}
+.tlib-sub-row{display:flex;align-items:center;gap:10px;padding:7px 10px 7px 30px;border-bottom:1px solid rgba(255,255,255,.04);background:rgba(0,0,0,.15);transition:background .1s;}
+.tlib-sub-row:hover{background:rgba(0,0,0,.25);}
+.tlib-sub-row:last-child{border-bottom:1px solid var(--border);}
+.tlib-sub-badge{font-size:10px;font-weight:700;color:var(--accent);background:rgba(99,102,241,.15);border-radius:4px;padding:2px 5px;flex-shrink:0;min-width:24px;text-align:center;}
 .tlib-thumb-cell{width:44px;height:44px;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:22px;}
 .tlib-thumb-cell img{width:100%;height:100%;object-fit:cover;}
 .tlib-name-cell{flex:1;min-width:0;}
@@ -2157,6 +2166,14 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div class="form-group"><label>Saisonal von (MM-TT)</label><input type="text" id="tmpl-season-from" placeholder="12-01"></div>
       <div class="form-group"><label>Saisonal bis (MM-TT)</label><input type="text" id="tmpl-season-to" placeholder="12-31"></div>
     </div>
+
+    <!-- Serie -->
+    <div style="font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;">Serie (optional)</div>
+    <div style="font-size:12px;color:var(--muted2);margin-bottom:10px;">Wenn dieses Template Teil einer Slide-Serie ist (z.B. "SpongeBob Edition"), wird es in der Bibliothek unter der Serie gruppiert. Nur Slide 1 ist sichtbar — die anderen klappen auf Wunsch auf.</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:3;"><label>Serien-Name</label><input type="text" id="tmpl-series" placeholder="z.B. SpongeBob Edition, Hitze-Serie, Uni-Karussell"></div>
+      <div class="form-group" style="flex:1;"><label>Position (1, 2, 3…)</label><input type="number" id="tmpl-series-pos" min="1" placeholder="1"></div>
+    </div>
     </div>
 
     <div class="modal-footer" style="position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);margin-top:0;padding-top:16px;">
@@ -2574,6 +2591,9 @@ function _renderTemplateCard(t) {
   </div>`;
 }
 
+// Tracks which series are currently expanded
+const _expandedSeries = new Set();
+
 function _applyTlibFilters() {
   const q = (document.getElementById('template-search')?.value||'').toLowerCase();
   const group = document.getElementById('template-filter-group')?.value || _tlibGroup;
@@ -2582,8 +2602,8 @@ function _applyTlibFilters() {
   const onlyCanva = document.getElementById('template-filter-canva')?.checked;
   const onlySeasonal = document.getElementById('template-filter-seasonal')?.checked;
 
+  // Show all templates (including inactive — dimmed via CSS class)
   let filtered = _allTemplates.filter(t => {
-    if(!t.active) return false;
     if(q && !t.name.toLowerCase().includes(q) && !(t.description||'').toLowerCase().includes(q) && !(t.notes||'').toLowerCase().includes(q)) return false;
     if(group && t.category_group !== group) return false;
     if(cat && t.category !== cat) return false;
@@ -2596,15 +2616,114 @@ function _applyTlibFilters() {
   else if(sort === 'use_count') filtered.sort((a,b) => (b.use_count||0)-(a.use_count||0));
   else filtered.sort((a,b) => a.name.localeCompare(b.name));
 
+  // Group by series
+  const seriesMap = {};
+  const standalone = [];
+  filtered.forEach(t => {
+    if(t.series) {
+      if(!seriesMap[t.series]) seriesMap[t.series] = [];
+      seriesMap[t.series].push(t);
+    } else {
+      standalone.push(t);
+    }
+  });
+  Object.values(seriesMap).forEach(arr =>
+    arr.sort((a,b) => (a.series_position||999)-(b.series_position||999))
+  );
+
+  // Build ordered list: series first (sorted by series name), then standalone
+  const seriesEntries = Object.entries(seriesMap).sort(([a],[b]) => a.localeCompare(b));
+  standalone.sort((a,b) => a.name.localeCompare(b.name));
+
+  let html = '';
+  seriesEntries.forEach(([sname, templates]) => {
+    html += _renderSeriesGroup(sname, templates);
+  });
+  standalone.forEach(t => { html += _renderTemplateCard(t); });
+
   const grid = document.getElementById('templates-grid');
   const empty = document.getElementById('templates-empty');
-  if(!filtered.length) {
+  if(!html) {
     grid.innerHTML = '';
     empty.style.display = '';
   } else {
     empty.style.display = 'none';
-    grid.innerHTML = filtered.map(_renderTemplateCard).join('');
+    grid.innerHTML = html;
   }
+}
+
+function _renderSeriesGroup(sname, templates) {
+  const first = templates[0];
+  const count = templates.length;
+  const isOpen = _expandedSeries.has(sname);
+  const thumb = first.preview_image
+    ? `<img src="/uploads/${first.preview_image}">`
+    : (first.category_emoji || '📋');
+  const avgRating = templates.reduce((s,t)=>s+(t.rating||0),0)/count;
+  const stars = '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5-Math.round(avgRating));
+  const totalUses = templates.reduce((s,t)=>s+(t.use_count||0),0);
+  const renderBadge = `<span class="badge badge-gray" style="font-size:10px;">${count} Slides</span>`;
+
+  // Series header row
+  let html = `<div class="tlib-series-row" onclick="toggleSeries('${sname.replace(/'/g,"\\'")}', this)" id="series-row-${CSS.escape(sname)}">
+    <div class="tlib-series-arrow${isOpen?' open':''}">▶</div>
+    <div class="tlib-thumb-cell">${thumb}</div>
+    <div class="tlib-name-cell">
+      <div class="tname">${sname} <span style="color:var(--accent);font-weight:400;">(${count} Slides)</span></div>
+      <div class="tdesc">${isOpen ? 'Klicken zum Einklappen' : 'Klicken zum Ausklappen aller Slides'}</div>
+    </div>
+    <div class="tlib-cat-cell">
+      <span class="badge badge-gray" style="font-size:10px;">${first.category_emoji||''} ${first.category_label||first.category}</span>
+    </div>
+    <div class="tlib-type-cell">${renderBadge}</div>
+    <div class="tlib-rating-cell" style="font-size:12px;">${stars}</div>
+    <div class="tlib-uses-cell">${totalUses}×</div>
+    <div class="tlib-actions-cell">
+      <button class="btn btn-primary btn-xs" onclick="event.stopPropagation();openGeneratorWith(${first.id})" title="Erste Slide generieren">⚡</button>
+      <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openTemplateModal(${first.id})" title="Erste Slide bearbeiten">✏️</button>
+    </div>
+  </div>`;
+
+  // Sub-rows (only if expanded)
+  if(isOpen) {
+    templates.forEach(t => {
+      const subThumb = t.preview_image ? `<img src="/uploads/${t.preview_image}">` : (t.category_emoji||'📋');
+      const subStars = '★'.repeat(t.rating||0) + '☆'.repeat(5-(t.rating||0));
+      const posLabel = t.series_position || '?';
+      html += `<div class="tlib-sub-row${t.active?'':' inactive'}" data-tmpl-id="${t.id}">
+        <div style="width:16px;flex-shrink:0;"></div>
+        <div class="tlib-sub-badge">${posLabel}</div>
+        <div class="tlib-thumb-cell" style="width:36px;height:36px;">${subThumb}</div>
+        <div class="tlib-name-cell">
+          <div class="tname" style="font-size:12px;">${t.name}</div>
+          <div class="tdesc">${t.description || t.example_text || ''}</div>
+        </div>
+        <div class="tlib-cat-cell"></div>
+        <div class="tlib-type-cell">
+          ${t.render_type==='pil'?'<span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;">PIL</span>':t.has_canva?'<span class="badge badge-green" style="font-size:10px;">Canva ✓</span>':'<span class="badge badge-gray" style="font-size:10px;">kein Canva</span>'}
+        </div>
+        <div class="tlib-rating-cell" onclick="quickRateTemplate(${t.id},this)" title="Bewerten">${subStars}</div>
+        <div class="tlib-uses-cell">${t.use_count||0}×</div>
+        <div class="tlib-actions-cell">
+          <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
+          ${t.canva_url?`<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;padding:3px 7px;">↗</a>`:''}
+          <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
+          <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  return html;
+}
+
+function toggleSeries(sname, rowEl) {
+  if(_expandedSeries.has(sname)) {
+    _expandedSeries.delete(sname);
+  } else {
+    _expandedSeries.add(sname);
+  }
+  _applyTlibFilters();
 }
 
 function filterTemplates() { _applyTlibFilters(); }
@@ -2658,6 +2777,8 @@ function openTemplateModal(id) {
     document.getElementById('tmpl-min-pop').value = t.min_population || 0;
     document.getElementById('tmpl-season-from').value = t.seasonal_from || '';
     document.getElementById('tmpl-season-to').value = t.seasonal_to || '';
+    document.getElementById('tmpl-series').value = t.series || '';
+    document.getElementById('tmpl-series-pos').value = t.series_position || '';
     document.getElementById('tmpl-field-map').value = JSON.stringify(t.canva_field_map || {}, null, 2);
     setModalRating(t.rating || 0);
     document.querySelectorAll('.chip[data-var]').forEach(c => {
@@ -2666,7 +2787,10 @@ function openTemplateModal(id) {
   } else {
     document.getElementById('tmpl-modal-title').textContent = 'TEMPLATE HINZUFÜGEN';
     document.getElementById('tmpl-id').value = '';
-    ['tmpl-name','tmpl-description','tmpl-example','tmpl-notes','tmpl-canva-id','tmpl-canva-url','tmpl-tags','tmpl-season-from','tmpl-season-to'].forEach(f => document.getElementById(f).value = '');
+    ['tmpl-name','tmpl-description','tmpl-example','tmpl-notes','tmpl-canva-id','tmpl-canva-url',
+     'tmpl-tags','tmpl-season-from','tmpl-season-to','tmpl-series','tmpl-series-pos'].forEach(f => {
+      const el = document.getElementById(f); if(el) el.value = '';
+    });
     document.getElementById('tmpl-min-pop').value = 0;
     document.getElementById('tmpl-render-type').value = 'canva';
     document.getElementById('tmpl-category').value = 'allgemein';
@@ -2699,6 +2823,8 @@ async function saveTemplate() {
     min_population: parseInt(document.getElementById('tmpl-min-pop').value) || 0,
     seasonal_from: document.getElementById('tmpl-season-from').value,
     seasonal_to: document.getElementById('tmpl-season-to').value,
+    series: document.getElementById('tmpl-series').value.trim() || null,
+    series_position: parseInt(document.getElementById('tmpl-series-pos').value) || null,
   };
   const r = id ? await api('PUT',`/api/templates/${id}`,data) : await api('POST','/api/templates',data);
   if(r.error) { toast(r.error,'error'); return; }

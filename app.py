@@ -651,6 +651,8 @@ def _tmpl_dict(t):
         'seasonal_from': t.seasonal_from or '',
         'seasonal_to': t.seasonal_to or '',
         'min_population': t.min_population,
+        'series': t.series or '',
+        'series_position': t.series_position,
     }
 
 @app.route('/api/templates', methods=['GET'])
@@ -681,6 +683,8 @@ def api_template_create():
         seasonal_from=d.get('seasonal_from', ''),
         seasonal_to=d.get('seasonal_to', ''),
         min_population=int(d.get('min_population', 0)),
+        series=d.get('series', '') or None,
+        series_position=int(d['series_position']) if d.get('series_position') else None,
     )
     db.session.add(t)
     db.session.commit()
@@ -693,7 +697,8 @@ def api_template_update(tmpl_id):
     d = request.json or {}
     for field in ['name','description','canva_template_id','canva_url','render_type',
                   'category','rating','example_text','notes',
-                  'seasonal_from','seasonal_to','min_population','active']:
+                  'seasonal_from','seasonal_to','min_population','active',
+                  'series','series_position']:
         if field in d:
             setattr(t, field, d[field])
     if 'required_vars' in d:
@@ -2231,11 +2236,16 @@ def _seed_template_categories():
 
 with app.app_context():
     db.create_all()
-    try:
-        db.session.execute(db.text('ALTER TABLE meme_post ADD COLUMN carousel_paths TEXT'))
-        db.session.commit()
-    except Exception:
-        db.session.rollback()  # Spalte existiert bereits
+    for _col_sql in [
+        'ALTER TABLE meme_post ADD COLUMN carousel_paths TEXT',
+        'ALTER TABLE meme_template ADD COLUMN series TEXT',
+        'ALTER TABLE meme_template ADD COLUMN series_position INTEGER',
+    ]:
+        try:
+            db.session.execute(db.text(_col_sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     _seed_todos()
     _seed_cities()
     _seed_template_categories()

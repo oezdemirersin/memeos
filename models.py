@@ -217,6 +217,8 @@ class MemeTemplate(db.Model):
     min_population   = db.Column(db.Integer, default=0)
     use_count        = db.Column(db.Integer, default=0)
     active           = db.Column(db.Boolean, default=True, index=True)
+    series           = db.Column(db.String(200))   # Serien-Name, z.B. "SpongeBob Edition"
+    series_position  = db.Column(db.Integer)       # Position in der Serie (1, 2, 3 …)
     created_at       = db.Column(db.DateTime, default=datetime.utcnow)
 
     render_jobs = db.relationship('RenderJob', backref='template', lazy='dynamic')
@@ -451,6 +453,7 @@ class MemePost(db.Model):
     title            = db.Column(db.String(300))
     image_path       = db.Column(db.String(500))
     image_url        = db.Column(db.String(1000))
+    carousel_paths   = db.Column(db.Text)  # JSON-Liste: ["a.png", "b.png", ...] in Post-Reihenfolge, nur bei post_type='carousel'
 
     caption          = db.Column(db.Text)
     hashtags         = db.Column(db.Text)
@@ -484,6 +487,10 @@ class MemePost(db.Model):
     def status_label(self):
         return {'entwurf':'Entwurf','bereit':'Bereit','geplant':'Geplant',
                 'veroeffentlicht':'Veröffentlicht','archiviert':'Archiviert'}.get(self.status, self.status)
+
+    def get_carousel_paths(self):
+        try: return json.loads(self.carousel_paths or '[]')
+        except Exception: return []
 
     @property
     def engagement_rate(self):
