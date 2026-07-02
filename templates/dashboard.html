@@ -358,6 +358,28 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .tlib-tab{border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s;}
 .tlib-tab-active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .tlib-tab:hover:not(.tlib-tab-active){color:var(--text);border-color:var(--muted);}
+.tlib-list-header{display:flex;align-items:center;gap:10px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);margin-bottom:2px;}
+.tlib-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);transition:background .1s;cursor:default;}
+.tlib-row:hover{background:var(--surface2);}
+.tlib-row:last-child{border-bottom:none;}
+.tlib-thumb-cell{width:44px;height:44px;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:22px;}
+.tlib-thumb-cell img{width:100%;height:100%;object-fit:cover;}
+.tlib-name-cell{flex:1;min-width:0;}
+.tlib-name-cell .tname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tlib-name-cell .tdesc{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.tlib-cat-cell{width:130px;flex-shrink:0;}
+.tlib-type-cell{width:70px;flex-shrink:0;}
+.tlib-rating-cell{width:90px;flex-shrink:0;font-size:13px;color:#f59e0b;cursor:pointer;letter-spacing:1px;}
+.tlib-uses-cell{width:50px;flex-shrink:0;text-align:right;font-size:12px;color:var(--muted);}
+.tlib-actions-cell{width:140px;flex-shrink:0;display:flex;justify-content:flex-end;gap:4px;}
+/* Carousel upload */
+.hl-carousel-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0;}
+.hl-carousel-strip .hl-slide{position:relative;flex-shrink:0;width:70px;height:70px;border-radius:6px;overflow:hidden;border:2px solid var(--border);}
+.hl-carousel-strip .hl-slide.cover{border-color:var(--accent);}
+.hl-carousel-strip .hl-slide img,.hl-carousel-strip .hl-slide video{width:100%;height:100%;object-fit:cover;}
+.hl-carousel-strip .hl-slide-num{position:absolute;bottom:2px;right:3px;font-size:10px;font-weight:700;background:rgba(0,0,0,.6);color:#fff;border-radius:3px;padding:1px 3px;}
+.hl-carousel-strip .hl-slide .hl-slide-rm{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:3px;width:16px;height:16px;font-size:9px;cursor:pointer;display:none;align-items:center;justify-content:center;}
+.hl-carousel-strip .hl-slide:hover .hl-slide-rm{display:flex;}
 </style>
 </head>
 <body>
@@ -725,7 +747,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 
   <!-- Category Group Tabs -->
-  <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;" id="tlib-group-tabs">
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;" id="tlib-group-tabs">
     <button class="tlib-tab tlib-tab-active" onclick="setTlibGroup('', this)">Alle</button>
     <button class="tlib-tab" onclick="setTlibGroup('seasonal', this)">☀️ Saisonal</button>
     <button class="tlib-tab" onclick="setTlibGroup('wetter', this)">🌧️ Wetter</button>
@@ -733,8 +755,19 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <button class="tlib-tab" onclick="setTlibGroup('format', this)">📋 Formate</button>
   </div>
 
-  <div id="templates-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">
-    <!-- filled by loadTemplateLibrary() -->
+  <!-- Compact List Header -->
+  <div class="tlib-list-header">
+    <span style="width:44px;flex-shrink:0;"></span>
+    <span style="flex:1;">Template</span>
+    <span style="width:130px;">Kategorie</span>
+    <span style="width:70px;">Typ</span>
+    <span style="width:90px;">Bewertung</span>
+    <span style="width:50px;text-align:right;">Genutzt</span>
+    <span style="width:140px;text-align:right;">Aktionen</span>
+  </div>
+
+  <div id="templates-grid" style="display:flex;flex-direction:column;gap:0;">
+    <!-- filled by JS -->
   </div>
 
   <div id="templates-empty" style="display:none;" class="empty">
@@ -1133,12 +1166,23 @@ tr:hover td{background:rgba(255,255,255,.02);}
           </div>
           <div class="form-group" style="margin-top:10px;">
             <label>Post-Typ</label>
-            <select id="hl-post-type">
+            <select id="hl-post-type" onchange="hlUpdateCarouselToggle()">
               <option value="feed">Feed</option>
               <option value="reel">Reel</option>
               <option value="story">Story</option>
-              <option value="carousel">Carousel</option>
             </select>
+          </div>
+          <div id="hl-carousel-toggle" style="display:none;margin-top:10px;padding:10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:8px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="hl-carousel-cb" onchange="hlRenderPreviews()" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;">
+              <span>
+                <span style="font-size:13px;font-weight:600;color:var(--text);">Als Karussell zusammenfassen</span><br>
+                <span style="font-size:11px;color:var(--muted);">Alle Dateien werden zu einem einzigen Post mit mehreren Slides</span>
+              </span>
+            </label>
+            <div id="hl-carousel-title-wrap" style="display:none;margin-top:8px;">
+              <input type="text" id="hl-carousel-title" placeholder="Titel des Karussell-Posts (optional)" style="font-size:12px;">
+            </div>
           </div>
         </div>
         <button id="hl-upload-btn" onclick="hlStartUpload()" class="btn btn-primary" style="width:100%;padding:14px;font-size:15px;" disabled>
@@ -2494,50 +2538,40 @@ function _updateTlibStats(templates) {
 }
 
 function _renderTemplateCard(t) {
-  const stars = '★'.repeat(t.rating || 0) + '☆'.repeat(5-(t.rating||0));
-  const ratingHtml = `<span style="color:#f59e0b;font-size:13px;cursor:pointer;" onclick="quickRateTemplate(${t.id},this)">${stars}</span>`;
+  const stars = '★'.repeat(t.rating||0) + '☆'.repeat(5-(t.rating||0));
   const seasonal = _isSaisonActive(t);
-  const seasonBadge = seasonal ? `<span class="badge" style="background:rgba(251,191,36,.15);color:#fbbf24;font-size:10px;">☀️ Jetzt aktiv</span>` : (t.seasonal_from ? `<span class="badge badge-gray" style="font-size:10px;">📅 ${t.seasonal_from}–${t.seasonal_to}</span>` : '');
   const renderBadge = t.render_type === 'pil'
     ? `<span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;">PIL</span>`
     : t.render_type === 'manual'
     ? `<span class="badge badge-gray" style="font-size:10px;">Manuell</span>`
-    : (t.has_canva ? `<span class="badge badge-green" style="font-size:10px;">Canva</span>` : `<span class="badge badge-gray" style="font-size:10px;">kein Canva</span>`);
-  const previewHtml = t.preview_image
-    ? `<img src="/uploads/${t.preview_image}" style="width:100%;height:150px;object-fit:cover;border-radius:8px 8px 0 0;">`
-    : `<div style="height:90px;background:var(--surface3);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;font-size:36px;">${t.category_emoji || '📋'}</div>`;
-  const canvaBtn = t.canva_url ? `<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">✏️ Canva</a>` : '';
-  const tagHtml = t.tags.length ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px;">${t.tags.slice(0,4).map(v=>`<span class="badge badge-blue" style="font-size:10px;">${v}</span>`).join('')}</div>` : '';
-  const noteHtml = t.notes ? `<div style="font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:6px;margin-top:2px;font-style:italic;">${t.notes.substring(0,80)}${t.notes.length>80?'…':''}</div>` : '';
+    : (t.has_canva ? `<span class="badge badge-green" style="font-size:10px;">Canva ✓</span>` : `<span class="badge badge-gray" style="font-size:10px;">kein Canva</span>`);
+  const thumb = t.preview_image
+    ? `<img src="/uploads/${t.preview_image}">`
+    : `${t.category_emoji||'📋'}`;
+  const seasonDot = seasonal ? `<span title="Saisonal aktiv" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fbbf24;margin-left:4px;vertical-align:middle;"></span>` : '';
+  const canvaBtn = t.canva_url
+    ? `<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" title="In Canva öffnen" style="text-decoration:none;padding:3px 7px;">↗ Canva</a>`
+    : '';
 
-  return `
-    <div class="card-sm" style="padding:0;display:flex;flex-direction:column;overflow:hidden;" data-tmpl-id="${t.id}">
-      ${previewHtml}
-      <div style="padding:12px;display:flex;flex-direction:column;gap:7px;flex:1;">
-        <div style="display:flex;align-items:start;justify-content:space-between;gap:6px;">
-          <div style="font-size:13px;font-weight:700;line-height:1.3;">${t.name}</div>
-          <div style="display:flex;gap:3px;flex-shrink:0;">${renderBadge}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <span class="badge badge-gray" style="font-size:10px;">${t.category_emoji||''} ${t.category_label||t.category}</span>
-          ${seasonBadge}
-        </div>
-        ${t.description ? `<div style="font-size:12px;color:var(--muted2);line-height:1.4;">${t.description}</div>` : ''}
-        ${t.example_text ? `<div style="font-size:11px;color:var(--muted);font-style:italic;">"${t.example_text}"</div>` : ''}
-        ${tagHtml}
-        ${noteHtml}
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
-          ${ratingHtml}
-          <span style="font-size:11px;color:var(--muted);">${t.use_count||0}× genutzt</span>
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;">
-          <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})">⚡ Generieren</button>
-          ${canvaBtn}
-          <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})">✏️</button>
-          <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);margin-left:auto;" onclick="deleteTemplate(${t.id})">✕</button>
-        </div>
-      </div>
-    </div>`;
+  return `<div class="tlib-row" data-tmpl-id="${t.id}">
+    <div class="tlib-thumb-cell">${thumb}</div>
+    <div class="tlib-name-cell">
+      <div class="tname">${t.name}${seasonDot}</div>
+      <div class="tdesc">${t.description || t.example_text || '<span style="color:var(--border);">—</span>'}</div>
+    </div>
+    <div class="tlib-cat-cell">
+      <span class="badge badge-gray" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;">${t.category_emoji||''} ${t.category_label||t.category}</span>
+    </div>
+    <div class="tlib-type-cell">${renderBadge}</div>
+    <div class="tlib-rating-cell" onclick="quickRateTemplate(${t.id},this)" title="Klicken um zu bewerten">${stars}</div>
+    <div class="tlib-uses-cell">${t.use_count||0}×</div>
+    <div class="tlib-actions-cell">
+      <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
+      ${canvaBtn}
+      <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
+      <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
+    </div>
+  </div>`;
 }
 
 function _applyTlibFilters() {
@@ -2851,26 +2885,42 @@ async function pollJob(jobId, statusEl) {
 function renderJobResult(job) {
   const el = document.getElementById('gen-result');
   if(!el) return;
-  const scoreColor = job.fit_color;
-  el.innerHTML = `
-    <div>
-      <div style="display:flex;gap:12px;margin-bottom:12px;align-items:center;">
-        <div style="font-size:28px;font-family:var(--font-display);color:${scoreColor};">${job.fit_score ?? '—'}</div>
-        <div>
-          <div style="font-size:13px;font-weight:600;">Fit-Score</div>
-          <div style="font-size:12px;color:var(--muted);">${job.fit_reasoning || ''}</div>
-        </div>
+  const scoreColor = job.fit_color || '#6b7280';
+
+  const varsHtml = Object.keys(job.vars_used||{}).length
+    ? `<div style="margin-bottom:12px;padding:10px;background:var(--surface3);border-radius:8px;">
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Verwendete Variablen</div>
+        ${Object.entries(job.vars_used).map(([k,v])=>`
+          <div style="display:flex;gap:6px;margin-bottom:3px;font-size:12px;">
+            <span style="color:var(--muted);min-width:120px;">${k}</span>
+            <span style="font-weight:600;color:var(--text);">${v}</span>
+          </div>`).join('')}
+       </div>` : '';
+
+  const briefHtml = job.manual_brief
+    ? `<div style="margin-bottom:12px;padding:10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:8px;">
+        <div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">📋 Creator Brief</div>
+        <div style="font-size:13px;line-height:1.5;">${job.manual_brief}</div>
+       </div>` : '';
+
+  el.innerHTML = `<div>
+    <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;padding:10px;background:var(--surface2);border-radius:8px;">
+      <div style="font-size:32px;font-family:var(--font-display);color:${scoreColor};min-width:44px;text-align:center;">${job.fit_score ?? '—'}</div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Fit-Score</div>
+        <div style="font-size:13px;color:var(--text);margin-top:2px;">${job.fit_reasoning || '—'}</div>
       </div>
-      ${job.image_url ? `<img src="${job.image_url}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
-      ${!job.image_url && job.manual_brief ? `<div class="card-sm" style="background:var(--surface3);margin-bottom:12px;"><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">MANUAL BRIEF</div><div style="font-size:13px;">${job.manual_brief}</div></div>` : ''}
-      ${Object.keys(job.vars_used||{}).length ? `<div style="margin-bottom:12px;"><div style="font-size:11px;color:var(--muted);margin-bottom:6px;">VERWENDETE VARIABLEN</div>${Object.entries(job.vars_used).map(([k,v])=>`<div style="font-size:12px;"><span style="color:var(--muted);">${k}:</span> ${v}</div>`).join('')}</div>` : ''}
-      ${job.error_message ? `<div class="badge badge-red" style="margin-bottom:10px;">${job.error_message}</div>` : ''}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-success btn-sm" onclick="approveJob(${job.id})">✓ Freigeben</button>
-        <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>
-        ${job.image_url ? `<a href="${job.image_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
-      </div>
-    </div>`;
+    </div>
+    ${varsHtml}
+    ${briefHtml}
+    ${job.image_url ? `<img src="${job.image_url}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
+    ${job.error_message ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:10px;">${job.error_message}</div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-success btn-sm" onclick="approveJob(${job.id})">✓ Freigeben</button>
+      <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>
+      ${job.image_url ? `<a href="${job.image_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
+    </div>
+  </div>`;
 }
 
 async function approveJob(id) {
@@ -3276,6 +3326,9 @@ function hlHandleFiles(fileList) {
   hlRenderPreviews();
   const btn = document.getElementById('hl-upload-btn');
   if (btn) btn.disabled = !(_hlFiles.length > 0 && document.getElementById('hl-city').value);
+  // Reset carousel checkbox when file selection changes
+  const cb = document.getElementById('hl-carousel-cb');
+  if(cb && _hlFiles.length <= 1) cb.checked = false;
 }
 
 function hlClearFiles() {
@@ -3288,60 +3341,119 @@ function hlRemoveFile(i) {
   hlRenderPreviews();
 }
 
+function hlUpdateCarouselToggle() {
+  const toggle = document.getElementById('hl-carousel-toggle');
+  if(toggle) toggle.style.display = _hlFiles.length > 1 ? '' : 'none';
+}
+
 function hlRenderPreviews() {
   const grid = document.getElementById('hl-thumb-grid');
   const wrap = document.getElementById('hl-preview-grid');
   const btn  = document.getElementById('hl-upload-btn');
-  document.getElementById('hl-preview-count').textContent = `${_hlFiles.length} Datei${_hlFiles.length !== 1 ? 'en' : ''}`;
-  if (!_hlFiles.length) { wrap.style.display = 'none'; if(btn) btn.disabled = true; return; }
+  const isCarousel = document.getElementById('hl-carousel-cb')?.checked;
+
+  if (!_hlFiles.length) {
+    wrap.style.display = 'none';
+    document.getElementById('hl-carousel-toggle').style.display = 'none';
+    if(btn) btn.disabled = true;
+    return;
+  }
+
   wrap.style.display = 'block';
-  if (btn) btn.disabled = !document.getElementById('hl-city').value;
-  grid.innerHTML = _hlFiles.map((f, i) => {
-    const src = URL.createObjectURL(f);
-    const media = f.type.startsWith('video/')
-      ? `<video src="${src}" style="width:100%;height:100%;object-fit:cover;"></video>`
-      : `<img src="${src}">`;
-    return `<div class="hl-thumb">${media}
-      <button class="hl-thumb-rm" onclick="hlRemoveFile(${i})">✕</button>
-      <div class="hl-thumb-name">${f.name}</div>
-    </div>`;
-  }).join('');
+  if(btn) btn.disabled = !document.getElementById('hl-city').value;
+
+  // Show/hide carousel toggle
+  const toggle = document.getElementById('hl-carousel-toggle');
+  toggle.style.display = _hlFiles.length > 1 ? '' : 'none';
+  const titleWrap = document.getElementById('hl-carousel-title-wrap');
+  if(titleWrap) titleWrap.style.display = isCarousel ? '' : 'none';
+
+  if (isCarousel && _hlFiles.length > 1) {
+    // Carousel preview: horizontal strip of slides
+    document.getElementById('hl-preview-count').textContent =
+      `${_hlFiles.length} Slides → 1 Karussell-Post`;
+    grid.innerHTML = `<div class="hl-carousel-strip">` +
+      _hlFiles.map((f, i) => {
+        const src = URL.createObjectURL(f);
+        const media = f.type.startsWith('video/')
+          ? `<video src="${src}"></video>`
+          : `<img src="${src}">`;
+        return `<div class="hl-slide${i===0?' cover':''}">
+          ${media}
+          <div class="hl-slide-num">${i+1}</div>
+          <button class="hl-slide-rm" onclick="hlRemoveFile(${i})">✕</button>
+        </div>`;
+      }).join('') + `</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted);">
+        Slide 1 = Cover-Bild · Reihenfolge durch Entfernen anpassen
+      </div>`;
+  } else {
+    // Normal grid preview
+    document.getElementById('hl-preview-count').textContent =
+      `${_hlFiles.length} Datei${_hlFiles.length !== 1 ? 'en' : ''}`;
+    grid.innerHTML = _hlFiles.map((f, i) => {
+      const src = URL.createObjectURL(f);
+      const media = f.type.startsWith('video/')
+        ? `<video src="${src}" style="width:100%;height:100%;object-fit:cover;"></video>`
+        : `<img src="${src}">`;
+      return `<div class="hl-thumb">${media}
+        <button class="hl-thumb-rm" onclick="hlRemoveFile(${i})">✕</button>
+        <div class="hl-thumb-name">${f.name}</div>
+      </div>`;
+    }).join('');
+  }
 }
 
 async function hlStartUpload() {
   if (!_hlFiles.length) return;
-  const cityId = document.getElementById('hl-city').value;
+  const cityId     = document.getElementById('hl-city').value;
+  const isCarousel = document.getElementById('hl-carousel-cb')?.checked && _hlFiles.length > 1;
   if (!cityId) { toast('Bitte erst eine Stadt auswählen', 'error'); return; }
 
   const btn = document.getElementById('hl-upload-btn');
   btn.disabled = true;
   btn.textContent = 'Lädt hoch…';
-  document.getElementById('hl-progress').style.display      = 'block';
-  document.getElementById('hl-preview-grid').style.display  = 'none';
+  document.getElementById('hl-progress').style.display     = 'block';
+  document.getElementById('hl-preview-grid').style.display = 'none';
 
   _hlUploaded = [];
-  const chunkSize = 5;
-  for (let i = 0; i < _hlFiles.length; i += chunkSize) {
-    const chunk = _hlFiles.slice(i, i + chunkSize);
+
+  if (isCarousel) {
+    // All files in ONE request → one carousel post
+    document.getElementById('hl-progress-bar').style.width = '30%';
+    document.getElementById('hl-progress-text').textContent = `${_hlFiles.length} Slides werden hochgeladen…`;
     const fd = new FormData();
-    chunk.forEach(f => fd.append('files', f));
+    _hlFiles.forEach(f => fd.append('files', f));
     fd.append('city_id', cityId);
-
-    const pct = Math.round(i / _hlFiles.length * 100);
-    document.getElementById('hl-progress-bar').style.width = pct + '%';
-    document.getElementById('hl-progress-text').textContent = `${Math.min(i + chunkSize, _hlFiles.length)} / ${_hlFiles.length} hochgeladen…`;
-
-    const res = await fetch('/api/upload/batch', { method: 'POST', body: fd }).then(r => r.json());
-    if (res.created) _hlUploaded = _hlUploaded.concat(res.created);
+    fd.append('as_carousel', 'true');
+    const carouselTitle = document.getElementById('hl-carousel-title')?.value.trim();
+    if(carouselTitle) fd.append('carousel_title', carouselTitle);
+    const res = await fetch('/api/upload/batch', {method:'POST', body:fd}).then(r=>r.json());
+    if(res.created) _hlUploaded = res.created;
+    document.getElementById('hl-progress-bar').style.width = '100%';
+    document.getElementById('hl-progress-text').textContent = `Karussell-Post mit ${_hlFiles.length} Slides erstellt ✓`;
+  } else {
+    // Chunked upload — one post per file
+    const chunkSize = 5;
+    for (let i = 0; i < _hlFiles.length; i += chunkSize) {
+      const chunk = _hlFiles.slice(i, i + chunkSize);
+      const fd = new FormData();
+      chunk.forEach(f => fd.append('files', f));
+      fd.append('city_id', cityId);
+      const pct = Math.round(i / _hlFiles.length * 100);
+      document.getElementById('hl-progress-bar').style.width = pct + '%';
+      document.getElementById('hl-progress-text').textContent =
+        `${Math.min(i + chunkSize, _hlFiles.length)} / ${_hlFiles.length} hochgeladen…`;
+      const res = await fetch('/api/upload/batch', {method:'POST', body:fd}).then(r=>r.json());
+      if(res.created) _hlUploaded = _hlUploaded.concat(res.created);
+    }
+    document.getElementById('hl-progress-bar').style.width = '100%';
+    document.getElementById('hl-progress-text').textContent = `${_hlUploaded.length} Dateien hochgeladen ✓`;
   }
-
-  document.getElementById('hl-progress-bar').style.width = '100%';
-  document.getElementById('hl-progress-text').textContent = `${_hlUploaded.length} Dateien hochgeladen ✓`;
 
   btn.textContent = 'Hochladen';
   btn.disabled = false;
   _hlFiles = [];
-
   setTimeout(() => hlGoToPhase2(), 500);
 }
 

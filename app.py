@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import json
 import time
@@ -9,6 +10,13 @@ import urllib.parse
 import uuid
 import requests
 import feedparser
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -946,25 +954,35 @@ def _run_generate_job(flask_app, job_id):
                 db.session.commit()
                 return
 
-            # 2) Canva Autofill (wenn Template und Verbindung vorhanden)
-            if template.has_canva() and _canva_is_connected():
-                png_bytes = _canva_autofill(template, result['vars'])
-                if png_bytes:
-                    filename = f'render_{job.id}_{int(time.time())}.png'
-                    path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
-                    with open(path, 'wb') as f:
-                        f.write(png_bytes)
-                    job.image_filename = filename
-                    cloud_url = _upload_cloudinary(path, folder='memeos/renders')
-                    if cloud_url:
-                        job.image_url = cloud_url
-                        log.info(f'Job {job_id}: uploaded to Cloudinary → {cloud_url}')
-                    job.status = 'done'
+            # 2) Bild rendern — Weg hängt von render_type ab
+            png_bytes = None
+            render_error = None
+            if template.render_type == 'pil':
+                if template.preview_image:
+                    png_bytes = _pil_render(template, result['vars'])
+                    if not png_bytes:
+                        render_error = 'PIL-Rendering fehlgeschlagen — nur Brief verfügbar'
                 else:
-                    job.status = 'done'
-                    job.error_message = 'Canva Autofill fehlgeschlagen — nur Brief verfügbar'
+                    render_error = 'Kein Template-Bild hochgeladen — nur Brief verfügbar'
+            elif template.has_canva() and _canva_is_connected():
+                png_bytes = _canva_autofill(template, result['vars'])
+                if not png_bytes:
+                    render_error = 'Canva Autofill fehlgeschlagen — nur Brief verfügbar'
+
+            if png_bytes:
+                filename = f'render_{job.id}_{int(time.time())}.png'
+                path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
+                with open(path, 'wb') as f:
+                    f.write(png_bytes)
+                job.image_filename = filename
+                cloud_url = _upload_cloudinary(path, folder='memeos/renders')
+                if cloud_url:
+                    job.image_url = cloud_url
+                    log.info(f'Job {job_id}: uploaded to Cloudinary → {cloud_url}')
+                job.status = 'done'
             else:
                 job.status = 'done'
+                job.error_message = render_error
 
             job.completed_at = datetime.utcnow()
 
@@ -980,6 +998,151 @@ def _run_generate_job(flask_app, job_id):
             job.status = 'failed'
             job.error_message = str(ex)
             db.session.commit()
+
+
+def _generate_carousel(flask_app, post_id, category):
+    """Rendert alle Templates einer Kategorie für eine Stadt und speichert sie als
+    EIN MemePost mit post_type='carousel' — nicht als einzelne, unabhängige Posts."""
+    with flask_app.app_context():
+        post = MemePost.query.get(post_id)
+        if not post:
+            return
+        try:
+            city = post.city
+            templates = (MemeTemplate.query
+                         .filter_by(category=category, active=True)
+                         .order_by(MemeTemplate.name).all())
+            paths = post.get_carousel_paths()  # bereits vorhandene (z. B. manuell hochgeladene) Slides bleiben erhalten
+            slide_results = []
+
+            for template in templates:
+                result = _claude_fit_and_vars(city, template)
+                if result['fit_score'] < 40:
+                    slide_results.append({'template': template.name, 'skipped': True,
+                                           'reasoning': result['reasoning']})
+                    continue
+                png_bytes = _pil_render(template, result['vars']) if template.render_type == 'pil' else None
+                if png_bytes:
+                    filename = f'carousel_{post.id}_{template.id}_{int(time.time())}.png'
+                    path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
+                    with open(path, 'wb') as f:
+                        f.write(png_bytes)
+                    paths.append(filename)
+                    _mark_knowledge_used(city.id, result['vars'], template.id)
+                    template.use_count = (template.use_count or 0) + 1
+                slide_results.append({'template': template.name, 'vars': result['vars'],
+                                       'fit_score': result['fit_score']})
+
+            post.carousel_paths = json.dumps(paths)
+            post.notes = json.dumps(slide_results, ensure_ascii=False)
+            post.status = 'entwurf'
+            db.session.commit()
+            log.info(f'Carousel Post {post_id}: {len(paths)} Slides gerendert')
+        except Exception as ex:
+            log.error(f'Carousel Post {post_id} Error: {ex}')
+            db.session.commit()
+
+
+@app.route('/api/generate/carousel', methods=['POST'])
+@login_required
+def api_generate_carousel():
+    """Erzeugt EIN Karussell aus allen aktiven Templates einer Kategorie für eine Stadt.
+    Optional: manuelle Slides (z. B. echtes Foto), die vor den generierten Slides einsortiert werden."""
+    d = request.json or {}
+    city_id  = d.get('city_id')
+    category = d.get('category')
+    if not city_id or not category:
+        return jsonify({'error': 'city_id und category erforderlich'}), 400
+    city = City.query.get_or_404(city_id)
+
+    manual_paths = d.get('manual_paths', [])  # bereits hochgeladene Slide-Dateinamen, in Reihenfolge
+
+    post = MemePost(
+        city_id=city.id,
+        title=f'{city.name} – SpongeBob Edition (Karussell)',
+        post_type='carousel',
+        status='rendering',
+        carousel_paths=json.dumps(manual_paths),
+    )
+    db.session.add(post)
+    db.session.commit()
+
+    thread = threading.Thread(target=_generate_carousel, args=(app, post.id, category), daemon=True)
+    thread.start()
+
+    return jsonify({'post_id': post.id, 'status': 'rendering'})
+
+
+@app.route('/api/posts/<int:post_id>/carousel', methods=['GET'])
+@login_required
+def api_carousel_get(post_id):
+    post = MemePost.query.get_or_404(post_id)
+    paths = post.get_carousel_paths()
+    return jsonify({
+        'id': post.id,
+        'city_name': post.city.name if post.city else '',
+        'status': post.status,
+        'title': post.title,
+        'image_urls': [url_for('serve_render', filename=p) for p in paths],
+        'slide_count': len(paths),
+    })
+
+
+def _send_carousel_to_content_os(flask_app, post_id):
+    with flask_app.app_context():
+        post = MemePost.query.get(post_id)
+        if not post or not CONTENT_OS_URL:
+            return
+        paths = post.get_carousel_paths()
+        if not paths:
+            return
+        try:
+            meta = {
+                'title':   post.title,
+                'city':    post.city.name if post.city else '',
+                'caption': post.caption or '',
+                'source':  'memeos',
+            }
+            headers = {}
+            if CONTENT_OS_KEY:
+                headers['X-MemeOS-Key'] = CONTENT_OS_KEY
+
+            files = []
+            opened = []
+            for p in paths:
+                img_path = os.path.join(_BASE_DIR, 'static', 'renders', p)
+                if os.path.exists(img_path):
+                    fh = open(img_path, 'rb')
+                    opened.append(fh)
+                    files.append(('images', (p, fh, 'image/png')))
+
+            r = requests.post(
+                CONTENT_OS_URL.rstrip('/') + '/api/memeos/receive',
+                files=files, data={'meta': json.dumps(meta)},
+                headers=headers, timeout=45,
+            )
+            for fh in opened:
+                fh.close()
+
+            if r.ok:
+                post.status = 'bereit'
+                db.session.commit()
+                log.info(f'Carousel Post {post_id}: an Content OS gesendet ({len(paths)} Bilder)')
+            else:
+                log.warning(f'ContentOS Carousel Bridge Error: {r.status_code} {r.text[:150]}')
+        except Exception as ex:
+            log.error(f'Carousel Post {post_id} Sende-Fehler: {ex}')
+
+
+@app.route('/api/posts/<int:post_id>/send-to-content-os', methods=['POST'])
+@login_required
+def api_carousel_send(post_id):
+    post = MemePost.query.get_or_404(post_id)
+    if not post.get_carousel_paths():
+        return jsonify({'ok': False, 'error': 'Karussell hat keine Bilder'}), 400
+    thread = threading.Thread(target=_send_carousel_to_content_os, args=(app, post.id), daemon=True)
+    thread.start()
+    return jsonify({'ok': True, 'status': 'sending'})
 
 
 def _claude_fit_and_vars(city, template):
@@ -1203,6 +1366,139 @@ def _canva_autofill(template, vars_dict):
         except Exception:
             pass
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PIL RENDERER (lokale Alternative zu Canva — kein Brand-Template nötig)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_FONTS_DIR = os.path.join(_BASE_DIR, 'fonts')
+_FONT_FILES = {
+    'anton': 'anton.ttf',   # Bebas-Neue-artige Headline-Schrift
+    'bold':  'bold.ttf',    # Oswald Bold
+}
+_font_cache = {}
+
+def _pil_font(name, size):
+    key = (name, size)
+    if key not in _font_cache:
+        filename = _FONT_FILES.get(name, _FONT_FILES['anton'])
+        path = os.path.join(_FONTS_DIR, filename)
+        try:
+            _font_cache[key] = ImageFont.truetype(path, size)
+        except Exception:
+            _font_cache[key] = ImageFont.load_default()
+    return _font_cache[key]
+
+
+def _pil_fit_text(draw, text, font_name, max_size, min_size, max_width, max_height=None):
+    """Größtmögliche Fontgröße finden, bei der `text` (mit Zeilenumbruch) in max_width (und optional max_height) passt."""
+    size = max_size
+    while size >= min_size:
+        font = _pil_font(font_name, size)
+        words = text.split()
+        lines, cur = [], ''
+        for w in words:
+            trial = f'{cur} {w}'.strip()
+            if draw.textlength(trial, font=font) <= max_width:
+                cur = trial
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+        line_height = font.size * 1.15
+        total_height = line_height * len(lines)
+        if max_height is None or total_height <= max_height:
+            return font, lines, line_height
+        size -= 2
+    font = _pil_font(font_name, min_size)
+    return font, [text], font.size * 1.15
+
+
+def _pil_render(template, vars_dict):
+    """Rendert ein Template lokal mit Pillow, ohne Canva.
+
+    pil_config-Format:
+    {
+      "elements": [
+        {"var": "problem_place", "type": "text", "x": 50, "y": 300, "width": 600,
+         "height": 200, "font": "anton", "max_size": 64, "min_size": 24,
+         "color": "#FFFFFF", "align": "left", "stroke": "#000000", "stroke_width": 2},
+        {"var": "city_logo", "type": "image", "x": 20, "y": 20, "width": 120, "height": 120}
+      ]
+    }
+    """
+    if not template.preview_image:
+        return None
+    src_path = os.path.join(_BASE_DIR, 'static', 'uploads', template.preview_image)
+    if not os.path.exists(src_path):
+        return None
+
+    try:
+        config = json.loads(template.pil_config or '{}')
+    except Exception:
+        config = {}
+    elements = config.get('elements', [])
+
+    img = Image.open(src_path).convert('RGBA')
+    draw = ImageDraw.Draw(img)
+
+    for el in elements:
+        var_key = el.get('var')
+        value = vars_dict.get(var_key)
+        if value is None:
+            continue
+        el_type = el.get('type', 'text')
+        x, y = int(el.get('x', 0)), int(el.get('y', 0))
+
+        if el_type == 'text':
+            width  = int(el.get('width', img.width - x))
+            height = el.get('height')
+            height = int(height) if height else None
+            font, lines, line_height = _pil_fit_text(
+                draw, str(value),
+                font_name=el.get('font', 'anton'),
+                max_size=int(el.get('max_size', 64)),
+                min_size=int(el.get('min_size', 24)),
+                max_width=width, max_height=height,
+            )
+            color        = el.get('color', '#FFFFFF')
+            stroke       = el.get('stroke')
+            stroke_width = int(el.get('stroke_width', 0))
+            align        = el.get('align', 'left')
+            cy = y
+            for line in lines:
+                line_width = draw.textlength(line, font=font)
+                if align == 'center':
+                    lx = x + (width - line_width) / 2
+                elif align == 'right':
+                    lx = x + width - line_width
+                else:
+                    lx = x
+                draw.text((lx, cy), line, font=font, fill=color,
+                          stroke_width=stroke_width, stroke_fill=stroke)
+                cy += line_height
+
+        elif el_type == 'image':
+            # value = URL oder lokaler Pfad zu einem austauschbaren Bildelement (z. B. Stadt-Logo)
+            width  = int(el.get('width', 100))
+            height = int(el.get('height', 100))
+            try:
+                if str(value).startswith('http'):
+                    resp = requests.get(value, timeout=10)
+                    overlay = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+                else:
+                    overlay = Image.open(value).convert('RGBA')
+                overlay = overlay.resize((width, height))
+                img.paste(overlay, (x, y), overlay)
+            except Exception as ex:
+                log.warning(f'PIL Render: Bildelement {var_key} fehlgeschlagen: {ex}')
+
+    buf = io.BytesIO()
+    img.convert('RGB').save(buf, format='PNG')
+    return buf.getvalue()
 
 
 @app.route('/canva/connect')
@@ -1935,6 +2231,11 @@ def _seed_template_categories():
 
 with app.app_context():
     db.create_all()
+    try:
+        db.session.execute(db.text('ALTER TABLE meme_post ADD COLUMN carousel_paths TEXT'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()  # Spalte existiert bereits
     _seed_todos()
     _seed_cities()
     _seed_template_categories()
@@ -2179,13 +2480,15 @@ ALLOWED_UPLOAD = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov'}
 @app.route('/api/upload/batch', methods=['POST'])
 @login_required
 def api_upload_batch():
-    files   = request.files.getlist('files')
-    city_id = request.form.get('city_id', type=int)
+    files        = request.files.getlist('files')
+    city_id      = request.form.get('city_id', type=int)
+    as_carousel  = request.form.get('as_carousel') == 'true'
+    carousel_title = request.form.get('carousel_title', '').strip()
     if not files:
         return jsonify({'error': 'Keine Dateien'}), 400
 
-    created = []
     upload_dir = os.path.join(_BASE_DIR, 'static', 'uploads')
+    saved = []  # [{fname, url, ftype, orig_name}]
 
     for f in files:
         if not f.filename:
@@ -2197,29 +2500,49 @@ def api_upload_batch():
         path  = os.path.join(upload_dir, fname)
         f.save(path)
         ftype = 'video' if ext in ('mp4', 'mov') else 'image'
-        # Try Cloudinary, fall back to local path
         rtype = 'video' if ftype == 'video' else 'image'
         cloud_url = _upload_cloudinary(path, folder='memeos/uploads', resource_type=rtype)
         final_url = cloud_url or f'/uploads/{fname}'
-        # Create draft MemePost
+        saved.append({'fname': fname, 'url': final_url, 'ftype': ftype,
+                      'orig_name': f.filename.rsplit('.', 1)[0]})
+
+    if not saved:
+        return jsonify({'ok': True, 'created': []})
+
+    if as_carousel and len(saved) > 1:
+        title = carousel_title or f'Karussell ({len(saved)} Slides)'
         post = MemePost(
             city_id=city_id,
-            title=f.filename.rsplit('.', 1)[0],
-            image_url=final_url,
-            image_path=fname,
+            title=title,
+            image_url=saved[0]['url'],
+            image_path=saved[0]['fname'],
+            post_type='carousel',
+            carousel_paths=json.dumps([s['fname'] for s in saved]),
+            status='entwurf',
+        )
+        db.session.add(post)
+        db.session.commit()
+        return jsonify({'ok': True, 'created': [{
+            'id': post.id, 'fname': saved[0]['fname'],
+            'title': post.title, 'url': post.image_url,
+            'ftype': 'carousel', 'slide_count': len(saved),
+            'slide_urls': [s['url'] for s in saved],
+        }]})
+
+    created = []
+    for s in saved:
+        post = MemePost(
+            city_id=city_id,
+            title=s['orig_name'],
+            image_url=s['url'],
+            image_path=s['fname'],
             post_type='feed',
             status='entwurf',
         )
         db.session.add(post)
         db.session.flush()
-        created.append({
-            'id':       post.id,
-            'fname':    fname,
-            'title':    post.title,
-            'url':      post.image_url,
-            'ftype':    ftype,
-            'cloudinary': bool(cloud_url),
-        })
+        created.append({'id': post.id, 'fname': s['fname'],
+                        'title': post.title, 'url': post.image_url, 'ftype': s['ftype']})
     db.session.commit()
     return jsonify({'ok': True, 'created': created})
 
