@@ -464,6 +464,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
       Städte
     </button>
+    <button class="nav-item" onclick="showPage('events')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      Events
+      <span class="nav-badge" id="nav-events-badge" style="display:none"></span>
+    </button>
     <button class="nav-item" onclick="showPage('trending')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       Trending
@@ -1080,6 +1085,50 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </div>
     </div>
 
+    <!-- ── Recycle Settings ── -->
+    <div class="card" id="recycle-settings-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">♻️ Recycle-Einstellungen</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">Steuere, wann und wie oft Posts recycelt werden dürfen</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Mindestwartezeit (Tage)</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" id="rc-min-age" min="30" max="730" value="180" style="width:80px;">
+            <span style="font-size:11px;color:var(--muted);">Tage seit Original-Post</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Mindest-Follower-Wachstum (%)</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" id="rc-min-growth" min="0" max="200" value="20" style="width:80px;">
+            <span style="font-size:11px;color:var(--muted);">neues Publikum nötig</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Mindest-Sterne-Bewertung</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" id="rc-min-stars" min="1" max="5" value="3" style="width:60px;">
+            <span style="font-size:11px;color:var(--muted);">Sterne (1–5)</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Max. Recyclings pro Monat</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" id="rc-max-month" min="1" max="20" value="4" style="width:60px;">
+            <span style="font-size:11px;color:var(--muted);">pro Konto/Monat</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Ausgeschlossene Kategorien <span style="font-weight:400;color:var(--muted);">(kommagetrennt)</span></label>
+        <input type="text" id="rc-excluded-cats" placeholder="news, breaking" value="news">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Diese Kategorien werden nie automatisch als Recycle-Kandidaten vorgeschlagen (z.B. News sind veraltet)</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveRecycleSettings()">Speichern</button>
+    </div>
+
     <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">KI-Kosten (Monat)</div>
       <div style="font-size:28px;font-family:var(--font-display);">€{{ "%.4f"|format(ai_cost_month) }}</div>
@@ -1579,6 +1628,120 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 <!-- ═══════════════════════════ TRENDING ═══════════════════════════ -->
+<!-- ─── EVENTS & ANLÄSSE ─── -->
+<div class="page" id="page-events" style="display:none">
+  <div class="page-header">
+    <div class="page-title">EVENTS <span>&amp; ANLÄSSE</span></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="sendEventNotifications()">🔔 Jetzt benachrichtigen</button>
+      <button class="btn btn-primary btn-sm" onclick="openEventModal()">+ Event</button>
+    </div>
+  </div>
+
+  <!-- Upcoming Banner -->
+  <div id="ev-upcoming-banner" style="display:none;margin-bottom:16px;"></div>
+
+  <!-- Filter Tabs -->
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+    <button class="tlib-tab tlib-tab-active" onclick="setEvFilter('',this)">Alle</button>
+    <button class="tlib-tab" onclick="setEvFilter('saisonal',this)">🌸 Saisonal</button>
+    <button class="tlib-tab" onclick="setEvFilter('wetter',this)">⛈️ Wetter</button>
+    <button class="tlib-tab" onclick="setEvFilter('lokal',this)">📍 Lokal</button>
+    <button class="tlib-tab" onclick="setEvFilter('sport',this)">⚽ Sport</button>
+    <button class="tlib-tab" onclick="setEvFilter('breaking',this)">🔥 Breaking</button>
+  </div>
+
+  <!-- Table Header -->
+  <div style="display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);margin-bottom:2px;">
+    <span style="width:32px;"></span>
+    <span style="flex:1;">Event</span>
+    <span style="width:90px;">Datum</span>
+    <span style="width:80px;">Vorlaufzeit</span>
+    <span style="width:80px;">Relevanz</span>
+    <span style="width:90px;">Kategorien</span>
+    <span style="width:100px;text-align:right;">Aktionen</span>
+  </div>
+  <div id="ev-list" style="display:flex;flex-direction:column;gap:0;"></div>
+  <div id="ev-empty" style="display:none;" class="empty"><p>Keine Events — erstelle dein erstes Event!</p></div>
+</div>
+
+<!-- Event Modal -->
+<div class="modal-overlay" id="modal-event">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <div class="modal-title" id="ev-modal-title">EVENT HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-event')">×</button>
+    </div>
+    <input type="hidden" id="ev-id">
+    <div class="form-row">
+      <div class="form-group" style="flex:0 0 60px;">
+        <label>Emoji</label>
+        <input type="text" id="ev-emoji" value="📅" style="font-size:20px;text-align:center;width:50px;">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Name *</label>
+        <input type="text" id="ev-name" placeholder="z.B. Stadtfest Frankfurt">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Typ</label>
+        <select id="ev-type">
+          <option value="saisonal">🌸 Saisonal</option>
+          <option value="wetter">⛈️ Wetter</option>
+          <option value="lokal">📍 Lokal</option>
+          <option value="sport">⚽ Sport</option>
+          <option value="breaking">🔥 Breaking / Spontan</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Meme-Relevanz (1-5)</label>
+        <input type="number" id="ev-relevance" min="1" max="5" value="3">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Von <span style="color:var(--muted);font-weight:400;">(YYYY-MM-DD oder MM-DD)</span></label>
+        <input type="text" id="ev-date-from" placeholder="2025-07-15 oder 07-15">
+      </div>
+      <div class="form-group">
+        <label>Bis (optional)</label>
+        <input type="text" id="ev-date-to" placeholder="2025-07-20 oder 07-20">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="ev-recurring" style="accent-color:var(--accent);"> Jährlich wiederkehrend
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">→ dann nur MM-DD als Datum nötig</div>
+      </div>
+      <div class="form-group">
+        <label>Vorlauf-Erinnerung (Tage)</label>
+        <input type="number" id="ev-lead" value="7" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Empfohlene Kategorien (kommagetrennt)</label>
+      <input type="text" id="ev-cats" placeholder="sommer, hitze, pov">
+    </div>
+    <div class="form-group">
+      <label>Städte <span style="color:var(--muted);font-weight:400;">— leer = alle Städte</span></label>
+      <select id="ev-cities" multiple style="height:80px;">
+        {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notizen</label>
+      <textarea id="ev-notes" rows="2" placeholder="Interne Hinweise, Ideen, Links…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-event')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveEvent()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-trending" style="display:none">
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
     <div>
@@ -1730,6 +1893,12 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="city-dash-section" id="cdash-recycle-section">
       <div class="city-dash-section-title">Top Recycle-Kandidaten</div>
       <div id="cdash-recycle"></div>
+    </div>
+
+    <!-- Kategorie-Mix -->
+    <div class="city-dash-section" id="cdash-catmix-section">
+      <div class="city-dash-section-title">Kategorie-Mix (letzte 30 Tage)</div>
+      <div id="cdash-catmix" style="font-size:12px;color:var(--muted);">Lade…</div>
     </div>
 
     <div class="modal-footer" style="justify-content:space-between;">
@@ -2316,7 +2485,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
@@ -2328,6 +2497,7 @@ function showPage(name) {
   if(name==='vorrat') loadVorrat();
   if(name==='kalender') loadKalender();
   if(name==='performance') loadPerformance();
+  if(name==='events') loadEvents();
   history.replaceState(null,'','/?tab='+name);
 }
 
@@ -2965,6 +3135,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   loadTemplates();
   refreshStats();
+  loadEventsBadge();
   // Check URL param for tab
   const params = new URLSearchParams(location.search);
   const tab = params.get('tab');
@@ -3136,17 +3307,21 @@ async function loadReviewJobs() {
   const grid = document.getElementById('review-grid');
   if(!jobs.length) { grid.innerHTML='<div class="empty"><p>Keine Jobs in diesem Status</p></div>'; return; }
   grid.innerHTML = jobs.map(j => `
-    <div class="job-card">
+    <div class="job-card" data-job-id="${j.id}" data-city-id="${j.city_id||''}" data-template-id="${j.template_id||''}">
       <div class="job-card-img">
         ${j.image_url ? `<img src="${j.image_url}" alt="meme">` : `<span style="font-size:12px;color:var(--muted);">${j.manual_brief ? '📋 Brief verfügbar' : 'Kein Bild'}</span>`}
       </div>
       <div class="job-card-body">
-        <div class="job-card-title">${j.city_name}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="job-card-title">${j.city_name}</div>
+          <span id="dup-warn-${j.id}" style="display:none;background:#f59e0b;color:#000;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;">⚠ Duplikat</span>
+        </div>
         <div class="job-card-meta">${j.template_name}</div>
         <div class="fit-bar"><div class="fit-bar-fill" style="width:${j.fit_score||0}%;background:${j.fit_color};"></div></div>
         <div style="font-size:11px;color:${j.fit_color};font-weight:600;margin-bottom:4px;">Score: ${j.fit_score ?? '—'} · ${j.fit_reasoning || ''}</div>
         ${j.manual_brief ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic;">"${j.manual_brief}"</div>` : ''}
         ${Object.keys(j.vars_used||{}).length ? `<div style="margin-bottom:6px;">${Object.entries(j.vars_used).map(([k,v])=>`<span class="badge badge-blue" style="font-size:10px;margin-right:3px;">${k}: ${v}</span>`).join('')}</div>` : ''}
+        <div id="dup-detail-${j.id}" style="display:none;font-size:10px;color:#f59e0b;margin-bottom:4px;"></div>
         <div class="job-card-actions">
           ${j.status==='done' ? `
             <button class="btn btn-success btn-xs" onclick="approveJob(${j.id})">✓ OK</button>
@@ -3158,6 +3333,25 @@ async function loadReviewJobs() {
         </div>
       </div>
     </div>`).join('');
+  // async duplicate checks — don't block render
+  _checkDuplicatesForJobs(jobs);
+}
+
+async function _checkDuplicatesForJobs(jobs) {
+  for (const j of jobs) {
+    if (!j.city_id || !j.template_id) continue;
+    try {
+      const r = await fetch(`/api/check-duplicate?city_id=${j.city_id}&template_id=${j.template_id}`).then(x=>x.json());
+      const warnEl = document.getElementById(`dup-warn-${j.id}`);
+      const detEl  = document.getElementById(`dup-detail-${j.id}`);
+      if (!warnEl) continue;
+      if (r.has_warnings && r.warnings && r.warnings.length) {
+        warnEl.style.display = '';
+        detEl.style.display = '';
+        detEl.textContent = r.warnings.map(w => w.message).join(' · ');
+      }
+    } catch(e) { /* silently ignore */ }
+  }
 }
 
 async function resendJob(id) {
@@ -4419,6 +4613,29 @@ function _renderCityModal(d) {
       <span class="rc-score-badge ${_rcScoreClass(p.recycle_score)}">Score ${p.recycle_score}</span>
       <button class="btn btn-ghost btn-xs" onclick="closeModal('modal-city-dashboard');openRecycleModal(${p.id})">↻</button>
     </div>`).join('') : '<div style="font-size:12px;color:var(--muted);">Keine Kandidaten (min. 14 Tage alt + Perf.-Daten nötig)</div>';
+
+  // Category Mix — load async
+  const mixEl = document.getElementById('cdash-catmix');
+  fetch(`/api/city/${d.city.id}/category-mix?days=30`).then(r=>r.json()).then(mix => {
+    if (!mix || !mix.mix || !mix.mix.length) {
+      mixEl.innerHTML = '<div style="font-size:12px;color:var(--muted);">Noch keine Daten (mind. 1 genehmigter Job nötig)</div>';
+      return;
+    }
+    mixEl.innerHTML = mix.mix.map(c => {
+      const pct   = c.pct || 0;
+      const over  = c.target_pct && pct > c.target_pct + 10;
+      const color = over ? '#ef4444' : '#6366f1';
+      return `<div style="margin-bottom:5px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:2px;">
+          <span style="color:var(--text);">${_esc(c.category)}</span>
+          <span style="color:${color};font-weight:600;">${c.count}× · ${pct}%${c.target_pct ? ' (Ziel ' + c.target_pct + '%)' : ''}</span>
+        </div>
+        <div style="height:4px;background:var(--surface3);border-radius:3px;">
+          <div style="height:4px;background:${color};border-radius:3px;width:${Math.min(pct,100)}%;"></div>
+        </div>
+      </div>`;
+    }).join('') + `<div style="font-size:11px;color:var(--muted);margin-top:8px;">Gesamt: ${mix.total} genehmigte Jobs · letzte 30 Tage</div>`;
+  }).catch(()=>{ mixEl.innerHTML = '<div style="font-size:12px;color:var(--muted);">Keine Daten verfügbar</div>'; });
 }
 
 
@@ -5699,6 +5916,212 @@ async function testTelegram(btn) {
     result.style.color = '#ef4444'; result.textContent = r.error || 'Fehler';
   }
   setTimeout(() => { result.textContent = ''; }, 5000);
+}
+
+// ══════════════════════════════════════════
+// EVENTS & ANLÄSSE
+// ══════════════════════════════════════════
+let _allEvents = [];
+let _evFilter  = '';
+
+async function loadEvents() {
+  _allEvents = await api('GET', '/api/events');
+  _applyEvFilter();
+  // Upcoming banner
+  const upcoming = _allEvents.filter(e => {
+    if (!e.active) return false;
+    const d = e.days_until;
+    return d !== null && d !== undefined && d >= 0 && d <= (e.lead_days || 7);
+  });
+  const banner = document.getElementById('ev-upcoming-banner');
+  if (upcoming.length) {
+    banner.style.display = '';
+    banner.innerHTML = `<div style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:12px 16px;">
+      <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:8px;">🔔 ${upcoming.length} Event${upcoming.length>1?'s':''} stehen bevor</div>
+      ${upcoming.map(e=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:4px;">
+        <span>${e.emoji||'📅'}</span>
+        <span style="font-weight:600;">${_esc(e.name)}</span>
+        <span style="color:var(--muted);">— in ${e.days_until===0?'heute':e.days_until+' Tagen'}</span>
+      </div>`).join('')}
+    </div>`;
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function _applyEvFilter() {
+  const list  = _evFilter ? _allEvents.filter(e => e.event_type === _evFilter) : _allEvents;
+  const listEl = document.getElementById('ev-list');
+  const emptyEl = document.getElementById('ev-empty');
+  if (!list.length) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = '';
+  } else {
+    emptyEl.style.display = 'none';
+    listEl.innerHTML = list.map(_renderEventRow).join('');
+  }
+}
+
+function _renderEventRow(e) {
+  const du = e.days_until;
+  let duLabel = '—';
+  if (du !== null && du !== undefined) {
+    if (du < 0) duLabel = `<span style="color:var(--muted);">vor ${Math.abs(du)} T.</span>`;
+    else if (du === 0) duLabel = `<span style="color:#22c55e;font-weight:700;">heute</span>`;
+    else if (du <= (e.lead_days||7)) duLabel = `<span style="color:#f59e0b;font-weight:700;">in ${du} T.</span>`;
+    else duLabel = `<span style="color:var(--muted);">in ${du} T.</span>`;
+  }
+  const relStars = '★'.repeat(e.meme_relevance||0) + '☆'.repeat(5-(e.meme_relevance||0));
+  const cats = e.suggested_cats && e.suggested_cats.length ? e.suggested_cats.slice(0,3).map(c=>`<span class="badge" style="font-size:9px;padding:1px 5px;">${_esc(c)}</span>`).join(' ') : '—';
+  const typeColors = {saisonal:'#6366f1',wetter:'#38bdf8',lokal:'#f59e0b',sport:'#22c55e',breaking:'#ef4444'};
+  const tc = typeColors[e.event_type]||'#64748b';
+  return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);${e.active?'':'opacity:.45;'}">
+    <span style="font-size:20px;width:32px;text-align:center;">${e.emoji||'📅'}</span>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;font-weight:600;">${_esc(e.name)}</div>
+      <div style="font-size:11px;color:${tc};">${e.event_type}${e.recurring?' · jährlich':''}</div>
+    </div>
+    <div style="width:90px;font-size:12px;">${e.date_from||'—'}</div>
+    <div style="width:80px;font-size:12px;">${e.lead_days||7} Tage</div>
+    <div style="width:80px;font-size:13px;letter-spacing:-1px;" title="Meme-Relevanz ${e.meme_relevance}/5">${relStars}</div>
+    <div style="width:90px;">${cats}</div>
+    <div style="width:100px;display:flex;gap:4px;justify-content:flex-end;">
+      <button class="btn btn-ghost btn-xs" onclick="openEventModal(${e.id})">✏️</button>
+      <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteEvent(${e.id})">🗑</button>
+    </div>
+  </div>`;
+}
+
+function setEvFilter(type, el) {
+  _evFilter = type;
+  document.querySelectorAll('.tlib-tab').forEach(t => t.classList.remove('tlib-tab-active'));
+  if (el) el.classList.add('tlib-tab-active');
+  _applyEvFilter();
+}
+
+function openEventModal(id = null) {
+  document.getElementById('ev-id').value = id || '';
+  document.getElementById('ev-modal-title').textContent = id ? 'EVENT BEARBEITEN' : 'EVENT HINZUFÜGEN';
+  if (id) {
+    const ev = _allEvents.find(e => e.id === id);
+    if (ev) {
+      document.getElementById('ev-emoji').value     = ev.emoji || '📅';
+      document.getElementById('ev-name').value      = ev.name || '';
+      document.getElementById('ev-type').value      = ev.event_type || 'saisonal';
+      document.getElementById('ev-relevance').value = ev.meme_relevance || 3;
+      document.getElementById('ev-date-from').value = ev.date_from || '';
+      document.getElementById('ev-date-to').value   = ev.date_to || '';
+      document.getElementById('ev-recurring').checked = !!ev.recurring;
+      document.getElementById('ev-lead').value      = ev.lead_days || 7;
+      document.getElementById('ev-cats').value      = (ev.suggested_cats || []).join(', ');
+      document.getElementById('ev-notes').value     = ev.notes || '';
+      // city multi-select
+      const sel = document.getElementById('ev-cities');
+      const scope = ev.city_scope || [];
+      for (let opt of sel.options) { opt.selected = scope.includes(parseInt(opt.value)); }
+    }
+  } else {
+    document.getElementById('ev-emoji').value     = '📅';
+    document.getElementById('ev-name').value      = '';
+    document.getElementById('ev-type').value      = 'saisonal';
+    document.getElementById('ev-relevance').value = 3;
+    document.getElementById('ev-date-from').value = '';
+    document.getElementById('ev-date-to').value   = '';
+    document.getElementById('ev-recurring').checked = false;
+    document.getElementById('ev-lead').value      = 7;
+    document.getElementById('ev-cats').value      = '';
+    document.getElementById('ev-notes').value     = '';
+    const sel = document.getElementById('ev-cities');
+    for (let opt of sel.options) opt.selected = false;
+  }
+  openModal('modal-event');
+}
+
+async function saveEvent() {
+  const id      = document.getElementById('ev-id').value;
+  const name    = document.getElementById('ev-name').value.trim();
+  if (!name) { toast('Name erforderlich', 'error'); return; }
+  const catsRaw = document.getElementById('ev-cats').value;
+  const cats    = catsRaw ? catsRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const sel     = document.getElementById('ev-cities');
+  const cities  = Array.from(sel.selectedOptions).map(o => parseInt(o.value));
+  const body = {
+    name,
+    emoji:          document.getElementById('ev-emoji').value.trim() || '📅',
+    event_type:     document.getElementById('ev-type').value,
+    meme_relevance: parseInt(document.getElementById('ev-relevance').value) || 3,
+    date_from:      document.getElementById('ev-date-from').value.trim() || null,
+    date_to:        document.getElementById('ev-date-to').value.trim()   || null,
+    recurring:      document.getElementById('ev-recurring').checked,
+    lead_days:      parseInt(document.getElementById('ev-lead').value)   || 7,
+    suggested_cats: cats,
+    city_scope:     cities,
+    notes:          document.getElementById('ev-notes').value.trim(),
+    active:         true,
+  };
+  let r;
+  if (id) r = await api('PUT',  `/api/events/${id}`, body);
+  else     r = await api('POST', '/api/events', body);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast(id ? 'Event aktualisiert' : 'Event erstellt', 'success');
+  closeModal('modal-event');
+  loadEvents();
+}
+
+async function deleteEvent(id) {
+  if (!confirm('Event wirklich löschen?')) return;
+  await api('DELETE', `/api/events/${id}`);
+  toast('Event gelöscht', 'info');
+  loadEvents();
+}
+
+async function sendEventNotifications() {
+  const r = await api('POST', '/api/events/notify');
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast(`${r.sent} Benachrichtigung${r.sent!==1?'en':''} via Telegram gesendet`, 'success');
+}
+
+async function loadEventsBadge() {
+  try {
+    const events = await fetch('/api/events/upcoming?days=14').then(r=>r.json()).catch(()=>[]);
+    const badge  = document.getElementById('nav-events-badge');
+    if (!badge) return;
+    if (events && events.length) {
+      badge.style.display = '';
+      badge.textContent   = events.length;
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════
+// RECYCLE SETTINGS
+// ══════════════════════════════════════════
+async function loadRecycleSettings() {
+  try {
+    const d = await api('GET', '/api/settings/recycle');
+    const f = (id, val) => { const el = document.getElementById(id); if(el && val !== undefined) el.value = val; };
+    f('rc-min-age',    d.min_age_days);
+    f('rc-min-growth', d.min_follower_growth);
+    f('rc-min-stars',  d.min_stars);
+    f('rc-max-month',  d.max_per_month);
+    const catEl = document.getElementById('rc-excluded-cats');
+    if (catEl && d.excluded_cats) catEl.value = d.excluded_cats.join(', ');
+  } catch(e) {}
+}
+
+async function saveRecycleSettings() {
+  const cats = (document.getElementById('rc-excluded-cats')?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const body = {
+    min_age_days:        parseInt(document.getElementById('rc-min-age')?.value)    || 180,
+    min_follower_growth: parseInt(document.getElementById('rc-min-growth')?.value) || 20,
+    min_stars:           parseInt(document.getElementById('rc-min-stars')?.value)  || 3,
+    max_per_month:       parseInt(document.getElementById('rc-max-month')?.value)  || 4,
+    excluded_cats:       cats,
+  };
+  const r = await api('POST', '/api/settings/recycle', body);
+  toast(r.ok ? '♻️ Recycle-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
 }
 
 </script>
