@@ -25,10 +25,12 @@ from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
+                    MemeEvent,
                     MemePost, TrendingTopic, RecycleJob, CityFollowerSnapshot,
                     KNOWLEDGE_CATEGORIES, CATEGORY_MAP,
                     TEMPLATE_CATEGORIES, TEMPLATE_CAT_MAP,
-                    TEMPLATE_GROUPS, TemplateCategory)
+                    TEMPLATE_GROUPS, TemplateCategory,
+                    CollabNiche, CollabIdea, CityCollab)
 import anthropic
 import logging
 
@@ -399,6 +401,9 @@ def api_cities_stats():
             'city': {
                 'id': c.id, 'name': c.name, 'state': c.state or '',
                 'accent_color': c.accent_color or '#3b82f6',
+                'brand_bg': c.brand_bg or '#ffffff',
+                'brand_text_color': c.brand_text_color or '#000000',
+                'brand_font': c.brand_font or 'Arial',
                 'population': c.population, 'instagram_handle': c.instagram_handle or '',
                 'rss_url': c.rss_url or '',
             },
@@ -463,7 +468,8 @@ def api_city_update(city_id):
     city = City.query.get_or_404(city_id)
     d = request.json or {}
     for field in ['name','state','population','instagram_handle','tiktok_handle',
-                  'accent_color','rss_url','notes','active']:
+                  'accent_color','brand_bg','brand_text_color','brand_font',
+                  'rss_url','notes','active']:
         if field in d:
             setattr(city, field, d[field])
     db.session.commit()
@@ -2234,6 +2240,49 @@ def _seed_template_categories():
             db.session.add(TemplateCategory(key=key, label=label, emoji=emoji, group=group, sort_order=i))
         db.session.commit()
 
+_SEED_EVENTS = [
+    # (name, emoji, type, date_from, date_to, recurring, lead_days, relevance, cats)
+    ('Sommer',        '☀️', 'saisonal', '06-21','09-22', True,  14, 5, ['sommer','hitze']),
+    ('Winter',        '❄️', 'saisonal', '12-21','03-20', True,  14, 4, ['winter','schnee']),
+    ('Weihnachten',   '🎄', 'saisonal', '12-20','12-26', True,  21, 5, ['weihnachten']),
+    ('Silvester',     '🎆', 'saisonal', '12-31','12-31', True,  14, 5, ['silvester']),
+    ('Karneval',      '🎭', 'saisonal', '02-10','02-16', True,  14, 5, ['karneval']),
+    ('Ostern',        '🐣', 'saisonal', '03-25','04-05', True,  10, 4, ['ostern']),
+    ('Valentinstag',  '❤️', 'saisonal', '02-14','02-14', True,   7, 4, ['valentinstag']),
+    ('Halloween',     '🎃', 'saisonal', '10-31','10-31', True,  14, 5, ['halloween']),
+    ('Frühling',      '🌸', 'saisonal', '03-20','06-20', True,   7, 3, ['fruehling']),
+    ('Herbst',        '🍂', 'saisonal', '09-23','12-20', True,   7, 3, ['herbst']),
+    ('Hitzewelle',    '🌡️','wetter',   None,    None,  False,   1, 5, ['hitze']),
+    ('Erster Schnee', '☃️','wetter',   None,    None,  False,   0, 5, ['schnee','winter']),
+    ('Starkregen',    '⛈️','wetter',   None,    None,  False,   0, 4, ['regen','gewitter']),
+    ('Sturmwarnung',  '🌪️','wetter',   None,    None,  False,   0, 4, ['regen']),
+]
+
+def _seed_events():
+    if MemeEvent.query.count() == 0:
+        for ev in _SEED_EVENTS:
+            name, emoji, etype, dfrom, dto, rec, lead, rel, cats = ev
+            db.session.add(MemeEvent(
+                name=name, emoji=emoji, event_type=etype,
+                date_from=dfrom, date_to=dto, recurring=rec,
+                lead_days=lead, meme_relevance=rel,
+                suggested_cats=json.dumps(cats),
+            ))
+        db.session.commit()
+
+def _seed_recycle_settings():
+    defaults = {
+        'recycle_min_age_days':       '180',
+        'recycle_min_follower_growth': '20',
+        'recycle_min_stars':           '3',
+        'recycle_max_per_month':       '4',
+        'recycle_excluded_cats':       '["news"]',
+    }
+    for k, v in defaults.items():
+        if not AppSettings.query.filter_by(key=k).first():
+            db.session.add(AppSettings(key=k, value=v))
+    db.session.commit()
+
 with app.app_context():
     db.create_all()
     for _col_sql in [
@@ -2249,6 +2298,250 @@ with app.app_context():
     _seed_todos()
     _seed_cities()
     _seed_template_categories()
+    _seed_events()
+    _seed_recycle_settings()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# EVENTS API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/events', methods=['GET'])
+@login_required
+def api_events_list():
+    q = MemeEvent.query.order_by(MemeEvent.event_type, MemeEvent.name)
+    events = q.all()
+    result = [e.to_dict() for e in events]
+    # Sort by days_until (upcoming first), None/past at bottom
+    result.sort(key=lambda x: (x['days_until'] is None or x['days_until'] < 0, x['days_until'] or 9999))
+    return jsonify(result)
+
+@app.route('/api/events/upcoming', methods=['GET'])
+@login_required
+def api_events_upcoming():
+    """Events die in den nächsten X Tagen anstehen (innerhalb lead_days-Fenster)."""
+    horizon = int(request.args.get('days', 30))
+    events = MemeEvent.query.filter_by(active=True).all()
+    upcoming = []
+    for e in events:
+        d = e.days_until()
+        if d is not None and -3 <= d <= horizon:
+            ed = e.to_dict()
+            if d <= e.lead_days:
+                ed['_urgent'] = True
+            upcoming.append(ed)
+    upcoming.sort(key=lambda x: x['days_until'])
+    return jsonify(upcoming)
+
+@app.route('/api/events', methods=['POST'])
+@login_required
+def api_event_create():
+    d = request.json or {}
+    if not d.get('name'):
+        return jsonify({'error': 'Name fehlt'}), 400
+    e = MemeEvent(
+        name=d['name'].strip(),
+        description=d.get('description', ''),
+        event_type=d.get('event_type', 'saisonal'),
+        date_from=d.get('date_from', ''),
+        date_to=d.get('date_to', ''),
+        recurring=bool(d.get('recurring', False)),
+        lead_days=int(d.get('lead_days', 7)),
+        city_scope=json.dumps(d.get('city_scope', [])),
+        meme_relevance=int(d.get('meme_relevance', 3)),
+        suggested_cats=json.dumps(d.get('suggested_cats', [])),
+        emoji=d.get('emoji', '📅'),
+        notes=d.get('notes', ''),
+    )
+    db.session.add(e)
+    db.session.commit()
+    return jsonify(e.to_dict()), 201
+
+@app.route('/api/events/<int:ev_id>', methods=['PUT'])
+@login_required
+def api_event_update(ev_id):
+    e = MemeEvent.query.get_or_404(ev_id)
+    d = request.json or {}
+    for f in ['name','description','event_type','date_from','date_to','recurring',
+              'lead_days','meme_relevance','emoji','notes','active']:
+        if f in d:
+            setattr(e, f, d[f])
+    if 'city_scope' in d:
+        e.city_scope = json.dumps(d['city_scope'])
+    if 'suggested_cats' in d:
+        e.suggested_cats = json.dumps(d['suggested_cats'])
+    db.session.commit()
+    return jsonify(e.to_dict())
+
+@app.route('/api/events/<int:ev_id>', methods=['DELETE'])
+@login_required
+def api_event_delete(ev_id):
+    e = MemeEvent.query.get_or_404(ev_id)
+    db.session.delete(e)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/events/notify', methods=['POST'])
+@login_required
+def api_events_notify():
+    """Sendet Telegram-Benachrichtigung für alle Events innerhalb ihres lead_days-Fensters."""
+    token   = get_setting('telegram_token')
+    chat_id = get_setting('telegram_chat_id')
+    if not token or not chat_id:
+        return jsonify({'error': 'Telegram nicht konfiguriert'}), 400
+    events = MemeEvent.query.filter_by(active=True).all()
+    sent = 0
+    for e in events:
+        d = e.days_until()
+        if d is None or d < 0:
+            continue
+        if d > e.lead_days:
+            continue
+        msg_lines = [f"{e.emoji} *{e.name}*"]
+        if d == 0:
+            msg_lines.append("🔥 Heute!")
+        elif d == 1:
+            msg_lines.append("⚡ Morgen!")
+        else:
+            msg_lines.append(f"📅 In {d} Tagen")
+        if e.description:
+            msg_lines.append(e.description)
+        cats = e.get_suggested_cats()
+        if cats:
+            msg_lines.append("💡 Kategorien: " + ", ".join(cats))
+        try:
+            import urllib.request as ureq
+            url  = f"https://api.telegram.org/bot{token}/sendMessage"
+            data = json.dumps({'chat_id': chat_id, 'text': '\n'.join(msg_lines), 'parse_mode': 'Markdown'}).encode()
+            req  = ureq.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            ureq.urlopen(req, timeout=5)
+            sent += 1
+        except Exception as ex:
+            log.warning(f'Telegram notify failed for event {e.id}: {ex}')
+    return jsonify({'ok': True, 'sent': sent})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KATEGORIE-MIX (Freshness) API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/city/<int:city_id>/category-mix', methods=['GET'])
+@login_required
+def api_category_mix(city_id):
+    days = int(request.args.get('days', 30))
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    jobs = (RenderJob.query
+            .filter_by(city_id=city_id)
+            .filter(RenderJob.status.in_(['approved','done']))
+            .filter(RenderJob.completed_at >= cutoff)
+            .all())
+    counts = {}
+    for j in jobs:
+        cat = j.template.category if j.template else 'unbekannt'
+        counts[cat] = counts.get(cat, 0) + 1
+    total = sum(counts.values())
+    # Load target mix from settings
+    raw = get_setting('category_target_mix') or '{}'
+    try: target = json.loads(raw)
+    except: target = {}
+    result = []
+    for cat, cnt in sorted(counts.items(), key=lambda x: -x[1]):
+        pct = round(cnt / total * 100) if total else 0
+        t_pct = target.get(cat, 0)
+        result.append({'category': cat, 'count': cnt, 'pct': pct, 'target_pct': t_pct,
+                        'delta': pct - t_pct})
+    return jsonify({'days': days, 'total': total, 'mix': result})
+
+@app.route('/api/settings/category-mix', methods=['POST'])
+@login_required
+def api_save_category_mix():
+    d = request.json or {}
+    mix = d.get('mix', {})
+    set_setting('category_target_mix', json.dumps(mix))
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DUPLICATE CHECK API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/check-duplicate', methods=['GET'])
+@login_required
+def api_check_duplicate():
+    city_id     = request.args.get('city_id', type=int)
+    template_id = request.args.get('template_id', type=int)
+    category    = request.args.get('category', '')
+    days_tmpl   = int(request.args.get('days_template', 30))
+    days_cat    = int(request.args.get('days_category', 7))
+    warnings    = []
+
+    if not city_id:
+        return jsonify({'ok': True, 'warnings': []})
+
+    cutoff_tmpl = datetime.utcnow() - timedelta(days=days_tmpl)
+    cutoff_cat  = datetime.utcnow() - timedelta(days=days_cat)
+
+    if template_id:
+        dupe = (RenderJob.query
+                .filter_by(city_id=city_id, template_id=template_id)
+                .filter(RenderJob.status.in_(['approved','done']))
+                .filter(RenderJob.completed_at >= cutoff_tmpl)
+                .first())
+        if dupe:
+            warnings.append({
+                'type': 'template',
+                'message': f'Dieses Template wurde für diese Stadt in den letzten {days_tmpl} Tagen bereits verwendet',
+                'last_used': dupe.completed_at.isoformat() if dupe.completed_at else None,
+            })
+
+    if category and category not in ('allgemein', 'sonstige'):
+        tmpl = MemeTemplate.query.get(template_id) if template_id else None
+        cat_check = category or (tmpl.category if tmpl else None)
+        if cat_check:
+            cat_jobs = (RenderJob.query
+                        .join(MemeTemplate, RenderJob.template_id == MemeTemplate.id)
+                        .filter(RenderJob.city_id == city_id)
+                        .filter(MemeTemplate.category == cat_check)
+                        .filter(RenderJob.status.in_(['approved','done']))
+                        .filter(RenderJob.completed_at >= cutoff_cat)
+                        .count())
+            if cat_jobs >= 2:
+                warnings.append({
+                    'type': 'category',
+                    'message': f'Kategorie „{cat_check}" wurde in den letzten {days_cat} Tagen bereits {cat_jobs}× für diese Stadt verwendet',
+                })
+
+    return jsonify({'ok': True, 'warnings': warnings, 'has_warnings': len(warnings) > 0})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECYCLE SETTINGS API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/settings/recycle', methods=['GET'])
+@login_required
+def api_recycle_settings_get():
+    return jsonify({
+        'min_age_days':        int(get_setting('recycle_min_age_days') or 180),
+        'min_follower_growth': int(get_setting('recycle_min_follower_growth') or 20),
+        'min_stars':           int(get_setting('recycle_min_stars') or 3),
+        'max_per_month':       int(get_setting('recycle_max_per_month') or 4),
+        'excluded_cats':       json.loads(get_setting('recycle_excluded_cats') or '["news"]'),
+    })
+
+@app.route('/api/settings/recycle', methods=['POST'])
+@login_required
+def api_recycle_settings_save():
+    d = request.json or {}
+    mapping = {
+        'min_age_days':        'recycle_min_age_days',
+        'min_follower_growth': 'recycle_min_follower_growth',
+        'min_stars':           'recycle_min_stars',
+        'max_per_month':       'recycle_max_per_month',
+    }
+    for k, sk in mapping.items():
+        if k in d:
+            set_setting(sk, str(int(d[k])))
+    if 'excluded_cats' in d:
+        set_setting('recycle_excluded_cats', json.dumps(d['excluded_cats']))
+    return jsonify({'ok': True})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKT API
@@ -2395,6 +2688,9 @@ def api_inspo_posts():
         'like_count': p.like_count, 'media_type': p.media_type,
         'status': p.status, 'is_saved': p.is_saved,
         'meme_idea': p.meme_idea,
+        'ai_relevant': p.ai_relevant,
+        'ai_theme': p.ai_theme or '',
+        'ai_reasoning': p.ai_reasoning or '',
         'post_date': p.post_date.isoformat() if p.post_date else None,
     } for p in posts])
 
@@ -2480,6 +2776,263 @@ Antworte mit JSON:
     except Exception as ex:
         return jsonify({'error': str(ex)}), 500
     return jsonify({'error': 'KI-Fehler'}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INSPIRATION — KI-THEMATISCHE SORTIERUNG
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/inspiration/ai-sort', methods=['POST'])
+@login_required
+def api_inspo_ai_sort():
+    """Lässt Claude unsortierte Posts thematisch einordnen (relevant ja/nein + Thema)."""
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Kein API Key'}), 400
+    count = int(request.json.get('count', 20) if request.json else 20)
+    posts = MemoInspirationPost.query.filter(
+        MemoInspirationPost.ai_relevant.is_(None),
+        MemoInspirationPost.status.in_(['new', 'saved'])
+    ).limit(count).all()
+    if not posts:
+        return jsonify({'ok': True, 'processed': 0, 'message': 'Alle Posts bereits sortiert'})
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    processed = 0
+    for p in posts:
+        try:
+            msg = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=200,
+                messages=[{'role': 'user', 'content': f"""Bewerte diesen Instagram-Post für deutsche Stadtmeme-Seiten.
+
+Von: @{p.source.username if p.source else 'unbekannt'}
+Caption: {(p.caption or '')[:400]}
+Likes: {p.like_count or '?'}
+
+Ist der Post relevant als Meme-Inspiration für lokale deutsche Stadtseiten?
+Antworte mit JSON:
+{{"relevant": true/false, "theme": "<kurzes Thema, max 40 Zeichen, z.B. Wetter, Stadtleben, Humor, Food, Sport>", "reasoning": "<1 Satz Begründung>"}}"""}]
+            )
+            _log_ai_usage('inspo_sort', 'claude-haiku-4-5-20251001',
+                          msg.usage.input_tokens, msg.usage.output_tokens)
+            import re
+            raw = msg.content[0].text.strip()
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                p.ai_relevant  = bool(data.get('relevant', True))
+                p.ai_theme     = data.get('theme', '')[:100]
+                p.ai_reasoning = data.get('reasoning', '')
+                processed += 1
+        except Exception:
+            pass
+    db.session.commit()
+    return jsonify({'ok': True, 'processed': processed, 'total': len(posts)})
+
+
+@app.route('/api/inspiration/posts/<int:post_id>/ai-approve', methods=['POST'])
+@login_required
+def api_inspo_ai_approve(post_id):
+    p = MemoInspirationPost.query.get_or_404(post_id)
+    p.ai_relevant = True
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/inspiration/posts/<int:post_id>/ai-reject', methods=['POST'])
+@login_required
+def api_inspo_ai_reject(post_id):
+    p = MemoInspirationPost.query.get_or_404(post_id)
+    p.ai_relevant = False
+    p.status = 'ignored'
+    db.session.commit()
+    return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KOOPERATIONEN API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/collab/niches', methods=['GET'])
+@login_required
+def api_collab_niches_list():
+    niches = CollabNiche.query.filter_by(active=True).order_by(CollabNiche.name).all()
+    return jsonify([n.to_dict() for n in niches])
+
+@app.route('/api/collab/niches', methods=['POST'])
+@login_required
+def api_collab_niche_create():
+    d = request.json or {}
+    if not d.get('name'):
+        return jsonify({'error': 'Name erforderlich'}), 400
+    n = CollabNiche(name=d['name'].strip(), emoji=d.get('emoji','🤝'),
+                    description=d.get('description',''))
+    db.session.add(n); db.session.commit()
+    return jsonify(n.to_dict()), 201
+
+@app.route('/api/collab/niches/<int:nid>', methods=['PUT'])
+@login_required
+def api_collab_niche_update(nid):
+    n = CollabNiche.query.get_or_404(nid)
+    d = request.json or {}
+    for f in ['name','emoji','description','active']:
+        if f in d: setattr(n, f, d[f])
+    db.session.commit()
+    return jsonify(n.to_dict())
+
+@app.route('/api/collab/niches/<int:nid>', methods=['DELETE'])
+@login_required
+def api_collab_niche_delete(nid):
+    n = CollabNiche.query.get_or_404(nid)
+    db.session.delete(n); db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/collab/ideas', methods=['GET'])
+@login_required
+def api_collab_ideas_list():
+    niche_id = request.args.get('niche_id', type=int)
+    q = CollabIdea.query.filter_by(active=True)
+    if niche_id:
+        q = q.filter_by(niche_id=niche_id)
+    return jsonify([i.to_dict() for i in q.order_by(CollabIdea.title).all()])
+
+@app.route('/api/collab/ideas', methods=['POST'])
+@login_required
+def api_collab_idea_create():
+    d = request.json or {}
+    if not d.get('title') or not d.get('niche_id'):
+        return jsonify({'error': 'Titel und Nische erforderlich'}), 400
+    CollabNiche.query.get_or_404(d['niche_id'])
+    idea = CollabIdea(niche_id=d['niche_id'], title=d['title'].strip(),
+                      description=d.get('description',''),
+                      template_text=d.get('template_text',''))
+    db.session.add(idea); db.session.commit()
+    return jsonify(idea.to_dict()), 201
+
+@app.route('/api/collab/ideas/<int:iid>', methods=['PUT'])
+@login_required
+def api_collab_idea_update(iid):
+    idea = CollabIdea.query.get_or_404(iid)
+    d = request.json or {}
+    for f in ['title','description','template_text','active']:
+        if f in d: setattr(idea, f, d[f])
+    db.session.commit()
+    return jsonify(idea.to_dict())
+
+@app.route('/api/collab/ideas/<int:iid>', methods=['DELETE'])
+@login_required
+def api_collab_idea_delete(iid):
+    idea = CollabIdea.query.get_or_404(iid)
+    db.session.delete(idea); db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/collab/ideas/<int:iid>/cities', methods=['GET'])
+@login_required
+def api_collab_idea_cities(iid):
+    CollabIdea.query.get_or_404(iid)
+    collabs = CityCollab.query.filter_by(idea_id=iid)\
+                .order_by(CityCollab.city_id).all()
+    return jsonify([c.to_dict() for c in collabs])
+
+@app.route('/api/collab/assign', methods=['POST'])
+@login_required
+def api_collab_assign():
+    d = request.json or {}
+    if not d.get('idea_id') or not d.get('city_id') or not d.get('partner_name'):
+        return jsonify({'error': 'idea_id, city_id und partner_name erforderlich'}), 400
+    existing = CityCollab.query.filter_by(
+        idea_id=d['idea_id'], city_id=d['city_id']).first()
+    if existing:
+        existing.partner_name = d['partner_name']
+        existing.partner_ig   = d.get('partner_ig','')
+        existing.notes        = d.get('notes','')
+        existing.status       = d.get('status','aktiv')
+        db.session.commit()
+        return jsonify(existing.to_dict())
+    cc = CityCollab(idea_id=d['idea_id'], city_id=d['city_id'],
+                    partner_name=d['partner_name'],
+                    partner_ig=d.get('partner_ig',''),
+                    notes=d.get('notes',''),
+                    status=d.get('status','aktiv'))
+    db.session.add(cc); db.session.commit()
+    return jsonify(cc.to_dict()), 201
+
+@app.route('/api/collab/<int:cc_id>', methods=['PUT'])
+@login_required
+def api_collab_update(cc_id):
+    cc = CityCollab.query.get_or_404(cc_id)
+    d  = request.json or {}
+    for f in ['partner_name','partner_ig','status','notes']:
+        if f in d: setattr(cc, f, d[f])
+    db.session.commit()
+    return jsonify(cc.to_dict())
+
+@app.route('/api/collab/<int:cc_id>', methods=['DELETE'])
+@login_required
+def api_collab_delete(cc_id):
+    cc = CityCollab.query.get_or_404(cc_id)
+    db.session.delete(cc); db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/collab/state-overview', methods=['GET'])
+@login_required
+def api_collab_state_overview():
+    """Für Bundesland-Strategie: zeigt Kooperationen gruppiert nach Bundesland."""
+    collabs = (CityCollab.query.join(City).filter(CityCollab.status == 'aktiv')
+               .order_by(City.state, City.name).all())
+    result = {}
+    for cc in collabs:
+        state = cc.city.state or 'Unbekannt'
+        result.setdefault(state, []).append({
+            'city': cc.city.name, 'partner': cc.partner_name,
+            'idea': cc.idea.title if cc.idea else ''
+        })
+    return jsonify(result)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUNDESLAND-STRATEGIE: SCHEDULING-KONFLIKTE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/scheduling/state-conflicts', methods=['GET'])
+@login_required
+def api_state_conflicts():
+    """Gibt Paare von Städten zurück, die im selben Bundesland ähnliche Memes planen."""
+    days = int(request.args.get('days', 3))
+    from datetime import date
+    today = datetime.utcnow()
+    horizon = today + timedelta(days=days)
+    posts = (MemePost.query
+             .join(City, MemePost.city_id == City.id)
+             .filter(MemePost.status.in_(['geplant','bereit']))
+             .filter(MemePost.scheduled_at >= today)
+             .filter(MemePost.scheduled_at <= horizon)
+             .order_by(City.state, MemePost.scheduled_at)
+             .all())
+    by_state = {}
+    for p in posts:
+        state = p.city.state or 'Unbekannt'
+        by_state.setdefault(state, []).append({
+            'city': p.city.name, 'city_id': p.city_id,
+            'post_id': p.id, 'title': p.title or '',
+            'scheduled_at': p.scheduled_at.isoformat() if p.scheduled_at else None,
+            'template_id': p.template_id,
+        })
+    conflicts = []
+    for state, state_posts in by_state.items():
+        if len(state_posts) < 2: continue
+        # Group by template_id to find duplicates
+        by_tmpl = {}
+        for sp in state_posts:
+            if sp['template_id']:
+                by_tmpl.setdefault(sp['template_id'], []).append(sp)
+        for tmpl_id, dupes in by_tmpl.items():
+            if len(dupes) >= 2:
+                conflicts.append({
+                    'state': state,
+                    'template_id': tmpl_id,
+                    'cities': dupes,
+                    'warning': f"Gleiches Template in {len(dupes)} Städten in {state} innerhalb von {days} Tagen"
+                })
+    return jsonify({'conflicts': conflicts, 'days': days,
+                    'by_state': {s: ps for s, ps in by_state.items() if len(ps) > 0}})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HOCHLADEN & EINPLANEN API

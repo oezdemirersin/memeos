@@ -488,6 +488,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
       Inspiration
       {% if inspo_counts.new > 0 %}<span class="nav-badge">{{ inspo_counts.new }}</span>{% endif %}
     </button>
+    <button class="nav-item" onclick="showPage('kooperationen')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Kooperationen
+      <span class="nav-badge" id="nav-collab-badge" style="display:none"></span>
+    </button>
 
     <div class="nav-section">System</div>
     <button class="nav-item" onclick="showPage('todos')">
@@ -1541,7 +1546,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-inspiration">
   <div class="page-header">
     <div class="page-title">MEME <span>INSPIRATION</span></div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <select id="inspo-status" onchange="loadInspoPosts()">
         <option value="new">Neu</option>
         <option value="saved">Gespeichert</option>
@@ -1552,6 +1557,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <select id="inspo-source-filter" onchange="loadInspoPosts()">
         <option value="">Alle Quellen</option>
       </select>
+      <select id="inspo-ai-filter" onchange="loadInspoPosts()" style="font-size:12px;">
+        <option value="">Alle KI-Status</option>
+        <option value="unsorted">⏳ Noch nicht sortiert</option>
+        <option value="relevant">✅ KI: Relevant</option>
+        <option value="irrelevant">❌ KI: Nicht relevant</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="inspo-ai-sort-btn" onclick="runInspoAiSort()">🤖 KI sortieren</button>
     </div>
   </div>
 
@@ -1609,6 +1621,141 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </div>
         <button class="btn btn-primary btn-sm" onclick="addInspoPostManual()">Post hinzufügen</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ KOOPERATIONEN ═══════════════════════════ -->
+<div class="page" id="page-kooperationen">
+  <div class="page-header">
+    <div class="page-title">KOOPER<span>ATIONEN</span></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="openCollabNicheModal()">+ Nische</button>
+      <button class="btn btn-primary btn-sm" onclick="openCollabIdeaModal()">+ Idee</button>
+    </div>
+  </div>
+
+  <!-- Nischen-Tabs -->
+  <div id="collab-niche-tabs" style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="tlib-tab tlib-tab-active" onclick="setCollabNiche(null,this)">Alle</button>
+  </div>
+
+  <!-- Ideen-Liste -->
+  <div id="collab-ideas-grid" style="display:flex;flex-direction:column;gap:10px;">
+    <div class="empty"><p>Lade…</p></div>
+  </div>
+</div>
+
+<!-- Collab Nische Modal -->
+<div class="modal-overlay" id="modal-collab-niche">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title" id="collab-niche-modal-title">NISCHE HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-collab-niche')">×</button>
+    </div>
+    <input type="hidden" id="collab-niche-id">
+    <div class="form-row">
+      <div class="form-group" style="flex:0 0 70px;">
+        <label>Emoji</label>
+        <input type="text" id="collab-niche-emoji" value="🤝" style="font-size:20px;text-align:center;width:55px;">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Name *</label>
+        <input type="text" id="collab-niche-name" placeholder="z.B. Gastronomie">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Beschreibung</label>
+      <input type="text" id="collab-niche-desc" placeholder="Kurze Beschreibung…">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-collab-niche')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveCollabNiche()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Collab Idee Modal -->
+<div class="modal-overlay" id="modal-collab-idea">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <div class="modal-title" id="collab-idea-modal-title">IDEE HINZUFÜGEN</div>
+      <button class="modal-close" onclick="closeModal('modal-collab-idea')">×</button>
+    </div>
+    <input type="hidden" id="collab-idea-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nische *</label>
+        <select id="collab-idea-niche"></select>
+      </div>
+      <div class="form-group" style="flex:2;">
+        <label>Titel *</label>
+        <input type="text" id="collab-idea-title" placeholder="z.B. „Morgen-Kaffee Challenge"">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Beschreibung</label>
+      <textarea id="collab-idea-desc" rows="2" placeholder="Worum geht es bei dieser Idee?"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Template-Text <span style="color:var(--muted);font-weight:400;">— nutze {partner_name} und {city_name}</span></label>
+      <textarea id="collab-idea-template" rows="4" placeholder="Wir waren bei {partner_name} in {city_name} und haben… 🎉 Schreibt uns euer Lieblingscafé in {city_name}!"></textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Dieser Text wird pro Stadt mit dem echten Partnernamen befüllt</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-collab-idea')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveCollabIdea()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Collab Stadt-Zuweisung Modal -->
+<div class="modal-overlay" id="modal-collab-assign">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <div class="modal-title">STADT ZUWEISEN</div>
+      <button class="modal-close" onclick="closeModal('modal-collab-assign')">×</button>
+    </div>
+    <input type="hidden" id="collab-assign-idea-id">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;" id="collab-assign-idea-name"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Stadt *</label>
+        <select id="collab-assign-city">
+          {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:2;">
+        <label>Partnername *</label>
+        <input type="text" id="collab-assign-partner" placeholder="z.B. Café Luisa">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Partner Instagram</label>
+        <input type="text" id="collab-assign-ig" placeholder="@cafeluisa">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="collab-assign-status">
+          <option value="aktiv">Aktiv</option>
+          <option value="pausiert">Pausiert</option>
+          <option value="abgeschlossen">Abgeschlossen</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notizen</label>
+      <textarea id="collab-assign-notes" rows="2"></textarea>
+    </div>
+    <!-- Generated text preview -->
+    <div id="collab-assign-preview" style="background:var(--surface2);border-radius:8px;padding:12px;margin-top:8px;display:none;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Vorschau generierter Text:</div>
+      <div id="collab-assign-preview-text" style="font-size:13px;white-space:pre-wrap;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-collab-assign')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveCollabAssign()">Zuweisen</button>
     </div>
   </div>
 </div>
@@ -2155,7 +2302,55 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <div class="form-row">
       <div class="form-group"><label>Einwohner</label><input type="number" id="city-population"></div>
-      <div class="form-group"><label>Akzentfarbe</label><input type="text" id="city-color" value="#3b82f6"></div>
+      <div class="form-group"><label>Akzentfarbe (Nav-Dot)</label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="color" id="city-color" value="#3b82f6" style="width:40px;height:32px;border:none;background:none;cursor:pointer;">
+          <input type="text" id="city-color-hex" value="#3b82f6" style="width:80px;font-size:12px;" oninput="document.getElementById('city-color').value=this.value">
+        </div>
+      </div>
+    </div>
+    <!-- Brand Design -->
+    <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:10px;">🎨 BRAND DESIGN (für HTML-Templates)</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Hintergrundfarbe</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="color" id="city-brand-bg" value="#ffffff" style="width:40px;height:32px;border:none;background:none;cursor:pointer;"
+                   oninput="document.getElementById('city-brand-bg-hex').value=this.value">
+            <input type="text" id="city-brand-bg-hex" value="#ffffff" style="width:80px;font-size:12px;"
+                   oninput="document.getElementById('city-brand-bg').value=this.value">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Textfarbe</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="color" id="city-brand-text" value="#000000" style="width:40px;height:32px;border:none;background:none;cursor:pointer;"
+                   oninput="document.getElementById('city-brand-text-hex').value=this.value">
+            <input type="text" id="city-brand-text-hex" value="#000000" style="width:80px;font-size:12px;"
+                   oninput="document.getElementById('city-brand-text').value=this.value">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Schriftart</label>
+          <select id="city-brand-font" style="font-size:13px;">
+            <option value="Arial">Arial (klassisch)</option>
+            <option value="Georgia">Georgia (elegant)</option>
+            <option value="'Helvetica Neue',Helvetica">Helvetica (modern)</option>
+            <option value="'Bebas Neue'">Bebas Neue (Display)</option>
+            <option value="'Montserrat'">Montserrat (urban)</option>
+            <option value="'Oswald'">Oswald (bold)</option>
+            <option value="'Playfair Display'">Playfair (premium)</option>
+            <option value="'Roboto'">Roboto (neutral)</option>
+            <option value="'Anton'">Anton (impactful)</option>
+          </select>
+        </div>
+      </div>
+      <!-- Preview -->
+      <div id="city-brand-preview" style="border-radius:8px;padding:14px;text-align:center;margin-top:8px;transition:all .2s;">
+        <div id="city-brand-preview-text" style="font-size:18px;font-weight:700;">Mein Stadtmeme</div>
+        <div style="font-size:11px;margin-top:4px;opacity:.6;">Vorschau Template-Design</div>
+      </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Instagram Handle</label><input type="text" id="city-ig" placeholder="@darmstadtschau"></div>
@@ -2503,6 +2698,7 @@ function showPage(name) {
   if(name==='kalender') loadKalender();
   if(name==='performance') loadPerformance();
   if(name==='events') loadEvents();
+  if(name==='kooperationen') loadKooperationen();
   history.replaceState(null,'','/?tab='+name);
 }
 
@@ -2617,8 +2813,29 @@ async function generateCityWiki() {
 function openCityModal(id) {
   document.getElementById('city-modal-title').textContent = id ? 'STADT BEARBEITEN' : 'STADT HINZUFÜGEN';
   document.getElementById('city-modal-id').value = id || '';
-  if(!id) { ['city-name','city-state','city-ig','city-tt','city-rss','city-notes'].forEach(f => document.getElementById(f).value = ''); document.getElementById('city-population').value=''; document.getElementById('city-color').value='#3b82f6'; }
+  if(!id) {
+    ['city-name','city-state','city-ig','city-tt','city-rss','city-notes'].forEach(f => document.getElementById(f).value = '');
+    document.getElementById('city-population').value = '';
+    _setCityColor('city-color','city-color-hex','#3b82f6');
+    _setCityColor('city-brand-bg','city-brand-bg-hex','#ffffff');
+    _setCityColor('city-brand-text','city-brand-text-hex','#000000');
+    document.getElementById('city-brand-font').value = 'Arial';
+    _updateBrandPreview();
+  }
   openModal('modal-city');
+}
+function _setCityColor(colorId, hexId, val) {
+  const c = document.getElementById(colorId); if(c) c.value = val;
+  const h = document.getElementById(hexId);   if(h) h.value = val;
+}
+function _updateBrandPreview() {
+  const bg   = document.getElementById('city-brand-bg')?.value   || '#ffffff';
+  const text = document.getElementById('city-brand-text')?.value || '#000000';
+  const font = document.getElementById('city-brand-font')?.value || 'Arial';
+  const prev = document.getElementById('city-brand-preview');
+  const ptxt = document.getElementById('city-brand-preview-text');
+  if(prev) { prev.style.background = bg; prev.style.color = text; prev.style.fontFamily = font; }
+  if(ptxt) { ptxt.style.fontFamily = font; ptxt.style.color = text; }
 }
 
 async function editCity() {
@@ -2628,24 +2845,34 @@ async function editCity() {
   if(!c) return;
   document.getElementById('city-modal-id').value = c.id;
   document.getElementById('city-modal-title').textContent = 'STADT BEARBEITEN';
-  document.getElementById('city-name').value = c.name;
-  document.getElementById('city-state').value = c.state || '';
+  document.getElementById('city-name').value      = c.name;
+  document.getElementById('city-state').value     = c.state || '';
   document.getElementById('city-population').value = c.population || '';
-  document.getElementById('city-ig').value = c.instagram_handle || '';
+  document.getElementById('city-ig').value        = c.instagram_handle || '';
+  document.getElementById('city-rss').value       = c.rss_url || '';
+  document.getElementById('city-notes').value     = c.notes || '';
+  _setCityColor('city-color','city-color-hex', c.accent_color||'#3b82f6');
+  _setCityColor('city-brand-bg','city-brand-bg-hex', c.brand_bg||'#ffffff');
+  _setCityColor('city-brand-text','city-brand-text-hex', c.brand_text_color||'#000000');
+  document.getElementById('city-brand-font').value = c.brand_font || 'Arial';
+  _updateBrandPreview();
   openModal('modal-city');
 }
 
 async function saveCity() {
   const id = document.getElementById('city-modal-id').value;
   const data = {
-    name: document.getElementById('city-name').value,
-    state: document.getElementById('city-state').value,
-    population: parseInt(document.getElementById('city-population').value) || null,
+    name:             document.getElementById('city-name').value,
+    state:            document.getElementById('city-state').value,
+    population:       parseInt(document.getElementById('city-population').value) || null,
     instagram_handle: document.getElementById('city-ig').value,
-    tiktok_handle: document.getElementById('city-tt').value,
-    accent_color: document.getElementById('city-color').value,
-    rss_url: document.getElementById('city-rss').value,
-    notes: document.getElementById('city-notes').value,
+    tiktok_handle:    document.getElementById('city-tt').value,
+    accent_color:     document.getElementById('city-color').value,
+    brand_bg:         document.getElementById('city-brand-bg').value,
+    brand_text_color: document.getElementById('city-brand-text').value,
+    brand_font:       document.getElementById('city-brand-font').value,
+    rss_url:          document.getElementById('city-rss').value,
+    notes:            document.getElementById('city-notes').value,
   };
   const r = id ? await api('PUT',`/api/cities/${id}`,data) : await api('POST','/api/cities',data);
   if(r.error) { toast(r.error,'error'); return; }
@@ -3141,6 +3368,21 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTemplates();
   refreshStats();
   loadEventsBadge();
+  // Brand preview live-update
+  ['city-brand-bg','city-brand-bg-hex','city-brand-text','city-brand-text-hex','city-brand-font',
+   'city-color','city-color-hex'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      // sync hex↔color pairs
+      if(id==='city-brand-bg') document.getElementById('city-brand-bg-hex').value = document.getElementById('city-brand-bg').value;
+      if(id==='city-brand-bg-hex') document.getElementById('city-brand-bg').value = document.getElementById('city-brand-bg-hex').value;
+      if(id==='city-brand-text') document.getElementById('city-brand-text-hex').value = document.getElementById('city-brand-text').value;
+      if(id==='city-brand-text-hex') document.getElementById('city-brand-text').value = document.getElementById('city-brand-text-hex').value;
+      if(id==='city-color') document.getElementById('city-color-hex').value = document.getElementById('city-color').value;
+      if(id==='city-color-hex') document.getElementById('city-color').value = document.getElementById('city-color-hex').value;
+      _updateBrandPreview();
+    });
+  });
+  document.getElementById('city-brand-font')?.addEventListener('change', _updateBrandPreview);
   // Check URL param for tab
   const params = new URLSearchParams(location.search);
   const tab = params.get('tab');
@@ -5602,29 +5844,46 @@ async function deleteInspoSource(id) {
 async function loadInspoPosts() {
   const status   = document.getElementById('inspo-status')?.value||'new';
   const sourceId = document.getElementById('inspo-source-filter')?.value||'';
+  const aiFilter = document.getElementById('inspo-ai-filter')?.value||'';
   let url = `/api/inspiration/posts?status=${status}`;
   if (sourceId) url += `&source_id=${sourceId}`;
-  const posts = await api('GET', url);
+  let posts = await api('GET', url);
+  // client-side AI filter
+  if (aiFilter==='unsorted') posts = posts.filter(p => p.ai_relevant===null||p.ai_relevant===undefined);
+  else if (aiFilter==='relevant') posts = posts.filter(p => p.ai_relevant===true);
+  else if (aiFilter==='irrelevant') posts = posts.filter(p => p.ai_relevant===false);
+
   const grid  = document.getElementById('inspo-posts-grid');
   if (!grid) return;
 
-  grid.innerHTML = posts.length ? posts.map(p=>`
+  grid.innerHTML = posts.length ? posts.map(p=> {
+    const aiTag = p.ai_relevant===true
+      ? `<span style="background:#22c55e22;color:#22c55e;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;">✅ ${p.ai_theme||'Relevant'}</span>`
+      : p.ai_relevant===false
+      ? `<span style="background:#ef444422;color:#ef4444;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;">❌ ${p.ai_theme||'Nicht relevant'}</span>`
+      : `<span style="background:var(--surface3);color:var(--muted);font-size:10px;padding:1px 6px;border-radius:8px;">⏳ Nicht sortiert</span>`;
+    return `
     <div class="inspo-card" id="inspo-card-${p.id}">
       ${p.image_url
         ?`<div class="inspo-img" style="background-image:url('${p.image_url}');background-size:cover;background-position:center;"></div>`
         :`<div class="inspo-img" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Kein Bild</div>`}
       <div class="inspo-body">
-        <div style="font-size:11px;color:var(--accent);margin-bottom:4px;">${p.username||'Manuell'}</div>
-        ${p.caption?`<div style="font-size:12px;color:var(--muted2);margin-bottom:6px;max-height:48px;overflow:hidden;">${p.caption.substring(0,100)}${p.caption.length>100?'…':''}</div>`:''}
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--accent);">${p.username||'Manuell'}</span>
+          ${aiTag}
+        </div>
+        ${p.ai_reasoning?`<div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-style:italic;">${_esc(p.ai_reasoning)}</div>`:''}
+        ${p.caption?`<div style="font-size:12px;color:var(--muted2);margin-bottom:6px;max-height:40px;overflow:hidden;">${_esc(p.caption.substring(0,100))}${p.caption.length>100?'…':''}</div>`:''}
         ${p.like_count?`<div style="font-size:11px;color:var(--muted);">❤ ${p.like_count.toLocaleString()}</div>`:''}
-        ${p.meme_idea?`<div style="font-size:11px;color:var(--fg);background:var(--surface2);border-radius:6px;padding:6px;margin-top:6px;">💡 ${p.meme_idea}</div>`:''}
+        ${p.meme_idea?`<div style="font-size:11px;color:var(--fg);background:var(--surface2);border-radius:6px;padding:6px;margin-top:6px;">💡 ${_esc(p.meme_idea)}</div>`:''}
         <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+          ${p.ai_relevant!==true?`<button class="btn btn-xs" style="background:#22c55e22;color:#22c55e;" onclick="inspoAiApprove(${p.id})">✓ Approve</button>`:''}
+          ${p.ai_relevant!==false?`<button class="btn btn-xs" style="background:#ef444422;color:#ef4444;" onclick="inspoAiReject(${p.id})">✕ Reject</button>`:''}
           ${!p.is_saved?`<button class="btn btn-xs btn-primary" onclick="saveInspoPost(${p.id})">Speichern</button>`:''}
-          ${p.status!=='ignored'?`<button class="btn btn-xs btn-ghost" onclick="ignoreInspoPost(${p.id})">Ignorieren</button>`:''}
           <button class="btn btn-xs btn-ghost" onclick="generateMemeIdea(${p.id})">💡 KI-Idee</button>
         </div>
       </div>
-    </div>`).join('') :
+    </div>`}).join('') :
     '<div class="empty" style="grid-column:1/-1"><p>Keine Posts in dieser Kategorie</p></div>';
 }
 
@@ -6114,6 +6373,251 @@ async function loadRecycleSettings() {
     const catEl = document.getElementById('rc-excluded-cats');
     if (catEl && d.excluded_cats) catEl.value = d.excluded_cats.join(', ');
   } catch(e) {}
+}
+
+// ══════════════════════════════════════════
+// INSPIRATION — KI-SORTIERUNG
+// ══════════════════════════════════════════
+async function runInspoAiSort() {
+  const btn = document.getElementById('inspo-ai-sort-btn');
+  btn.disabled = true; btn.textContent = '⏳ KI sortiert…';
+  const r = await api('POST', '/api/inspiration/ai-sort', { count: 20 });
+  btn.disabled = false; btn.textContent = '🤖 KI sortieren';
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast(`${r.processed} Posts sortiert`, 'success');
+  loadInspoPosts();
+}
+
+async function inspoAiApprove(id) {
+  await api('POST', `/api/inspiration/posts/${id}/ai-approve`);
+  document.getElementById(`inspo-card-${id}`)?.remove();
+  loadInspoPosts();
+}
+
+async function inspoAiReject(id) {
+  await api('POST', `/api/inspiration/posts/${id}/ai-reject`);
+  document.getElementById(`inspo-card-${id}`)?.remove();
+  loadInspoPosts();
+}
+
+// ══════════════════════════════════════════
+// KOOPERATIONEN
+// ══════════════════════════════════════════
+let _allNiches = [];
+let _activeNicheId = null;
+let _allCollabIdeas = [];
+
+async function loadKooperationen() {
+  _allNiches = await api('GET', '/api/collab/niches');
+  _renderNicheTabs();
+  await loadCollabIdeas();
+  // Badge: Anzahl aktiver Collabs
+  const badge = document.getElementById('nav-collab-badge');
+  if (badge) {
+    const total = _allCollabIdeas.reduce((s, i) => s + (i.assigned_cities || 0), 0);
+    badge.style.display = total ? '' : 'none';
+    badge.textContent = total;
+  }
+}
+
+function _renderNicheTabs() {
+  const tabs = document.getElementById('collab-niche-tabs');
+  if (!tabs) return;
+  tabs.innerHTML = `<button class="tlib-tab ${!_activeNicheId ? 'tlib-tab-active' : ''}" onclick="setCollabNiche(null,this)">Alle</button>` +
+    _allNiches.map(n => `
+      <button class="tlib-tab ${_activeNicheId===n.id ? 'tlib-tab-active' : ''}" onclick="setCollabNiche(${n.id},this)">
+        ${n.emoji} ${_esc(n.name)}
+        <span style="margin-left:4px;font-size:10px;opacity:.6;">${n.idea_count}</span>
+        <span style="cursor:pointer;margin-left:4px;opacity:.5;" onclick="event.stopPropagation();deleteCollabNiche(${n.id})">✕</span>
+      </button>`).join('');
+}
+
+async function setCollabNiche(id, el) {
+  _activeNicheId = id;
+  document.querySelectorAll('#collab-niche-tabs .tlib-tab').forEach(t => t.classList.remove('tlib-tab-active'));
+  if (el) el.classList.add('tlib-tab-active');
+  await loadCollabIdeas();
+}
+
+async function loadCollabIdeas() {
+  const url = _activeNicheId ? `/api/collab/ideas?niche_id=${_activeNicheId}` : '/api/collab/ideas';
+  _allCollabIdeas = await api('GET', url);
+  _renderCollabIdeas();
+}
+
+function _renderCollabIdeas() {
+  const grid = document.getElementById('collab-ideas-grid');
+  if (!grid) return;
+  if (!_allCollabIdeas.length) {
+    grid.innerHTML = '<div class="empty"><p>Noch keine Ideen — füge eine Kooperationsidee hinzu!</p></div>';
+    return;
+  }
+  grid.innerHTML = _allCollabIdeas.map(idea => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="font-size:22px;flex-shrink:0;">${idea.niche_emoji}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <div style="font-size:14px;font-weight:700;">${_esc(idea.title)}</div>
+            <span style="font-size:10px;color:var(--muted);background:var(--surface2);padding:1px 7px;border-radius:8px;">${_esc(idea.niche_name)}</span>
+          </div>
+          ${idea.description ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${_esc(idea.description)}</div>` : ''}
+          ${idea.template_text ? `<div style="font-size:12px;background:var(--surface2);border-radius:6px;padding:8px;margin-bottom:8px;color:var(--muted2);font-style:italic;">"${_esc(idea.template_text.slice(0,120))}${idea.template_text.length>120?'…':''}"</div>` : ''}
+          <div id="collab-cities-${idea.id}" style="margin-bottom:8px;"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-xs" onclick="openCollabAssignModal(${idea.id},'${_esc(idea.title).replace(/'/g,"\\'")}','${_esc(idea.template_text||'').replace(/'/g,"\\'")}')">+ Stadt zuweisen</button>
+            <button class="btn btn-ghost btn-xs" onclick="openCollabIdeaModal(${idea.id})">✏️</button>
+            <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteCollabIdea(${idea.id})">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+  // load city assignments async
+  _allCollabIdeas.forEach(idea => loadCollabIdeaCities(idea.id));
+}
+
+async function loadCollabIdeaCities(ideaId) {
+  const el = document.getElementById(`collab-cities-${ideaId}`);
+  if (!el) return;
+  const cities = await api('GET', `/api/collab/ideas/${ideaId}/cities`);
+  if (!cities.length) { el.innerHTML = '<div style="font-size:11px;color:var(--muted);">Noch keiner Stadt zugewiesen</div>'; return; }
+  const statusColor = {aktiv:'#22c55e', pausiert:'#f59e0b', abgeschlossen:'#64748b'};
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px;">` +
+    cities.map(c => `<span style="font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;display:flex;align-items:center;gap:4px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:${statusColor[c.status]||'#64748b'};flex-shrink:0;"></span>
+      <b>${_esc(c.city_name)}</b>: ${_esc(c.partner_name)}
+      <span onclick="deleteCollabAssign(${c.id})" style="cursor:pointer;margin-left:2px;opacity:.4;font-size:10px;">✕</span>
+    </span>`).join('') + `</div>`;
+}
+
+// ─── Nische CRUD ───
+function openCollabNicheModal(id = null) {
+  document.getElementById('collab-niche-id').value = id || '';
+  document.getElementById('collab-niche-modal-title').textContent = id ? 'NISCHE BEARBEITEN' : 'NISCHE HINZUFÜGEN';
+  if (!id) {
+    document.getElementById('collab-niche-emoji').value = '🤝';
+    document.getElementById('collab-niche-name').value  = '';
+    document.getElementById('collab-niche-desc').value  = '';
+  }
+  openModal('modal-collab-niche');
+}
+
+async function saveCollabNiche() {
+  const id   = document.getElementById('collab-niche-id').value;
+  const name = document.getElementById('collab-niche-name').value.trim();
+  if (!name) { toast('Name erforderlich', 'error'); return; }
+  const body = { name, emoji: document.getElementById('collab-niche-emoji').value || '🤝',
+                 description: document.getElementById('collab-niche-desc').value };
+  const r = id ? await api('PUT', `/api/collab/niches/${id}`, body)
+               : await api('POST', '/api/collab/niches', body);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Nische gespeichert', 'success');
+  closeModal('modal-collab-niche');
+  loadKooperationen();
+}
+
+async function deleteCollabNiche(id) {
+  if (!confirm('Nische und alle Ideen löschen?')) return;
+  await api('DELETE', `/api/collab/niches/${id}`);
+  toast('Nische gelöscht', 'info');
+  loadKooperationen();
+}
+
+// ─── Idee CRUD ───
+function openCollabIdeaModal(id = null) {
+  document.getElementById('collab-idea-id').value = id || '';
+  document.getElementById('collab-idea-modal-title').textContent = id ? 'IDEE BEARBEITEN' : 'IDEE HINZUFÜGEN';
+  const nicheEl = document.getElementById('collab-idea-niche');
+  nicheEl.innerHTML = _allNiches.map(n => `<option value="${n.id}">${n.emoji} ${_esc(n.name)}</option>`).join('');
+  if (!id) {
+    document.getElementById('collab-idea-title').value    = '';
+    document.getElementById('collab-idea-desc').value     = '';
+    document.getElementById('collab-idea-template').value = '';
+    if (_activeNicheId) nicheEl.value = _activeNicheId;
+  } else {
+    const idea = _allCollabIdeas.find(i => i.id === id);
+    if (idea) {
+      document.getElementById('collab-idea-title').value    = idea.title;
+      document.getElementById('collab-idea-desc').value     = idea.description;
+      document.getElementById('collab-idea-template').value = idea.template_text;
+      nicheEl.value = idea.niche_id;
+    }
+  }
+  openModal('modal-collab-idea');
+}
+
+async function saveCollabIdea() {
+  const id    = document.getElementById('collab-idea-id').value;
+  const title = document.getElementById('collab-idea-title').value.trim();
+  const niche = document.getElementById('collab-idea-niche').value;
+  if (!title || !niche) { toast('Titel und Nische erforderlich', 'error'); return; }
+  const body = { niche_id: parseInt(niche), title,
+    description:   document.getElementById('collab-idea-desc').value,
+    template_text: document.getElementById('collab-idea-template').value };
+  const r = id ? await api('PUT', `/api/collab/ideas/${id}`, body)
+               : await api('POST', '/api/collab/ideas', body);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Idee gespeichert', 'success');
+  closeModal('modal-collab-idea');
+  loadKooperationen();
+}
+
+async function deleteCollabIdea(id) {
+  if (!confirm('Idee und alle Zuweisungen löschen?')) return;
+  await api('DELETE', `/api/collab/ideas/${id}`);
+  toast('Idee gelöscht', 'info');
+  loadKooperationen();
+}
+
+// ─── Stadt-Zuweisung ───
+let _collabAssignTemplate = '';
+function openCollabAssignModal(ideaId, ideaTitle, templateText) {
+  document.getElementById('collab-assign-idea-id').value = ideaId;
+  document.getElementById('collab-assign-idea-name').textContent = ideaTitle;
+  document.getElementById('collab-assign-partner').value = '';
+  document.getElementById('collab-assign-ig').value      = '';
+  document.getElementById('collab-assign-notes').value   = '';
+  document.getElementById('collab-assign-status').value  = 'aktiv';
+  _collabAssignTemplate = templateText;
+  document.getElementById('collab-assign-preview').style.display = templateText ? '' : 'none';
+  document.getElementById('collab-assign-preview-text').textContent = '';
+  document.getElementById('collab-assign-partner').addEventListener('input', _previewCollabText);
+  openModal('modal-collab-assign');
+}
+
+function _previewCollabText() {
+  const partner  = document.getElementById('collab-assign-partner')?.value || 'Partner';
+  const cityEl   = document.getElementById('collab-assign-city');
+  const cityName = cityEl?.options[cityEl.selectedIndex]?.text || 'Stadt';
+  const preview  = _collabAssignTemplate
+    .replace(/\{partner_name\}/g, partner)
+    .replace(/\{city_name\}/g, cityName);
+  const el = document.getElementById('collab-assign-preview-text');
+  if (el) el.textContent = preview;
+}
+
+async function saveCollabAssign() {
+  const ideaId  = document.getElementById('collab-assign-idea-id').value;
+  const cityId  = document.getElementById('collab-assign-city').value;
+  const partner = document.getElementById('collab-assign-partner').value.trim();
+  if (!partner) { toast('Partnername erforderlich', 'error'); return; }
+  const body = { idea_id: parseInt(ideaId), city_id: parseInt(cityId),
+    partner_name: partner,
+    partner_ig:   document.getElementById('collab-assign-ig').value,
+    status:       document.getElementById('collab-assign-status').value,
+    notes:        document.getElementById('collab-assign-notes').value };
+  const r = await api('POST', '/api/collab/assign', body);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Stadt zugewiesen!', 'success');
+  closeModal('modal-collab-assign');
+  loadCollabIdeaCities(parseInt(ideaId));
+}
+
+async function deleteCollabAssign(id) {
+  if (!confirm('Zuweisung entfernen?')) return;
+  await api('DELETE', `/api/collab/${id}`);
+  toast('Zuweisung entfernt', 'info');
+  loadKooperationen();
 }
 
 async function saveRecycleSettings() {

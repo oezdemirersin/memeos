@@ -55,6 +55,9 @@ class City(db.Model):
     instagram_handle = db.Column(db.String(200))
     tiktok_handle    = db.Column(db.String(200))
     accent_color     = db.Column(db.String(20), default='#3b82f6')
+    brand_bg         = db.Column(db.String(20), default='#ffffff')
+    brand_text_color = db.Column(db.String(20), default='#000000')
+    brand_font       = db.Column(db.String(100), default='Arial')
     rss_url          = db.Column(db.String(500))
     notes            = db.Column(db.Text)
     active           = db.Column(db.Boolean, default=True, index=True)
@@ -610,6 +613,65 @@ class RecycleJob(db.Model):
         }
 
 
+class MemeEvent(db.Model):
+    """Meme-relevante Events: Saisonal, Wetter, Lokal, Wiederkehrend."""
+    __tablename__ = 'meme_event'
+    id             = db.Column(db.Integer, primary_key=True)
+    name           = db.Column(db.String(200), nullable=False)
+    description    = db.Column(db.Text)
+    event_type     = db.Column(db.String(30), default='saisonal', index=True)
+    # saisonal | wetter | lokal | sport | breaking | recurring
+    date_from      = db.Column(db.String(10))   # YYYY-MM-DD oder MM-DD wenn recurring
+    date_to        = db.Column(db.String(10))
+    recurring      = db.Column(db.Boolean, default=False)  # jährlich wiederkehrend
+    lead_days      = db.Column(db.Integer, default=7)      # X Tage vor Event erinnern
+    city_scope     = db.Column(db.Text, default='[]')      # JSON: [] = alle Städte, [id,...] = bestimmte
+    meme_relevance = db.Column(db.Integer, default=3)      # 1-5 Sterne wie gut eignet sich das für Memes
+    suggested_cats = db.Column(db.Text, default='[]')      # empfohlene Template-Kategorien JSON
+    emoji          = db.Column(db.String(10), default='📅')
+    notes          = db.Column(db.Text)
+    notified_at    = db.Column(db.DateTime)                # wann wurde zuletzt Benachrichtigung gesendet
+    active         = db.Column(db.Boolean, default=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def get_city_scope(self):
+        try: return json.loads(self.city_scope or '[]')
+        except: return []
+
+    def get_suggested_cats(self):
+        try: return json.loads(self.suggested_cats or '[]')
+        except: return []
+
+    def days_until(self):
+        """Tage bis zum Event (None wenn kein Datum, negativ wenn vorbei)."""
+        from datetime import date
+        if not self.date_from:
+            return None
+        today = date.today()
+        try:
+            if self.recurring and len(self.date_from) == 5:   # MM-DD
+                df = date(today.year, int(self.date_from[:2]), int(self.date_from[3:]))
+                if df < today:
+                    df = date(today.year + 1, int(self.date_from[:2]), int(self.date_from[3:]))
+            else:
+                df = date.fromisoformat(self.date_from)
+            return (df - today).days
+        except Exception:
+            return None
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'name': self.name, 'description': self.description or '',
+            'event_type': self.event_type, 'date_from': self.date_from or '',
+            'date_to': self.date_to or '', 'recurring': self.recurring,
+            'lead_days': self.lead_days, 'city_scope': self.get_city_scope(),
+            'meme_relevance': self.meme_relevance,
+            'suggested_cats': self.get_suggested_cats(),
+            'emoji': self.emoji or '📅', 'notes': self.notes or '',
+            'active': self.active, 'days_until': self.days_until(),
+        }
+
+
 class MemoInspirationPost(db.Model):
     """Heruntergeladener Inspirations-Post."""
     __tablename__ = 'memo_inspiration_post'
@@ -626,4 +688,80 @@ class MemoInspirationPost(db.Model):
     is_saved       = db.Column(db.Boolean, default=False)
     meme_idea      = db.Column(db.Text)
     carousel_urls  = db.Column(db.Text)
+    ai_theme       = db.Column(db.String(100))
+    ai_relevant    = db.Column(db.Boolean)   # None = not yet checked
+    ai_reasoning   = db.Column(db.Text)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ═══════════════════════════════════════════════════════════
+# KOOPERATIONEN
+# ═══════════════════════════════════════════════════════════
+
+class CollabNiche(db.Model):
+    """Nischen/Branchen für Kooperationen (z.B. Gastronomie, Sport, Beauty)."""
+    __tablename__ = 'collab_niche'
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(100), nullable=False, unique=True)
+    emoji       = db.Column(db.String(10), default='🤝')
+    description = db.Column(db.Text)
+    active      = db.Column(db.Boolean, default=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    ideas       = db.relationship('CollabIdea', backref='niche', lazy='dynamic',
+                                  cascade='all,delete')
+
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'emoji': self.emoji or '🤝',
+                'description': self.description or '', 'active': self.active,
+                'idea_count': self.ideas.filter_by(active=True).count()}
+
+
+class CollabIdea(db.Model):
+    """Kooperationsidee, die auf beliebig viele Städte angewendet werden kann."""
+    __tablename__ = 'collab_idea'
+    id            = db.Column(db.Integer, primary_key=True)
+    niche_id      = db.Column(db.Integer, db.ForeignKey('collab_niche.id'), nullable=False, index=True)
+    title         = db.Column(db.String(200), nullable=False)
+    description   = db.Column(db.Text)
+    # Template-Text mit {partner_name} und {city_name} als Platzhalter
+    template_text = db.Column(db.Text)
+    example_image = db.Column(db.String(500))
+    active        = db.Column(db.Boolean, default=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    city_collabs  = db.relationship('CityCollab', backref='idea', lazy='dynamic',
+                                    cascade='all,delete')
+
+    def to_dict(self):
+        assigned = self.city_collabs.count()
+        return {
+            'id': self.id, 'niche_id': self.niche_id,
+            'niche_name': self.niche.name if self.niche else '',
+            'niche_emoji': self.niche.emoji if self.niche else '🤝',
+            'title': self.title, 'description': self.description or '',
+            'template_text': self.template_text or '',
+            'example_image': self.example_image or '',
+            'active': self.active, 'assigned_cities': assigned,
+        }
+
+
+class CityCollab(db.Model):
+    """Konkrete Kooperation: Idee × Stadt × Partner."""
+    __tablename__ = 'city_collab'
+    id           = db.Column(db.Integer, primary_key=True)
+    idea_id      = db.Column(db.Integer, db.ForeignKey('collab_idea.id'), nullable=False, index=True)
+    city_id      = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False, index=True)
+    partner_name = db.Column(db.String(200), nullable=False)  # z.B. "Café Luisa"
+    partner_ig   = db.Column(db.String(100))
+    status       = db.Column(db.String(20), default='aktiv')  # aktiv | pausiert | abgeschlossen
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    city         = db.relationship('City', backref=db.backref('collabs', lazy='dynamic'))
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'idea_id': self.idea_id,
+            'city_id': self.city_id, 'city_name': self.city.name if self.city else '',
+            'partner_name': self.partner_name, 'partner_ig': self.partner_ig or '',
+            'status': self.status, 'notes': self.notes or '',
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+        }

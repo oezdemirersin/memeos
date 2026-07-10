@@ -4,7 +4,7 @@
     {
       "name": "memeos",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["app.py"],
+      "runtimeArgs": ["/Users/ersinozdemir/Downloads/memeos/app.py"],
       "port": 5200
     }
   ]
