@@ -7,20 +7,24 @@ import secrets
 db = SQLAlchemy()
 
 KNOWLEDGE_CATEGORIES = [
-    ("problem_place",    "Problemort",         "#ef4444"),
-    ("landmark",         "Wahrzeichen",         "#3b82f6"),
-    ("youth_spot",       "Jugendtreff",         "#22c55e"),
-    ("food_spot",        "Essensort",           "#f59e0b"),
-    ("traffic_spot",     "Verkehrspunkt",       "#8b5cf6"),
-    ("school",           "Schule / Uni",        "#06b6d4"),
-    ("event",            "Event / Fest",        "#ec4899"),
-    ("klischee",         "Klischee",            "#f97316"),
-    ("stadtteil_arm",    "Problemviertel",      "#dc2626"),
-    ("stadtteil_reich",  "Reiches Viertel",     "#16a34a"),
-    ("stadtteil_student","Studentenviertel",    "#7c3aed"),
-    ("local_meme",       "Lokales Meme",        "#0ea5e9"),
-    ("sport",            "Sportverein",         "#84cc16"),
-    ("dialect",          "Dialekt / Ausdruck",  "#d97706"),
+    ("problem_place",    "🚨 Problemort / Kriminalität",  "#ef4444"),
+    ("landmark",         "🗺️ Wahrzeichen",                "#3b82f6"),
+    ("youth_spot",       "👶 Jugendtreff",                "#22c55e"),
+    ("food_spot",        "🍔 Essensort",                  "#f59e0b"),
+    ("traffic_spot",     "🚗 Verkehrspunkt",              "#8b5cf6"),
+    ("school",           "🎓 Schule / Uni",               "#06b6d4"),
+    ("event",            "🎉 Event / Tradition",          "#ec4899"),
+    ("klischee",         "😏 Klischee",                   "#f97316"),
+    ("stadtteil_arm",    "🏚️ Problemviertel",             "#dc2626"),
+    ("stadtteil_reich",  "🏘️ Reiches Viertel",            "#16a34a"),
+    ("stadtteil_student","📚 Studentenviertel",           "#7c3aed"),
+    ("local_meme",       "😂 Lokales Meme / Running Gag", "#0ea5e9"),
+    ("sport",            "⚽ Sportverein",                "#84cc16"),
+    ("dialect",          "💬 Dialekt / Slang",            "#d97706"),
+    ("person",           "👤 Bekannte Person",            "#6366f1"),
+    ("rivalitaet",       "⚔️ Stadt-Rivalität",            "#f43f5e"),
+    ("witz",             "🤣 Stadt-Witz",                 "#14b8a6"),
+    ("sonstiges",        "📝 Sonstiges",                  "#94a3b8"),
 ]
 
 CATEGORY_MAP = {k: (label, color) for k, label, color in KNOWLEDGE_CATEGORIES}
@@ -112,12 +116,17 @@ class CityKnowledge(db.Model):
     description    = db.Column(db.Text)
     confidence     = db.Column(db.Integer, default=70)   # 0–100
     source         = db.Column(db.String(30), default='ai')  # ai | resident | verified | manual
+    source_post_id = db.Column(db.Integer, db.ForeignKey('memo_inspiration_post.id'), nullable=True)
     used_count     = db.Column(db.Integer, default=0)
     last_used_at   = db.Column(db.DateTime)
     cooldown_until = db.Column(db.DateTime)
     active         = db.Column(db.Boolean, default=True, index=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at     = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    source_post = db.relationship('MemoInspirationPost',
+                                  backref=db.backref('knowledge_extracted', lazy='dynamic'),
+                                  foreign_keys=[source_post_id])
 
     @property
     def on_cooldown(self):
@@ -134,6 +143,29 @@ class CityKnowledge(db.Model):
     @property
     def source_badge(self):
         return {'ai': 'KI', 'resident': 'Einwohner', 'verified': 'Verifiziert', 'manual': 'Manuell'}.get(self.source, self.source)
+
+    @property
+    def verified(self):
+        return self.source == 'verified' or self.source == 'manual'
+
+    def to_dict(self):
+        cat_label = self.category_label
+        return {
+            'id':             self.id,
+            'city_id':        self.city_id,
+            'city_name':      self.city.name if hasattr(self, 'city') and self.city else '',
+            'category':       self.category,
+            'category_label': cat_label,
+            'content':        (self.name or '') + (('\n' + self.description) if self.description else ''),
+            'name':           self.name or '',
+            'description':    self.description or '',
+            'confidence':     self.confidence or 70,
+            'source':         self.source or 'ai',
+            'source_post_id': self.source_post_id,
+            'verified':       self.verified,
+            'active':         self.active,
+            'created_at':     self.created_at.isoformat() if self.created_at else '',
+        }
 
 
 TEMPLATE_CATEGORIES = [

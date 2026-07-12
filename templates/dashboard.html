@@ -494,6 +494,12 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <span class="nav-badge" id="nav-collab-badge" style="display:none"></span>
     </button>
 
+    <button class="nav-item" onclick="showPage('stadtwissen')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      Stadtwissen
+      <span class="nav-badge" id="nav-wissen-badge" style="display:none"></span>
+    </button>
+
     <div class="nav-section">System</div>
     <button class="nav-item" onclick="showPage('todos')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
@@ -1646,6 +1652,98 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- STADTWISSEN PAGE                                          -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="page" id="page-stadtwissen">
+  <div class="page-header">
+    <div class="page-title">STADT<span>WISSEN</span></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="wissen-city-select" onchange="loadStadtwissen()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
+        <option value="">Alle Städte</option>
+        {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+      <select id="wissen-cat-filter" onchange="loadStadtwissen()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
+        <option value="">Alle Kategorien</option>
+        <option value="reichenviertel">🏘️ Reichenviertel</option>
+        <option value="problemviertel">🏚️ Problemviertel</option>
+        <option value="kriminalitaet">🚨 Kriminalität</option>
+        <option value="running_gag">😂 Running Gags</option>
+        <option value="person">👤 Personen</option>
+        <option value="slang">💬 Slang</option>
+        <option value="sehenswuerdigkeit">🗺️ Sehenswürdigkeiten</option>
+        <option value="event">🎉 Events</option>
+        <option value="viertel">📍 Viertel</option>
+        <option value="rivalitaet">⚔️ Rivalitäten</option>
+        <option value="witz">🤣 Witze</option>
+        <option value="sonstiges">📝 Sonstiges</option>
+      </select>
+      <select id="wissen-verified-filter" onchange="loadStadtwissen()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
+        <option value="">Alle Status</option>
+        <option value="0">⏳ Ausstehend</option>
+        <option value="1">✅ Bestätigt</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="openWissenAddModal()">+ Eintrag</button>
+    </div>
+  </div>
+
+  <!-- Stats-Balken -->
+  <div id="wissen-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+  <!-- Pending AI-Vorschläge -->
+  <div id="wissen-pending-section" style="display:none;margin-bottom:20px;">
+    <div style="font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--accent);margin-bottom:8px;">⏳ KI-VORSCHLÄGE ZUM BESTÄTIGEN</div>
+    <div id="wissen-pending-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+  </div>
+
+  <!-- Bestätigtes Wissen -->
+  <div id="wissen-verified-section">
+    <div style="font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">✅ BESTÄTIGTES STADTWISSEN</div>
+    <div id="wissen-verified-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+  </div>
+</div>
+
+<!-- Stadtwissen Add Modal -->
+<div class="modal-overlay" id="modal-wissen-add">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-title">WISSEN HINZUFÜGEN</div>
+    <button class="modal-close" onclick="closeModal('modal-wissen-add')">×</button>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+      <div>
+        <label class="form-label">Stadt</label>
+        <select id="wissen-add-city" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);">
+          {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Kategorie</label>
+        <select id="wissen-add-cat" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);">
+          <option value="reichenviertel">🏘️ Reichenviertel</option>
+          <option value="problemviertel">🏚️ Problemviertel</option>
+          <option value="kriminalitaet">🚨 Kriminalität</option>
+          <option value="running_gag">😂 Running Gags / Insider</option>
+          <option value="person">👤 Bekannte Personen</option>
+          <option value="slang">💬 Lokaler Slang</option>
+          <option value="sehenswuerdigkeit">🗺️ Sehenswürdigkeiten</option>
+          <option value="event">🎉 Events & Traditionen</option>
+          <option value="viertel">📍 Wichtige Viertel</option>
+          <option value="rivalitaet">⚔️ Stadt-Rivalitäten</option>
+          <option value="witz">🤣 Stadt-Witze</option>
+          <option value="sonstiges">📝 Sonstiges</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Inhalt</label>
+        <textarea id="wissen-add-content" rows="3" placeholder="z.B. Das Westend gilt als Reichenviertel in Frankfurt…" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-wissen-add')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveWissen()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <!-- Collab Nische Modal -->
 <div class="modal-overlay" id="modal-collab-niche">
   <div class="modal" style="max-width:420px;">
@@ -2699,6 +2797,7 @@ function showPage(name) {
   if(name==='performance') loadPerformance();
   if(name==='events') loadEvents();
   if(name==='kooperationen') loadKooperationen();
+  if(name==='stadtwissen')  loadStadtwissen();
   history.replaceState(null,'','/?tab='+name);
 }
 
@@ -3368,6 +3467,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTemplates();
   refreshStats();
   loadEventsBadge();
+  _loadWissenBadge();
   // Brand preview live-update
   ['city-brand-bg','city-brand-bg-hex','city-brand-text','city-brand-text-hex','city-brand-font',
    'city-color','city-color-hex'].forEach(id => {
@@ -6384,8 +6484,12 @@ async function runInspoAiSort() {
   const r = await api('POST', '/api/inspiration/ai-sort', { count: 20 });
   btn.disabled = false; btn.textContent = '🤖 KI sortieren';
   if (r.error) { toast(r.error, 'error'); return; }
-  toast(`${r.processed} Posts sortiert`, 'success');
+  let msg = `${r.processed} Posts sortiert`;
+  if (r.knowledge_added > 0) msg += ` · ${r.knowledge_added} Stadtwissen-Einträge extrahiert 💡`;
+  toast(msg, 'success');
   loadInspoPosts();
+  // Badge im Stadtwissen-Nav aktualisieren
+  _loadWissenBadge();
 }
 
 async function inspoAiApprove(id) {
@@ -6631,6 +6735,137 @@ async function saveRecycleSettings() {
   };
   const r = await api('POST', '/api/settings/recycle', body);
   toast(r.ok ? '♻️ Recycle-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
+}
+
+// ══════════════════════════════════════════
+// STADTWISSEN
+// ══════════════════════════════════════════
+const WISSEN_CATS = {
+  reichenviertel:    '🏘️ Reichenviertel',
+  problemviertel:    '🏚️ Problemviertel',
+  kriminalitaet:     '🚨 Kriminalität',
+  running_gag:       '😂 Running Gags',
+  person:            '👤 Personen',
+  slang:             '💬 Slang',
+  sehenswuerdigkeit: '🗺️ Sehenswürdigkeiten',
+  event:             '🎉 Events',
+  viertel:           '📍 Viertel',
+  rivalitaet:        '⚔️ Rivalitäten',
+  witz:              '🤣 Witze',
+  sonstiges:         '📝 Sonstiges',
+};
+
+async function loadStadtwissen() {
+  const cityId   = document.getElementById('wissen-city-select')?.value || '';
+  const cat      = document.getElementById('wissen-cat-filter')?.value || '';
+  const verified = document.getElementById('wissen-verified-filter')?.value;
+
+  let url = '/api/knowledge/all?';
+  if (cityId)   url += `city_id=${cityId}&`;
+  if (cat)      url += `category=${cat}&`;
+  if (verified !== undefined && verified !== '') url += `verified=${verified}&`;
+
+  const entries = await api('GET', url);
+  if (!Array.isArray(entries)) return;
+
+  const pending  = entries.filter(e => !e.verified);
+  const verified_ = entries.filter(e => e.verified);
+
+  // Pending-Sektion
+  const pSection = document.getElementById('wissen-pending-section');
+  const pList    = document.getElementById('wissen-pending-list');
+  if (pending.length > 0) {
+    pSection.style.display = '';
+    pList.innerHTML = pending.map(e => _renderWissenEntry(e, true)).join('');
+  } else {
+    pSection.style.display = 'none';
+    pList.innerHTML = '';
+  }
+
+  // Bestätigte
+  const vList = document.getElementById('wissen-verified-list');
+  if (verified_.length > 0) {
+    vList.innerHTML = verified_.map(e => _renderWissenEntry(e, false)).join('');
+  } else {
+    vList.innerHTML = `<div class="empty"><p>Noch kein bestätigtes Wissen für diese Auswahl.</p></div>`;
+  }
+
+  _loadWissenBadge();
+}
+
+function _renderWissenEntry(e, isPending) {
+  const catLabel = WISSEN_CATS[e.category] || e.category;
+  const conf     = e.confidence < 1 ? `<span style="color:var(--text-muted);font-size:11px;">${Math.round(e.confidence*100)}%</span>` : '';
+  const src      = e.source_post_id ? `<a href="#" onclick="event.preventDefault()" style="font-size:11px;color:var(--accent);">📸 Post #${e.source_post_id}</a>` : '';
+  const actions  = isPending
+    ? `<div style="display:flex;gap:6px;flex-shrink:0;">
+         <button class="btn btn-primary btn-sm" onclick="verifyWissen(${e.id})">✅</button>
+         <button class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="rejectWissen(${e.id})">✕</button>
+       </div>`
+    : `<div style="display:flex;gap:6px;flex-shrink:0;">
+         <button class="btn btn-ghost btn-sm" onclick="deleteWissen(${e.id})" title="Löschen" style="color:var(--text-muted);">🗑</button>
+       </div>`;
+
+  return `<div id="wissen-entry-${e.id}" style="display:flex;align-items:flex-start;gap:10px;background:var(--surface2);border-radius:8px;padding:10px 12px;border-left:3px solid ${isPending ? '#f59e0b' : 'var(--accent)'};">
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;background:var(--surface3);padding:2px 6px;border-radius:4px;">${_esc(catLabel)}</span>
+        <span style="font-size:11px;color:var(--text-muted);">${_esc(e.city_name)}</span>
+        ${conf}${src}
+      </div>
+      <div style="font-size:13px;">${_esc(e.content)}</div>
+    </div>
+    ${actions}
+  </div>`;
+}
+
+async function verifyWissen(id) {
+  await api('POST', `/api/knowledge/${id}/verify`);
+  document.getElementById(`wissen-entry-${id}`)?.remove();
+  loadStadtwissen();
+}
+
+async function rejectWissen(id) {
+  await api('POST', `/api/knowledge/${id}/reject`);
+  document.getElementById(`wissen-entry-${id}`)?.remove();
+  _loadWissenBadge();
+}
+
+async function deleteWissen(id) {
+  if (!confirm('Eintrag wirklich löschen?')) return;
+  await api('DELETE', `/api/knowledge/${id}`);
+  document.getElementById(`wissen-entry-${id}`)?.remove();
+  _loadWissenBadge();
+}
+
+function openWissenAddModal() {
+  const cityId = document.getElementById('wissen-city-select')?.value;
+  if (cityId) document.getElementById('wissen-add-city').value = cityId;
+  document.getElementById('wissen-add-content').value = '';
+  openModal('modal-wissen-add');
+}
+
+async function saveWissen() {
+  const city_id  = document.getElementById('wissen-add-city').value;
+  const category = document.getElementById('wissen-add-cat').value;
+  const content  = document.getElementById('wissen-add-content').value.trim();
+  if (!content) { toast('Bitte Inhalt eingeben', 'error'); return; }
+  const r = await api('POST', '/api/knowledge/add', { city_id: parseInt(city_id), category, content });
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Wissen gespeichert ✅', 'success');
+  closeModal('modal-wissen-add');
+  loadStadtwissen();
+}
+
+async function _loadWissenBadge() {
+  const stats = await api('GET', '/api/knowledge/stats');
+  if (!Array.isArray(stats)) return;
+  const pending = stats.reduce((s, r) => s + r.pending, 0);
+  const badge = document.getElementById('nav-wissen-badge');
+  if (badge) {
+    badge.style.display = pending > 0 ? '' : 'none';
+    badge.textContent   = pending > 0 ? pending : '';
+  }
 }
 
 </script>

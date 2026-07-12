@@ -2784,7 +2784,7 @@ Antworte mit JSON:
 @app.route('/api/inspiration/ai-sort', methods=['POST'])
 @login_required
 def api_inspo_ai_sort():
-    """Lässt Claude unsortierte Posts thematisch einordnen (relevant ja/nein + Thema)."""
+    """Lässt Claude unsortierte Posts thematisch einordnen + Stadtwissen extrahieren."""
     if not ANTHROPIC_API_KEY:
         return jsonify({'error': 'Kein API Key'}), 400
     count = int(request.json.get('count', 20) if request.json else 20)
@@ -2797,24 +2797,42 @@ def api_inspo_ai_sort():
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     processed = 0
+    knowledge_added = 0
+    import re
     for p in posts:
+        city_name = p.source.city.name if p.source and p.source.city else 'unbekannte Stadt'
+        city_id   = p.source.city_id if p.source else None
         try:
             msg = client.messages.create(
                 model='claude-haiku-4-5-20251001',
-                max_tokens=200,
-                messages=[{'role': 'user', 'content': f"""Bewerte diesen Instagram-Post für deutsche Stadtmeme-Seiten.
+                max_tokens=600,
+                messages=[{'role': 'user', 'content': f"""Du analysierst einen Instagram-Post aus {city_name} für ein lokales Meme-Konto.
 
 Von: @{p.source.username if p.source else 'unbekannt'}
-Caption: {(p.caption or '')[:400]}
+Caption: {(p.caption or '')[:500]}
 Likes: {p.like_count or '?'}
 
-Ist der Post relevant als Meme-Inspiration für lokale deutsche Stadtseiten?
-Antworte mit JSON:
-{{"relevant": true/false, "theme": "<kurzes Thema, max 40 Zeichen, z.B. Wetter, Stadtleben, Humor, Food, Sport>", "reasoning": "<1 Satz Begründung>"}}"""}]
+Beantworte zwei Dinge als JSON:
+
+1. Ist der Post relevant als Meme-Inspiration (Humor, Stadtleben, lokale Themen)?
+2. Extrahiere stadtspezifisches Meme-Wissen aus dem Post — also alles, was man wissen muss, um gute Memes über {city_name} zu machen: Viertel-Reputationen, Running Gags, Personen, Slang, Kriminalitätshotspots, Stadtwitze, Rivalitäten etc.
+
+Kategorien: reichenviertel, problemviertel, kriminalitaet, running_gag, person, slang, sehenswuerdigkeit, event, viertel, rivalitaet, witz, sonstiges
+
+Antworte NUR mit diesem JSON (kein anderer Text):
+{{
+  "relevant": true,
+  "theme": "Stadtleben",
+  "reasoning": "1 Satz Begründung",
+  "city_knowledge": [
+    {{"category": "running_gag", "content": "In {city_name} sagt man X wenn...", "confidence": 0.85}}
+  ]
+}}
+
+Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als leeres Array []."""}]
             )
             _log_ai_usage('inspo_sort', 'claude-haiku-4-5-20251001',
                           msg.usage.input_tokens, msg.usage.output_tokens)
-            import re
             raw = msg.content[0].text.strip()
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
@@ -2823,10 +2841,32 @@ Antworte mit JSON:
                 p.ai_theme     = data.get('theme', '')[:100]
                 p.ai_reasoning = data.get('reasoning', '')
                 processed += 1
+                # Stadtwissen speichern
+                if city_id:
+                    for kw in (data.get('city_knowledge') or []):
+                        content = (kw.get('content') or '').strip()
+                        cat     = (kw.get('category') or 'sonstiges').strip()
+                        conf    = int(float(kw.get('confidence', 0.7)) * 100)
+                        if content and len(content) > 5:
+                            # Duplikat-Check: gleiche Stadt + gleicher Name (grob)
+                            exists = CityKnowledge.query.filter_by(
+                                city_id=city_id, name=content[:200]
+                            ).first()
+                            if not exists:
+                                db.session.add(CityKnowledge(
+                                    city_id=city_id,
+                                    category=cat,
+                                    name=content[:200],
+                                    description='',
+                                    confidence=conf,
+                                    source='ai',
+                                    source_post_id=p.id,
+                                ))
+                                knowledge_added += 1
         except Exception:
             pass
     db.session.commit()
-    return jsonify({'ok': True, 'processed': processed, 'total': len(posts)})
+    return jsonify({'ok': True, 'processed': processed, 'knowledge_added': knowledge_added, 'total': len(posts)})
 
 
 @app.route('/api/inspiration/posts/<int:post_id>/ai-approve', methods=['POST'])
@@ -2846,6 +2886,91 @@ def api_inspo_ai_reject(post_id):
     p.status = 'ignored'
     db.session.commit()
     return jsonify({'ok': True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STADTWISSEN API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/knowledge/all', methods=['GET'])
+@login_required
+def api_knowledge_all():
+    """Stadtwissen — gefiltert nach Stadt/Kategorie/Status für Stadtwissen-Seite."""
+    city_id  = request.args.get('city_id', type=int)
+    category = request.args.get('category')
+    verified = request.args.get('verified')   # '1'=verifiziert, '0'=AI-Vorschlag
+    q = CityKnowledge.query.filter_by(active=True)
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    if category:
+        q = q.filter_by(category=category)
+    if verified == '1':
+        q = q.filter(CityKnowledge.source.in_(['verified', 'manual', 'resident']))
+    elif verified == '0':
+        q = q.filter_by(source='ai')
+    entries = q.order_by(CityKnowledge.created_at.desc()).all()
+    return jsonify([e.to_dict() for e in entries])
+
+
+@app.route('/api/knowledge/add', methods=['POST'])
+@login_required
+def api_knowledge_add():
+    """Manuell einen Stadtwissen-Eintrag hinzufügen (verifiziert)."""
+    d = request.json or {}
+    city_id = d.get('city_id')
+    content = (d.get('content') or '').strip()
+    if not city_id or not content:
+        return jsonify({'error': 'city_id und content erforderlich'}), 400
+    e = CityKnowledge(
+        city_id=city_id,
+        category=d.get('category', 'sonstiges'),
+        name=content[:200],
+        description='',
+        confidence=100,
+        source='manual',
+    )
+    db.session.add(e)
+    db.session.commit()
+    return jsonify(e.to_dict()), 201
+
+
+@app.route('/api/knowledge/<int:kid>/verify', methods=['POST'])
+@login_required
+def api_knowledge_verify(kid):
+    """KI-Vorschlag als verifiziert markieren."""
+    e = CityKnowledge.query.get_or_404(kid)
+    e.source = 'verified'
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/knowledge/<int:kid>/reject', methods=['POST'])
+@login_required
+def api_knowledge_reject(kid):
+    """KI-Vorschlag ablehnen (soft-delete)."""
+    e = CityKnowledge.query.get_or_404(kid)
+    e.active = False
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/knowledge/stats', methods=['GET'])
+@login_required
+def api_knowledge_stats():
+    """Ausstehende KI-Vorschläge pro Stadt."""
+    from sqlalchemy import func
+    rows = db.session.query(
+        City.id, City.name,
+        func.count(CityKnowledge.id).label('total'),
+        func.sum(db.case((CityKnowledge.source == 'ai', 1), else_=0)).label('pending'),
+    ).outerjoin(CityKnowledge, (CityKnowledge.city_id == City.id) & (CityKnowledge.active == True))\
+     .group_by(City.id).order_by(func.count(CityKnowledge.id).desc()).all()
+    return jsonify([{
+        'city_id': r.id, 'city_name': r.name,
+        'total': r.total or 0,
+        'pending': int(r.pending or 0),
+        'verified': (r.total or 0) - int(r.pending or 0),
+    } for r in rows])
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # KOOPERATIONEN API
