@@ -1,10 +1,39 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os
 import json
 import hashlib
 import secrets
 
 db = SQLAlchemy()
+
+# Wird von app.py nach dem Bestimmen des Datenpfads gesetzt (Punkt 13).
+# Dient nur der Auflösung lokaler Slide-Dateinamen zu /uploads/… bzw. /renders/….
+UPLOAD_DIR = ''
+
+_VIDEO_EXT = ('mp4', 'mov', 'webm')
+
+
+def slide_kind(url_or_name):
+    """'video' für mp4/mov/webm, sonst 'image' (nach Dateiendung, Query-String ignoriert)."""
+    base = (url_or_name or '').split('?')[0].lower()
+    ext = base.rsplit('.', 1)[-1] if '.' in base else ''
+    return 'video' if ext in _VIDEO_EXT else 'image'
+
+
+def slide_url(name):
+    """Dateiname oder URL → ausspielbare URL.
+    http(s)-URLs und bereits relative Pfade (/uploads/…, /renders/…) bleiben unverändert;
+    ein nackter Dateiname wird /uploads/<f>, wenn er im Upload-Ordner liegt, sonst /renders/<f>."""
+    if not name:
+        return ''
+    if name.startswith('http://') or name.startswith('https://') or name.startswith('/'):
+        return name
+    base = os.path.basename(name)
+    if UPLOAD_DIR and os.path.exists(os.path.join(UPLOAD_DIR, base)):
+        return '/uploads/' + base
+    return '/renders/' + base
+
 
 KNOWLEDGE_CATEGORIES = [
     ("problem_place",    "🚨 Problemort / Kriminalität",  "#ef4444"),
@@ -24,10 +53,29 @@ KNOWLEDGE_CATEGORIES = [
     ("person",           "👤 Bekannte Person",            "#6366f1"),
     ("rivalitaet",       "⚔️ Stadt-Rivalität",            "#f43f5e"),
     ("witz",             "🤣 Stadt-Witz",                 "#14b8a6"),
+    ("viertel",          "📍 Wichtiges Viertel",          "#0891b2"),
     ("sonstiges",        "📝 Sonstiges",                  "#94a3b8"),
 ]
 
 CATEGORY_MAP = {k: (label, color) for k, label, color in KNOWLEDGE_CATEGORIES}
+
+# Alte Schlüssel der Stadtwissen-Seite / des KI-Sorts → Registry-Schlüssel.
+# event, viertel, rivalitaet, witz, person, sonstiges heißen in beiden Welten gleich.
+LEGACY_CATEGORY_MAP = {
+    'reichenviertel':   'stadtteil_reich',
+    'problemviertel':   'stadtteil_arm',
+    'kriminalitaet':    'problem_place',
+    'running_gag':      'local_meme',
+    'slang':            'dialect',
+    'sehenswuerdigkeit':'landmark',
+}
+
+
+def normalize_category(cat, default='sonstiges'):
+    """Beliebigen Kategorie-String auf einen Registry-Schlüssel abbilden; unbekannt → default."""
+    key = (cat or '').strip().lower()
+    key = LEGACY_CATEGORY_MAP.get(key, key)
+    return key if key in CATEGORY_MAP else default
 
 
 class User(db.Model):
@@ -235,16 +283,17 @@ class MemeTemplate(db.Model):
     id               = db.Column(db.Integer, primary_key=True)
     name             = db.Column(db.String(200), nullable=False)
     description      = db.Column(db.Text)
-    canva_template_id= db.Column(db.String(100))         # Canva Brand Template ID
-    canva_url        = db.Column(db.String(500))         # Direktlink zum Canva-Design
-    render_type      = db.Column(db.String(20), default='canva')  # canva | pil | manual
+    canva_template_id= db.Column(db.String(100))         # LEGACY (Autofill entfernt) – wird nicht mehr geschrieben/ausgegeben
+    canva_url        = db.Column(db.String(500))         # Direktlink zum Canva-Design (nur Referenz)
+    render_type      = db.Column(db.String(20), default='pil')  # pil | manual
     pil_config       = db.Column(db.Text, default='{}')  # JSON-Konfiguration für PIL-Rendering
     required_vars    = db.Column(db.Text, default='[]')  # JSON: ["problem_place", "landmark"]
-    canva_field_map  = db.Column(db.Text, default='{}')  # JSON: {"problem_place": "feld_in_canva"}
+    canva_field_map  = db.Column(db.Text, default='{}')  # LEGACY (Autofill entfernt) – wird nicht mehr geschrieben/ausgegeben
     tags             = db.Column(db.Text, default='[]')  # JSON: ["pov", "klischee"]
     category         = db.Column(db.String(50), default='allgemein', index=True)
     rating           = db.Column(db.Integer, default=0)  # 0–5 Sterne
-    preview_image    = db.Column(db.String(500))
+    preview_image    = db.Column(db.String(500))         # Dateiname des Hintergrundbilds im Upload-Ordner
+    preview_url      = db.Column(db.String(1000))        # Cloudinary-URL des Hintergrundbilds (Deploy-sicher)
     example_text     = db.Column(db.Text)                # Beispiel-Text wie das Template aussieht
     notes            = db.Column(db.Text)                # Interne Notizen
     seasonal_from    = db.Column(db.String(5))           # "12-01"
@@ -262,16 +311,13 @@ class MemeTemplate(db.Model):
         try: return json.loads(self.required_vars or '[]')
         except: return []
 
-    def get_canva_field_map(self):
-        try: return json.loads(self.canva_field_map or '{}')
-        except: return {}
-
     def get_tags(self):
         try: return json.loads(self.tags or '[]')
         except: return []
 
     def has_canva(self):
-        return bool(self.canva_template_id and self.canva_template_id.strip())
+        """Bedeutet seit Wegfall des Autofills nur noch: ein Canva-Link ist hinterlegt."""
+        return bool(self.canva_url and self.canva_url.strip())
 
 
 class RenderJob(db.Model):
@@ -377,6 +423,29 @@ class AppSettings(db.Model):
         db.session.commit()
 
 
+class ExportJob(db.Model):
+    """ZIP-Export-Auftrag – persistent statt im Prozess-Speicher (überlebt mehrere Gunicorn-Worker)."""
+    __tablename__ = 'export_job'
+    id         = db.Column(db.String(36), primary_key=True)
+    status     = db.Column(db.String(20), default='pending', index=True)  # pending | building | ready | error
+    path       = db.Column(db.String(1000))
+    filename   = db.Column(db.String(300))
+    post_count = db.Column(db.Integer, default=0)
+    error      = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            'job_id':     self.id,
+            'status':     self.status,
+            'ready':      self.status == 'ready',
+            'filename':   self.filename,
+            'post_count': self.post_count or 0,
+            'error':      self.error,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class AppTodo(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     text       = db.Column(db.Text, nullable=False)
@@ -464,11 +533,24 @@ class MemoInspirationSource(db.Model):
     __tablename__ = 'memo_inspiration_source'
     id         = db.Column(db.Integer, primary_key=True)
     username   = db.Column(db.String(100), nullable=False, unique=True)
+    city_id    = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=True, index=True)
+    platform   = db.Column(db.String(20), default='instagram')  # instagram | tiktok | …
     notes      = db.Column(db.Text)
     last_fetch = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    city       = db.relationship('City', backref=db.backref('inspiration_sources', lazy='dynamic'))
     posts      = db.relationship('MemoInspirationPost', backref='source',
                                  lazy='dynamic', cascade='all,delete')
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'username': self.username, 'notes': self.notes or '',
+            'city_id': self.city_id,
+            'city_name': self.city.name if self.city else '',
+            'platform': self.platform or 'instagram',
+            'post_count': self.post_count(), 'new_count': self.new_count(),
+            'last_fetch': self.last_fetch.isoformat() if self.last_fetch else None,
+        }
 
     def post_count(self):
         return self.posts.count()
@@ -521,7 +603,8 @@ class MemePost(db.Model):
     @property
     def status_label(self):
         return {'entwurf':'Entwurf','bereit':'Bereit','geplant':'Geplant',
-                'veroeffentlicht':'Veröffentlicht','archiviert':'Archiviert'}.get(self.status, self.status)
+                'veroeffentlicht':'Veröffentlicht','archiviert':'Archiviert',
+                'rendering':'Wird gerendert','failed':'Fehlgeschlagen'}.get(self.status, self.status)
 
     def get_carousel_paths(self):
         try: return json.loads(self.carousel_paths or '[]')
@@ -534,15 +617,32 @@ class MemePost(db.Model):
         interactions = (self.perf_likes or 0) + (self.perf_comments or 0) + (self.perf_saves or 0)
         return round(interactions / reach * 100, 2)
 
+    def get_slides(self):
+        """Liste von {'url', 'kind'} – bei Karussells aus carousel_paths, sonst ein Eintrag aus image_url."""
+        slides = []
+        if self.post_type == 'carousel':
+            for name in self.get_carousel_paths():
+                url = slide_url(name)
+                if url:
+                    slides.append({'url': url, 'kind': slide_kind(url)})
+        if not slides:
+            single = self.image_url or (slide_url(self.image_path) if self.image_path else '')
+            if single:
+                single = slide_url(single)
+                slides.append({'url': single, 'kind': slide_kind(single)})
+        return slides
+
     def to_dict(self):
         city_name = self.city.name if self.city else ''
         city_color = self.city.accent_color if self.city else '#3b82f6'
         tmpl_name  = self.template.name if self.template else ''
+        slides = self.get_slides()
         return {
             'id': self.id, 'city_id': self.city_id, 'city_name': city_name,
             'city_color': city_color, 'template_id': self.template_id,
             'template_name': tmpl_name, 'render_job_id': self.render_job_id,
             'title': self.title or '', 'image_url': self.image_url or self.image_path or '',
+            'slides': slides, 'slide_count': len(slides),
             'caption': self.caption or '', 'hashtags': self.hashtags or '',
             'post_type': self.post_type, 'status': self.status,
             'status_label': self.status_label,
@@ -553,7 +653,7 @@ class MemePost(db.Model):
             'perf_saves': self.perf_saves, 'perf_reach': self.perf_reach,
             'perf_impressions': self.perf_impressions,
             'engagement_rate': self.engagement_rate,
-            'created_at': self.created_at.isoformat(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -674,22 +774,70 @@ class MemeEvent(db.Model):
         try: return json.loads(self.suggested_cats or '[]')
         except: return []
 
-    def days_until(self):
-        """Tage bis zum Event (None wenn kein Datum, negativ wenn vorbei)."""
+    @staticmethod
+    def _month_day(s):
+        """'MM-DD' oder 'YYYY-MM-DD' → (monat, tag)."""
+        s = (s or '').strip()
+        if len(s) == 5:
+            return int(s[:2]), int(s[3:])
+        from datetime import date
+        d = date.fromisoformat(s)
+        return d.month, d.day
+
+    def _window(self, today):
+        """(start, ende, wiederkehrend) als date-Objekte für das aktuelle Jahr bzw. das feste Datum.
+        None, wenn kein/ungültiges Datum."""
         from datetime import date
         if not self.date_from:
             return None
-        today = date.today()
         try:
-            if self.recurring and len(self.date_from) == 5:   # MM-DD
-                df = date(today.year, int(self.date_from[:2]), int(self.date_from[3:]))
-                if df < today:
-                    df = date(today.year + 1, int(self.date_from[:2]), int(self.date_from[3:]))
-            else:
-                df = date.fromisoformat(self.date_from)
-            return (df - today).days
+            if self.recurring:
+                mf, df_ = self._month_day(self.date_from)
+                start = date(today.year, mf, df_)
+                if self.date_to:
+                    mt, dt_ = self._month_day(self.date_to)
+                    end = date(today.year, mt, dt_)
+                else:
+                    end = start
+                return start, end, True
+            start = date.fromisoformat(self.date_from)
+            end = date.fromisoformat(self.date_to) if self.date_to else start
+            if end < start:
+                end = start
+            return start, end, False
         except Exception:
             return None
+
+    def is_active_today(self):
+        """Läuft das Event heute? Berücksichtigt date_to und bei recurring den Jahreswechsel
+        (z. B. Winter 12-21..03-20)."""
+        from datetime import date
+        today = date.today()
+        w = self._window(today)
+        if not w:
+            return False
+        start, end, rec = w
+        if rec and end < start:            # über den Jahreswechsel hinweg
+            return today >= start or today <= end
+        return start <= today <= end
+
+    def days_until(self):
+        """Tage bis zum nächsten Beginn (None wenn kein Datum, 0 wenn das Event gerade läuft,
+        negativ wenn ein einmaliges Event vorbei ist)."""
+        from datetime import date
+        today = date.today()
+        w = self._window(today)
+        if not w:
+            return None
+        start, end, rec = w
+        if self.is_active_today():
+            return 0
+        if rec and start < today:
+            try:
+                start = date(today.year + 1, start.month, start.day)
+            except Exception:
+                return None
+        return (start - today).days
 
     def to_dict(self):
         return {
@@ -701,6 +849,8 @@ class MemeEvent(db.Model):
             'suggested_cats': self.get_suggested_cats(),
             'emoji': self.emoji or '📅', 'notes': self.notes or '',
             'active': self.active, 'days_until': self.days_until(),
+            'active_now': self.is_active_today(),
+            'notified_at': self.notified_at.isoformat() if self.notified_at else None,
         }
 
 

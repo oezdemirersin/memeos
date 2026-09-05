@@ -26,6 +26,11 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      # Uploads/Renders/Exports/Fonts liegen auf der gemounteten Disk (überleben Deploys)
+      - key: MEMEOS_DATA_ROOT
+        value: /opt/render/project/src/instance
     disk:
       name: memeos-data
       mountPath: /opt/render/project/src/instance

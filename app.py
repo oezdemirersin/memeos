@@ -8,6 +8,7 @@ import hashlib
 import threading
 import urllib.parse
 import uuid
+import shutil
 import requests
 import feedparser
 
@@ -21,13 +22,15 @@ from datetime import datetime, timedelta
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    jsonify, session, flash, send_from_directory, abort)
+import models as _models
 from models import (db, User, City, CityKnowledge, MemeTemplate, RenderJob,
                     NewsItem, ResidentSurvey, AppSettings, AppTodo, AiUsageLog,
                     CityMarketEntry, BuyablePage,
                     MemoInspirationSource, MemoInspirationPost,
-                    MemeEvent,
+                    MemeEvent, ExportJob,
                     MemePost, TrendingTopic, RecycleJob, CityFollowerSnapshot,
-                    KNOWLEDGE_CATEGORIES, CATEGORY_MAP,
+                    KNOWLEDGE_CATEGORIES, CATEGORY_MAP, LEGACY_CATEGORY_MAP,
+                    normalize_category, slide_url,
                     TEMPLATE_CATEGORIES, TEMPLATE_CAT_MAP,
                     TEMPLATE_GROUPS, TemplateCategory,
                     CollabNiche, CollabIdea, CityCollab)
@@ -38,18 +41,88 @@ import logging
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+
+# ── Settings-Alias (ContentOS-Schreibweise → MemeOS AppSettings) ───────────────
+def get_setting(key, default=None):
+    return AppSettings.get(key, default)
+
+def set_setting(key, value):
+    return AppSettings.set(key, value)
+
+
+# ── Pfade ──────────────────────────────────────────────────────────────────────
+# Alles, was Uploads/Renders/Exports schreibt, landet im Datenpfad. Auf Render ist das die
+# gemountete Disk (MEMEOS_DATA_ROOT=/opt/render/project/src/instance); static/ wird bei jedem
+# Deploy neu ausgecheckt und ist deshalb für Nutzerdaten ungeeignet.
+_BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+_DATA_ROOT  = os.getenv('MEMEOS_DATA_ROOT') or os.path.join(_BASE_DIR, 'instance')
+_UPLOAD_DIR = os.path.join(_DATA_ROOT, 'uploads')
+_RENDER_DIR = os.path.join(_DATA_ROOT, 'renders')
+_EXPORT_DIR = os.path.join(_DATA_ROOT, 'exports')
+_FONTS_DATA_DIR = os.path.join(_DATA_ROOT, 'fonts')
+_DB_PATH    = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
+for _d in (os.path.join(_BASE_DIR, 'instance'), _DATA_ROOT,
+           _UPLOAD_DIR, _RENDER_DIR, _EXPORT_DIR, _FONTS_DATA_DIR):
+    os.makedirs(_d, exist_ok=True)
+_models.UPLOAD_DIR = _UPLOAD_DIR   # für slide_url() in MemePost.to_dict
+
+
+def _migrate_static_files():
+    """Einmalige Übernahme: Dateien aus static/uploads und static/renders in den Datenpfad
+    kopieren, wenn sie dort noch fehlen. Es wird nichts gelöscht."""
+    copied = 0
+    for src_dir, dst_dir in ((os.path.join(_BASE_DIR, 'static', 'uploads'), _UPLOAD_DIR),
+                             (os.path.join(_BASE_DIR, 'static', 'renders'), _RENDER_DIR)):
+        if not os.path.isdir(src_dir) or os.path.realpath(src_dir) == os.path.realpath(dst_dir):
+            continue
+        try:
+            for name in os.listdir(src_dir):
+                src = os.path.join(src_dir, name)
+                dst = os.path.join(dst_dir, name)
+                if os.path.isfile(src) and not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    copied += 1
+        except Exception as ex:
+            log.warning(f'Übernahme aus {src_dir} unvollständig: {ex}')
+    if copied:
+        log.info(f'{copied} Datei(en) aus static/ in den Datenpfad übernommen')
+
+_migrate_static_files()
+
+
+def _load_secret_key():
+    """SECRET_KEY aus der Umgebung; sonst aus <DATA_ROOT>/secret_key lesen oder dort einmalig
+    erzeugen. Damit überleben Sessions Neustarts, ohne dass ein Standardwert im Code steht."""
+    env_key = os.getenv('SECRET_KEY', '').strip()
+    if env_key:
+        return env_key
+    path = os.path.join(_DATA_ROOT, 'secret_key')
+    for attempt in range(5):
+        try:
+            with open(path, 'r') as fh:
+                key = fh.read().strip()
+            if key:
+                return key
+        except FileNotFoundError:
+            pass
+        except Exception as ex:
+            log.warning(f'secret_key nicht lesbar: {ex}')
+            break
+        try:
+            # O_EXCL: nur ein Prozess legt die Datei an, die anderen lesen sie im nächsten Durchlauf
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as fh:
+                fh.write(secrets.token_hex(32))
+        except FileExistsError:
+            time.sleep(0.05 * (attempt + 1))
+        except Exception as ex:
+            log.warning(f'secret_key nicht speicherbar ({ex}) – Sessions gelten nur bis zum Neustart')
+            break
+    return secrets.token_hex(32)
+
+
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'memeos-dev-secret-change-in-prod')
-
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_DB_PATH  = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
-os.makedirs(os.path.join(_BASE_DIR, 'instance'), exist_ok=True)
-os.makedirs(os.path.join(_BASE_DIR, 'static', 'renders'), exist_ok=True)
-os.makedirs(os.path.join(_BASE_DIR, 'static', 'uploads'), exist_ok=True)
-os.makedirs(os.path.join(_BASE_DIR, 'static', 'exports'), exist_ok=True)
-
-# In-memory ZIP job store: job_id -> {status, path, filename, post_count, error}
-_zip_jobs: dict = {}
+app.secret_key = _load_secret_key()
 
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{_DB_PATH}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -77,11 +150,32 @@ def _cloudinary_connected():
     return bool(os.getenv('CLOUDINARY_URL', ''))
 
 
+def _local_media_path(name):
+    """Lokalen Pfad zu einem Upload-/Render-Dateinamen finden (oder None)."""
+    if not name:
+        return None
+    base = os.path.basename(name)
+    for folder in (_UPLOAD_DIR, _RENDER_DIR):
+        candidate = os.path.join(folder, base)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _export_job_update(job_id, **fields):
+    job = ExportJob.query.get(job_id)
+    if not job:
+        return
+    for k, v in fields.items():
+        setattr(job, k, v)
+    db.session.commit()
+
+
 def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_filter):
     import zipfile, io, csv as csv_mod
     with app.app_context():
         try:
-            _zip_jobs[job_id]['status'] = 'building'
+            _export_job_update(job_id, status='building')
             q = MemePost.query
             if post_ids:
                 q = q.filter(MemePost.id.in_(post_ids))
@@ -92,11 +186,11 @@ def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_fi
                     q = q.filter_by(city_id=city_id_filter)
             posts = q.order_by(MemePost.scheduled_at, MemePost.created_at).all()
             if not posts:
-                _zip_jobs[job_id].update({'status': 'error', 'error': 'Keine Posts gefunden'})
+                _export_job_update(job_id, status='error', error='Keine Posts gefunden')
                 return
 
             fname = f'memeos_export_{datetime.utcnow().strftime("%Y%m%d_%H%M")}_{job_id[:6]}.zip'
-            zip_path = os.path.join(_BASE_DIR, 'static', 'exports', fname)
+            zip_path = os.path.join(_EXPORT_DIR, fname)
 
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 csv_buf = io.StringIO()
@@ -119,16 +213,14 @@ def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_fi
                                 img_filename = f'post_{p.id}_{city_slug}.{ext}'
                         except Exception:
                             pass
-                    elif p.image_path:
-                        base = os.path.basename(p.image_path)
-                        for folder in ('static/uploads', 'static/renders'):
-                            candidate = os.path.join(_BASE_DIR, folder, base)
-                            if os.path.exists(candidate):
-                                with open(candidate, 'rb') as fh:
-                                    img_bytes = fh.read()
-                                ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
-                                img_filename = f'post_{p.id}_{city_slug}.{ext}'
-                                break
+                    else:
+                        candidate = _local_media_path(p.image_path) or _local_media_path(p.image_url)
+                        if candidate:
+                            base = os.path.basename(candidate)
+                            with open(candidate, 'rb') as fh:
+                                img_bytes = fh.read()
+                            ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
+                            img_filename = f'post_{p.id}_{city_slug}.{ext}'
                     if img_bytes:
                         zf.writestr(f'images/{img_filename}', img_bytes)
                     writer.writerow({
@@ -140,13 +232,15 @@ def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_fi
                     })
                 zf.writestr('manifest.csv', csv_buf.getvalue())
 
-            _zip_jobs[job_id].update({
-                'status': 'ready', 'path': zip_path,
-                'filename': fname, 'post_count': len(posts),
-            })
+            _export_job_update(job_id, status='ready', path=zip_path,
+                               filename=fname, post_count=len(posts))
         except Exception as e:
             log.error(f'ZIP build failed for job {job_id}: {e}')
-            _zip_jobs[job_id].update({'status': 'error', 'error': str(e)})
+            try:
+                db.session.rollback()
+                _export_job_update(job_id, status='error', error=str(e))
+            except Exception:
+                pass
 
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -155,7 +249,7 @@ db.init_app(app)
 
 # ── Env ────────────────────────────────────────────────────────────────────────
 ADMIN_USERNAME    = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD    = os.getenv('ADMIN_PASSWORD', 'memeos2025')
+ADMIN_PASSWORD    = os.getenv('ADMIN_PASSWORD', '')   # leer → Env-Login deaktiviert (kein Standardwert mehr)
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 CANVA_CLIENT_ID   = os.getenv('CANVA_CLIENT_ID', '')
 CANVA_CLIENT_SECRET = os.getenv('CANVA_CLIENT_SECRET', '')
@@ -191,12 +285,50 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# ── Einfache Bremsen pro IP (In-Memory reicht; pro Worker getrennt) ────────────
+_rate_lock = threading.Lock()
+_rate_buckets: dict = {}   # (scope, ip) -> [timestamps]
+
+def _client_ip():
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unbekannt'
+
+def _rate_hits(scope, window_sec):
+    """Anzahl der Treffer im Fenster (ohne neuen Treffer zu zählen)."""
+    key = (scope, _client_ip())
+    now = time.time()
+    with _rate_lock:
+        hits = [t for t in _rate_buckets.get(key, []) if now - t < window_sec]
+        _rate_buckets[key] = hits
+        return len(hits)
+
+def _rate_record(scope):
+    key = (scope, _client_ip())
+    with _rate_lock:
+        _rate_buckets.setdefault(key, []).append(time.time())
+
+def _rate_clear(scope):
+    key = (scope, _client_ip())
+    with _rate_lock:
+        _rate_buckets.pop(key, None)
+
+_LOGIN_MAX_FAILS   = 10      # Fehlversuche
+_LOGIN_WINDOW_SEC  = 600     # pro 10 Minuten
+_SURVEY_MAX_SUBMIT = 5       # Submits
+_SURVEY_WINDOW_SEC = 60      # pro Minute
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if session.get('logged_in'):
         return redirect(url_for('dashboard'))
     error = None
     if request.method == 'POST':
+        if _rate_hits('login', _LOGIN_WINDOW_SEC) >= _LOGIN_MAX_FAILS:
+            error = 'Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen.'
+            return render_template('login.html', error=error), 429
         u = request.form.get('username', '').strip()
         p = request.form.get('password', '')
         # DB-User
@@ -206,14 +338,20 @@ def login():
             session['username']  = u
             user.last_login = datetime.utcnow()
             db.session.commit()
+            _rate_clear('login')
             return redirect(url_for('dashboard'))
-        # Env-Fallback
-        elif u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
+        # Env-Fallback – nur wenn ein Passwort gesetzt ist
+        elif ADMIN_PASSWORD and u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
             session['logged_in'] = True
             session['username']  = u
+            _rate_clear('login')
             return redirect(url_for('dashboard'))
         else:
-            error = 'Ungültige Zugangsdaten'
+            _rate_record('login')
+            if not ADMIN_PASSWORD and User.query.filter_by(active=True).count() == 0:
+                error = 'Kein Admin-Passwort gesetzt (ADMIN_PASSWORD)'
+            else:
+                error = 'Ungültige Zugangsdaten'
     return render_template('login.html', error=error)
 
 @app.route('/logout')
@@ -292,12 +430,12 @@ def dashboard():
 @app.route('/renders/<path:filename>')
 @login_required
 def serve_render(filename):
-    return send_from_directory(os.path.join(_BASE_DIR, 'static', 'renders'), filename)
+    return send_from_directory(_RENDER_DIR, filename)
 
 @app.route('/uploads/<path:filename>')
 @login_required
 def serve_upload(filename):
-    return send_from_directory(os.path.join(_BASE_DIR, 'static', 'uploads'), filename)
+    return send_from_directory(_UPLOAD_DIR, filename)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CITY API
@@ -332,17 +470,21 @@ def api_cities_stats():
     for cid, status, cnt in raw_counts:
         counts_map.setdefault(cid, {})[status] = cnt
 
-    # Avg engagement_rate per city (last 30 days, published posts with reach data)
+    # Ø engagement_rate pro Stadt (letzte 30 Tage) – engagement_rate ist eine Python-Property,
+    # deshalb werden die Posts geladen und in Python gemittelt (kein SQL-avg möglich).
     cutoff = datetime.utcnow() - timedelta(days=30)
-    er_rows = db.session.query(
-        MemePost.city_id, sqlfunc.avg(MemePost.engagement_rate)
-    ).filter(
+    er_posts = MemePost.query.filter(
         MemePost.city_id.in_(city_ids),
         MemePost.status == 'veroeffentlicht',
         MemePost.published_at >= cutoff,
         MemePost.perf_reach.isnot(None),
-    ).group_by(MemePost.city_id).all()
-    er_map = {cid: round(float(er), 2) if er else None for cid, er in er_rows}
+    ).all()
+    er_lists: dict = {}
+    for p in er_posts:
+        er = p.engagement_rate
+        if er is not None:
+            er_lists.setdefault(p.city_id, []).append(er)
+    er_map = {cid: round(sum(v) / len(v), 2) for cid, v in er_lists.items() if v}
 
     # Wiki-knowledge count per city in one query
     wiki_rows = db.session.query(
@@ -529,7 +671,7 @@ def api_knowledge_create(city_id):
         return jsonify({'error': 'Name und Kategorie erforderlich'}), 400
     e = CityKnowledge(
         city_id=city_id,
-        category=d['category'],
+        category=normalize_category(d['category']),
         name=d['name'].strip(),
         description=d.get('description', ''),
         confidence=int(d.get('confidence', 70)),
@@ -546,7 +688,7 @@ def api_knowledge_update(entry_id):
     d = request.json or {}
     for field in ['name','description','confidence','source','active','category']:
         if field in d:
-            setattr(e, field, d[field])
+            setattr(e, field, normalize_category(d[field]) if field == 'category' else d[field])
     if 'cooldown_days' in d and d['cooldown_days']:
         e.cooldown_until = datetime.utcnow() + timedelta(days=int(d['cooldown_days']))
     elif d.get('clear_cooldown'):
@@ -637,9 +779,8 @@ def _tmpl_dict(t):
     cat_info = (cat_row.label, cat_row.emoji, cat_row.group) if cat_row else TEMPLATE_CAT_MAP.get(t.category, (t.category, '', ''))
     return {
         'id': t.id, 'name': t.name, 'description': t.description,
-        'canva_template_id': t.canva_template_id,
         'canva_url': t.canva_url or '',
-        'render_type': t.render_type or 'canva',
+        'render_type': t.render_type if t.render_type in ('pil', 'manual') else 'pil',
         'pil_config': t.pil_config or '{}',
         'required_vars': t.get_required_vars(),
         'tags': t.get_tags(),
@@ -649,9 +790,10 @@ def _tmpl_dict(t):
         'category_group': cat_info[2] if len(cat_info) > 2 else '',
         'rating': t.rating or 0,
         'preview_image': t.preview_image,
+        'preview_url': t.preview_url or (f'/uploads/{t.preview_image}' if t.preview_image else ''),
         'example_text': t.example_text,
         'notes': t.notes or '',
-        'has_canva': t.has_canva(),
+        'has_canva': t.has_canva(),   # bedeutet: Canva-Link hinterlegt (kein Autofill mehr)
         'use_count': t.use_count,
         'active': t.active,
         'seasonal_from': t.seasonal_from or '',
@@ -673,14 +815,15 @@ def api_template_create():
     d = request.json or {}
     if not d.get('name'):
         return jsonify({'error': 'Name fehlt'}), 400
+    render_type = d.get('render_type') or 'pil'
+    if render_type not in ('pil', 'manual'):
+        return jsonify({'error': "render_type muss 'pil' oder 'manual' sein"}), 400
     t = MemeTemplate(
         name=d['name'].strip(),
         description=d.get('description', ''),
-        canva_template_id=d.get('canva_template_id', ''),
         canva_url=d.get('canva_url', ''),
-        render_type=d.get('render_type', 'canva'),
+        render_type=render_type,
         required_vars=json.dumps(d.get('required_vars', [])),
-        canva_field_map=json.dumps(d.get('canva_field_map', {})),
         tags=json.dumps(d.get('tags', [])),
         category=d.get('category', 'allgemein'),
         rating=int(d.get('rating', 0)),
@@ -701,7 +844,9 @@ def api_template_create():
 def api_template_update(tmpl_id):
     t = MemeTemplate.query.get_or_404(tmpl_id)
     d = request.json or {}
-    for field in ['name','description','canva_template_id','canva_url','render_type',
+    if 'render_type' in d and d['render_type'] not in ('pil', 'manual'):
+        return jsonify({'error': "render_type muss 'pil' oder 'manual' sein"}), 400
+    for field in ['name','description','canva_url','render_type',
                   'category','rating','example_text','notes',
                   'seasonal_from','seasonal_to','min_population','active',
                   'series','series_position']:
@@ -709,8 +854,6 @@ def api_template_update(tmpl_id):
             setattr(t, field, d[field])
     if 'required_vars' in d:
         t.required_vars = json.dumps(d['required_vars'])
-    if 'canva_field_map' in d:
-        t.canva_field_map = json.dumps(d['canva_field_map'])
     if 'tags' in d:
         t.tags = json.dumps(d['tags'])
     if 'pil_config' in d:
@@ -800,10 +943,16 @@ def api_template_upload_preview(tmpl_id):
     if ext not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
         return jsonify({'error': 'Nur Bilder erlaubt'}), 400
     filename = f'template_{tmpl_id}_{int(time.time())}.{ext}'
-    f.save(os.path.join(_BASE_DIR, 'static', 'uploads', filename))
+    local_path = os.path.join(_UPLOAD_DIR, filename)
+    f.save(local_path)
     t.preview_image = filename
+    # Zusätzlich nach Cloudinary, damit der Hintergrund einen Deploy überlebt
+    cloud_url = _upload_cloudinary(local_path, folder='memeos/templates', resource_type='image')
+    if cloud_url:
+        t.preview_url = cloud_url
     db.session.commit()
-    return jsonify({'filename': filename})
+    return jsonify({'filename': filename, 'preview_url': t.preview_url or f'/uploads/{filename}',
+                    'cloud': bool(cloud_url)})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERATOR API
@@ -907,7 +1056,7 @@ def api_job_delete(job_id):
     job = RenderJob.query.get_or_404(job_id)
     if job.image_filename:
         try:
-            os.remove(os.path.join(_BASE_DIR, 'static', 'renders', job.image_filename))
+            os.remove(os.path.join(_RENDER_DIR, job.image_filename))
         except Exception:
             pass
     db.session.delete(job)
@@ -915,8 +1064,10 @@ def api_job_delete(job_id):
     return jsonify({'ok': True})
 
 def _job_to_dict(j):
+    post = MemePost.query.filter_by(render_job_id=j.id).first()
     return {
         'id': j.id,
+        'post_id': post.id if post else None,
         'template_id': j.template_id,
         'template_name': j.template.name if j.template else '',
         'city_id': j.city_id,
@@ -941,136 +1092,222 @@ def _job_to_dict(j):
 # GENERATE LOGIC (Background Thread)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Höchstens 4 Render-Jobs gleichzeitig (Bulk-Generator startet weiterhin je einen Thread).
+# Ein persistentes Queue-System folgt in Phase B – hier reicht die Bremse.
+_render_semaphore = threading.Semaphore(4)
+
+
+def _save_render(png_bytes, filename):
+    """PNG in den Render-Ordner schreiben, optional nach Cloudinary. → (lokaler Pfad, cloud_url|None)"""
+    path = os.path.join(_RENDER_DIR, filename)
+    with open(path, 'wb') as f:
+        f.write(png_bytes)
+    cloud_url = _upload_cloudinary(path, folder='memeos/renders')
+    return path, cloud_url
+
+
+def _ensure_post_for_job(job, city, template, filename, cloud_url, result):
+    """Nach erfolgreichem Render einen Vorrats-Eintrag anlegen, falls für diesen Job noch keiner existiert."""
+    if MemePost.query.filter_by(render_job_id=job.id).first():
+        return None
+    notes = {
+        'fit_score': result.get('fit_score'),
+        'reasoning': result.get('reasoning') or '',
+        'vars': result.get('vars') or {},
+    }
+    post = MemePost(
+        city_id=city.id,
+        render_job_id=job.id,
+        template_id=template.id,
+        title=f'{city.name} – {template.name}',
+        image_path=filename,
+        image_url=cloud_url or ('/renders/' + filename),
+        post_type='feed',
+        status='entwurf',
+        notes=json.dumps(notes, ensure_ascii=False),
+    )
+    db.session.add(post)
+    return post
+
+
 def _run_generate_job(flask_app, job_id):
-    with flask_app.app_context():
-        job = RenderJob.query.get(job_id)
-        if not job:
-            return
-        job.status = 'running'
-        db.session.commit()
-        try:
-            template = job.template
-            city     = job.city
-
-            # 1) Fit-Score + Variable-Matching via Claude
-            result = _claude_fit_and_vars(city, template)
-            job.fit_score    = result['fit_score']
-            job.fit_reasoning = result['reasoning']
-            job.vars_used    = json.dumps(result['vars'])
-            job.manual_brief = result['brief']
-
-            if result['fit_score'] < 40:
-                job.status = 'done'
-                job.error_message = f'Fit-Score zu niedrig ({result["fit_score"]}/100) — übersprungen'
-                db.session.commit()
+    with _render_semaphore:
+        with flask_app.app_context():
+            job = RenderJob.query.get(job_id)
+            if not job:
                 return
-
-            # 2) Bild rendern — Weg hängt von render_type ab
-            png_bytes = None
-            render_error = None
-            if template.render_type == 'pil':
-                if template.preview_image:
-                    png_bytes = _pil_render(template, result['vars'])
-                    if not png_bytes:
-                        render_error = 'PIL-Rendering fehlgeschlagen — nur Brief verfügbar'
-                else:
-                    render_error = 'Kein Template-Bild hochgeladen — nur Brief verfügbar'
-            elif template.has_canva() and _canva_is_connected():
-                png_bytes = _canva_autofill(template, result['vars'])
-                if not png_bytes:
-                    render_error = 'Canva Autofill fehlgeschlagen — nur Brief verfügbar'
-
-            if png_bytes:
-                filename = f'render_{job.id}_{int(time.time())}.png'
-                path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
-                with open(path, 'wb') as f:
-                    f.write(png_bytes)
-                job.image_filename = filename
-                cloud_url = _upload_cloudinary(path, folder='memeos/renders')
-                if cloud_url:
-                    job.image_url = cloud_url
-                    log.info(f'Job {job_id}: uploaded to Cloudinary → {cloud_url}')
-                job.status = 'done'
-            else:
-                job.status = 'done'
-                job.error_message = render_error
-
-            job.completed_at = datetime.utcnow()
-
-            # Verwendete Knowledge-Einträge markieren
-            _mark_knowledge_used(city.id, result['vars'], template.id)
-
-            # Template use_count erhöhen
-            template.use_count = (template.use_count or 0) + 1
+            job.status = 'running'
             db.session.commit()
+            try:
+                template = job.template
+                city     = job.city
 
-        except Exception as ex:
-            log.error(f'Generate Job {job_id} Error: {ex}')
-            job.status = 'failed'
-            job.error_message = str(ex)
-            db.session.commit()
-
-
-def _generate_carousel(flask_app, post_id, category):
-    """Rendert alle Templates einer Kategorie für eine Stadt und speichert sie als
-    EIN MemePost mit post_type='carousel' — nicht als einzelne, unabhängige Posts."""
-    with flask_app.app_context():
-        post = MemePost.query.get(post_id)
-        if not post:
-            return
-        try:
-            city = post.city
-            templates = (MemeTemplate.query
-                         .filter_by(category=category, active=True)
-                         .order_by(MemeTemplate.name).all())
-            paths = post.get_carousel_paths()  # bereits vorhandene (z. B. manuell hochgeladene) Slides bleiben erhalten
-            slide_results = []
-
-            for template in templates:
+                # 1) Fit-Score + Variablen via Claude (ehrlich: Fehler → failed, kein Rendern)
                 result = _claude_fit_and_vars(city, template)
-                if result['fit_score'] < 40:
-                    slide_results.append({'template': template.name, 'skipped': True,
-                                           'reasoning': result['reasoning']})
-                    continue
-                png_bytes = _pil_render(template, result['vars']) if template.render_type == 'pil' else None
-                if png_bytes:
-                    filename = f'carousel_{post.id}_{template.id}_{int(time.time())}.png'
-                    path = os.path.join(_BASE_DIR, 'static', 'renders', filename)
-                    with open(path, 'wb') as f:
-                        f.write(png_bytes)
-                    paths.append(filename)
-                    _mark_knowledge_used(city.id, result['vars'], template.id)
-                    template.use_count = (template.use_count or 0) + 1
-                slide_results.append({'template': template.name, 'vars': result['vars'],
-                                       'fit_score': result['fit_score']})
+                job.fit_score     = result.get('fit_score')
+                job.fit_reasoning = result.get('reasoning') or ''
+                job.vars_used     = json.dumps(result.get('vars') or {}, ensure_ascii=False)
+                job.manual_brief  = result.get('brief') or ''
 
-            post.carousel_paths = json.dumps(paths)
-            post.notes = json.dumps(slide_results, ensure_ascii=False)
-            post.status = 'entwurf'
-            db.session.commit()
-            log.info(f'Carousel Post {post_id}: {len(paths)} Slides gerendert')
-        except Exception as ex:
-            log.error(f'Carousel Post {post_id} Error: {ex}')
-            db.session.commit()
+                if result.get('error'):
+                    job.status = 'failed'
+                    job.error_message = result['error']
+                    job.completed_at = datetime.utcnow()
+                    db.session.commit()
+                    return
+
+                # Hinweis (z. B. "Kein Anthropic-Key: nur Stadtname eingesetzt") landet in error_message,
+                # blockiert das Rendern aber nicht.
+                warning = result.get('warning')
+
+                # 2) Rendern – Weg hängt vom render_type ab
+                render_type = template.render_type if template.render_type in ('pil', 'manual') else 'pil'
+                if render_type == 'manual':
+                    job.status = 'done'
+                    job.error_message = 'Manuelles Template: nur Brief'
+                else:
+                    png_bytes = None
+                    render_error = None
+                    if _template_bg_path(template):
+                        png_bytes = _pil_render(template, result.get('vars') or {})
+                        if not png_bytes:
+                            render_error = 'PIL-Rendering fehlgeschlagen — nur Brief verfügbar'
+                    else:
+                        render_error = 'Kein Template-Bild hochgeladen — nur Brief verfügbar'
+
+                    if png_bytes:
+                        filename = f'render_{job.id}_{int(time.time())}.png'
+                        _, cloud_url = _save_render(png_bytes, filename)
+                        job.image_filename = filename
+                        if cloud_url:
+                            job.image_url = cloud_url
+                            log.info(f'Job {job_id}: uploaded to Cloudinary → {cloud_url}')
+                        job.status = 'done'
+                        job.error_message = warning
+                        _ensure_post_for_job(job, city, template, filename, cloud_url, result)
+                    else:
+                        job.status = 'done'
+                        job.error_message = '; '.join(x for x in (render_error, warning) if x)
+
+                job.completed_at = datetime.utcnow()
+
+                # Verwendete Knowledge-Einträge markieren + Template use_count erhöhen
+                _mark_knowledge_used(city.id, result.get('vars') or {}, template.id)
+                template.use_count = (template.use_count or 0) + 1
+                db.session.commit()
+
+            except Exception as ex:
+                log.error(f'Generate Job {job_id} Error: {ex}')
+                db.session.rollback()
+                job = RenderJob.query.get(job_id)
+                if job:
+                    job.status = 'failed'
+                    job.error_message = str(ex)
+                    job.completed_at = datetime.utcnow()
+                    db.session.commit()
+
+
+def _carousel_templates(series=None, category=None):
+    """Aktive Templates einer Serie (nach series_position), Fallback Kategorie (nach Name)."""
+    q = MemeTemplate.query.filter_by(active=True)
+    if series:
+        return (q.filter(MemeTemplate.series == series)
+                 .order_by(MemeTemplate.series_position.is_(None), MemeTemplate.series_position, MemeTemplate.name)
+                 .all())
+    return q.filter_by(category=category).order_by(MemeTemplate.name).all()
+
+
+def _generate_carousel(flask_app, post_id, series=None, category=None):
+    """Rendert alle Templates einer Serie (Fallback: Kategorie) für eine Stadt und speichert sie als
+    EIN MemePost mit post_type='carousel'. Jeder Slide bekommt dasselbe Vars-Ergebnis wie ein
+    Einzel-Render desselben Templates (_claude_fit_and_vars)."""
+    with _render_semaphore:
+        with flask_app.app_context():
+            post = MemePost.query.get(post_id)
+            if not post:
+                return
+            try:
+                city = post.city
+                templates = _carousel_templates(series=series, category=category)
+                paths = post.get_carousel_paths()  # manuell vorangestellte Slides bleiben erhalten
+                slide_results = []
+                rendered = 0
+                ki_errors = 0
+
+                for template in templates:
+                    result = _claude_fit_and_vars(city, template)
+                    entry = {'template_id': template.id, 'template': template.name,
+                             'fit_score': result.get('fit_score'),
+                             'reasoning': result.get('reasoning') or '',
+                             'vars': result.get('vars') or {}}
+                    if result.get('error'):
+                        ki_errors += 1
+                        entry['error'] = result['error']
+                        slide_results.append(entry)
+                        continue
+                    if result.get('warning'):
+                        entry['warning'] = result['warning']
+                    render_type = template.render_type if template.render_type in ('pil', 'manual') else 'pil'
+                    png_bytes = None
+                    if render_type == 'pil' and _template_bg_path(template):
+                        png_bytes = _pil_render(template, result.get('vars') or {})
+                    if png_bytes:
+                        filename = f'carousel_{post.id}_{template.id}_{int(time.time())}.png'
+                        _save_render(png_bytes, filename)
+                        paths.append(filename)
+                        rendered += 1
+                        _mark_knowledge_used(city.id, result.get('vars') or {}, template.id)
+                        template.use_count = (template.use_count or 0) + 1
+                    else:
+                        entry['error'] = ('Manuelles Template: nur Brief' if render_type == 'manual'
+                                          else 'Kein Hintergrundbild / PIL-Rendering fehlgeschlagen')
+                    slide_results.append(entry)
+
+                post.carousel_paths = json.dumps(paths)
+                post.notes = json.dumps({'series': series, 'category': category,
+                                         'slides': slide_results}, ensure_ascii=False)
+                if paths and not post.image_path:
+                    post.image_path = paths[0]
+                    post.image_url = post.image_url or slide_url(paths[0])
+                if rendered == 0 and (ki_errors or not templates or not paths):
+                    post.status = 'failed'
+                else:
+                    post.status = 'entwurf'
+                db.session.commit()
+                log.info(f'Carousel Post {post_id}: {rendered} Slides gerendert, {ki_errors} KI-Fehler, Status {post.status}')
+            except Exception as ex:
+                log.error(f'Carousel Post {post_id} Error: {ex}')
+                db.session.rollback()
+                post = MemePost.query.get(post_id)
+                if post:
+                    post.status = 'failed'
+                    post.notes = json.dumps({'error': str(ex)}, ensure_ascii=False)
+                    db.session.commit()
 
 
 @app.route('/api/generate/carousel', methods=['POST'])
 @login_required
 def api_generate_carousel():
-    """Erzeugt EIN Karussell aus allen aktiven Templates einer Kategorie für eine Stadt.
-    Optional: manuelle Slides (z. B. echtes Foto), die vor den generierten Slides einsortiert werden."""
+    """Erzeugt EIN Karussell aus allen aktiven Templates einer Serie (MemeTemplate.series) für eine Stadt.
+    Body: {city_id, series} – 'category' wird für Altaufrufer weiterhin akzeptiert.
+    Optional: manual_paths (bereits hochgeladene Slide-Dateinamen), die vor den generierten Slides stehen."""
     d = request.json or {}
     city_id  = d.get('city_id')
-    category = d.get('category')
-    if not city_id or not category:
-        return jsonify({'error': 'city_id und category erforderlich'}), 400
+    series   = (d.get('series') or '').strip() or None
+    category = (d.get('category') or '').strip() or None
+    if not city_id or not (series or category):
+        return jsonify({'error': 'city_id und series (oder category) erforderlich'}), 400
     city = City.query.get_or_404(city_id)
 
-    manual_paths = d.get('manual_paths', [])  # bereits hochgeladene Slide-Dateinamen, in Reihenfolge
+    templates = _carousel_templates(series=series, category=category)
+    if not templates:
+        return jsonify({'error': f'Keine aktiven Templates für {"Serie" if series else "Kategorie"} „{series or category}“'}), 404
+
+    manual_paths = d.get('manual_paths', [])
 
     post = MemePost(
         city_id=city.id,
-        title=f'{city.name} – SpongeBob Edition (Karussell)',
+        title=f'{city.name} – {series or category}',
         post_type='carousel',
         status='rendering',
         carousel_paths=json.dumps(manual_paths),
@@ -1078,24 +1315,36 @@ def api_generate_carousel():
     db.session.add(post)
     db.session.commit()
 
-    thread = threading.Thread(target=_generate_carousel, args=(app, post.id, category), daemon=True)
+    thread = threading.Thread(target=_generate_carousel, args=(app, post.id, series, category), daemon=True)
     thread.start()
 
-    return jsonify({'post_id': post.id, 'status': 'rendering'})
+    return jsonify({'post_id': post.id, 'status': 'rendering', 'template_count': len(templates)})
+
+
+@app.route('/api/templates/series', methods=['GET'])
+@login_required
+def api_template_series():
+    """Alle Serien mit Anzahl aktiver Templates – für die Karussell-Auswahl."""
+    rows = (db.session.query(MemeTemplate.series, db.func.count(MemeTemplate.id))
+            .filter(MemeTemplate.active == True, MemeTemplate.series.isnot(None), MemeTemplate.series != '')
+            .group_by(MemeTemplate.series).order_by(MemeTemplate.series).all())
+    return jsonify([{'series': s, 'template_count': n} for s, n in rows])
 
 
 @app.route('/api/posts/<int:post_id>/carousel', methods=['GET'])
 @login_required
 def api_carousel_get(post_id):
     post = MemePost.query.get_or_404(post_id)
-    paths = post.get_carousel_paths()
+    slides = post.get_slides() if post.post_type == 'carousel' else []
     return jsonify({
         'id': post.id,
         'city_name': post.city.name if post.city else '',
         'status': post.status,
         'title': post.title,
-        'image_urls': [url_for('serve_render', filename=p) for p in paths],
-        'slide_count': len(paths),
+        'image_urls': [s['url'] for s in slides],
+        'slides': slides,
+        'slide_count': len(slides),
+        'notes': post.notes or '',
     })
 
 
@@ -1121,11 +1370,11 @@ def _send_carousel_to_content_os(flask_app, post_id):
             files = []
             opened = []
             for p in paths:
-                img_path = os.path.join(_BASE_DIR, 'static', 'renders', p)
-                if os.path.exists(img_path):
+                img_path = _local_media_path(p)
+                if img_path:
                     fh = open(img_path, 'rb')
                     opened.append(fh)
-                    files.append(('images', (p, fh, 'image/png')))
+                    files.append(('images', (os.path.basename(img_path), fh, 'image/png')))
 
             r = requests.post(
                 CONTENT_OS_URL.rstrip('/') + '/api/memeos/receive',
@@ -1157,11 +1406,27 @@ def api_carousel_send(post_id):
 
 
 def _claude_fit_and_vars(city, template):
-    if not ANTHROPIC_API_KEY:
-        return {'fit_score': 75, 'reasoning': 'Kein API Key — Standard-Score', 'vars': {}, 'brief': 'Kein API Key konfiguriert'}
+    """Fit-Score + Variablenwerte für Stadt × Template.
 
+    Rückgabe immer ein Dict mit fit_score (int|None), reasoning, vars (dict), brief.
+    - Ohne API-Key: kein Fehler, aber nur city_name wird belegt; 'warning' erklärt das.
+    - KI nicht erreichbar / unbrauchbare Antwort (nach einem Retry): 'error' gesetzt, fit_score None.
+    """
+    required_vars = template.get_required_vars()
+
+    if not ANTHROPIC_API_KEY:
+        return {
+            'fit_score': None,
+            'reasoning': 'Kein Anthropic-Key',
+            'vars': {v: city.name for v in required_vars if v == 'city_name'},
+            'brief': '',
+            'warning': 'Kein Anthropic-Key: nur Stadtname eingesetzt',
+        }
+
+    now = datetime.utcnow()
     knowledge = CityKnowledge.query.filter_by(city_id=city.id, active=True)\
-                    .filter(CityKnowledge.cooldown_until == None)\
+                    .filter(db.or_(CityKnowledge.cooldown_until.is_(None),
+                                   CityKnowledge.cooldown_until < now))\
                     .order_by(CityKnowledge.confidence.desc()).all()
 
     knowledge_str = '\n'.join([
@@ -1170,7 +1435,6 @@ def _claude_fit_and_vars(city, template):
         for e in knowledge
     ]) or 'Keine Knowledge-Einträge vorhanden'
 
-    required_vars = template.get_required_vars()
     vars_str = ', '.join(required_vars) if required_vars else 'keine'
 
     prompt = f"""Du bist Meme-Experte für deutsche Stadtseiten auf Instagram.
@@ -1200,24 +1464,47 @@ Antworte NUR mit JSON:
   "brief": "<was soll der Creator machen, max 200 Zeichen>"
 }}"""
 
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=500,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        raw = msg.content[0].text.strip()
-        _log_ai_usage('fit_score', 'claude-haiku-4-5-20251001',
-                      msg.usage.input_tokens, msg.usage.output_tokens)
-        import re
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-    except Exception as ex:
-        log.error(f'Claude Fit-Score Error: {ex}')
+    last_error = ''
+    for attempt in range(2):                     # ein Retry nach 2 s
+        if attempt:
+            time.sleep(2)
+        try:
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            msg = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=500,
+                messages=[{'role': 'user', 'content': prompt}]
+            )
+            raw = msg.content[0].text.strip()
+            _log_ai_usage('fit_score', 'claude-haiku-4-5-20251001',
+                          msg.usage.input_tokens, msg.usage.output_tokens)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                last_error = 'Antwort ohne JSON'
+                continue
+            data = json.loads(match.group(0))
+            vars_dict = data.get('vars') if isinstance(data.get('vars'), dict) else {}
+            vars_dict = {str(k): str(v) for k, v in vars_dict.items() if v is not None}
+            # city_name immer sicher belegen, falls verlangt
+            if 'city_name' in required_vars and not vars_dict.get('city_name'):
+                vars_dict['city_name'] = city.name
+            try:
+                fit = int(data.get('fit_score'))
+                fit = max(0, min(100, fit))
+            except Exception:
+                fit = None
+            return {
+                'fit_score': fit,
+                'reasoning': str(data.get('reasoning') or '')[:500],
+                'vars': vars_dict,
+                'brief': str(data.get('brief') or '')[:1000],
+            }
+        except Exception as ex:
+            last_error = f'{type(ex).__name__}: {str(ex)[:120]}'
+            log.error(f'Claude Fit-Score Error (Versuch {attempt + 1}): {ex}')
 
-    return {'fit_score': 50, 'reasoning': 'Fehler beim KI-Aufruf', 'vars': {}, 'brief': 'Manuell erstellen'}
+    return {'error': f'KI nicht erreichbar: {last_error or "unbekannt"}',
+            'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
 
 
 def _mark_knowledge_used(city_id, vars_dict, template_id):
@@ -1299,104 +1586,45 @@ def _canva_save_tokens(tokens):
     AppSettings.set('canva_tokens', json.dumps(tokens))
 
 
-def _canva_autofill(template, vars_dict):
-    token = _canva_get_token()
-    if not token:
-        return None
-    field_map = template.get_canva_field_map()
-    data = {}
-    for var_key, value in vars_dict.items():
-        canva_field = field_map.get(var_key, var_key)
-        data[canva_field] = {'type': 'text', 'text': str(value)}
-
-    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-    try:
-        r = requests.post('https://api.canva.com/rest/v1/autofills', headers=headers, json={
-            'brand_template_id': template.canva_template_id,
-            'data': data,
-        }, timeout=20)
-        if not r.ok:
-            log.warning(f'Canva Autofill Error: {r.status_code} {r.text[:150]}')
-            return None
-        job_id = r.json().get('job', {}).get('id')
-        if not job_id:
-            return None
-    except Exception as ex:
-        log.warning(f'Canva Autofill Request Error: {ex}')
-        return None
-
-    design_id = None
-    for _ in range(20):
-        time.sleep(2)
-        try:
-            sr = requests.get(f'https://api.canva.com/rest/v1/autofills/{job_id}',
-                              headers=headers, timeout=10)
-            if sr.ok:
-                job_data = sr.json().get('job', {})
-                status = job_data.get('status', '')
-                if status == 'success':
-                    design_id = job_data.get('result', {}).get('design', {}).get('id')
-                    break
-                elif status == 'failed':
-                    return None
-        except Exception:
-            pass
-
-    if not design_id:
-        return None
-
-    try:
-        er = requests.post('https://api.canva.com/rest/v1/exports', headers=headers, json={
-            'design_id': design_id,
-            'format': {'type': 'png', 'lossless': True},
-        }, timeout=20)
-        if not er.ok:
-            return None
-        export_job_id = er.json().get('job', {}).get('id')
-        if not export_job_id:
-            return None
-    except Exception:
-        return None
-
-    for _ in range(20):
-        time.sleep(2)
-        try:
-            pr = requests.get(f'https://api.canva.com/rest/v1/exports/{export_job_id}',
-                              headers=headers, timeout=10)
-            if pr.ok:
-                ej = pr.json().get('job', {})
-                if ej.get('status') == 'success':
-                    urls = ej.get('result', {}).get('urls', [])
-                    if urls:
-                        img_r = requests.get(urls[0], timeout=30)
-                        if img_r.ok:
-                            return img_r.content
-                    break
-                elif ej.get('status') == 'failed':
-                    return None
-        except Exception:
-            pass
-    return None
+# Canva-Autofill wurde entfernt (braucht Canva Enterprise). Die OAuth-Verbindung bleibt für die
+# Export-API (PNG/PPTX), die der Template-Import in Phase B nutzt – Scopes: design:content:read design:meta:read.
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PIL RENDERER (lokale Alternative zu Canva — kein Brand-Template nötig)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_FONTS_DIR = os.path.join(_BASE_DIR, 'fonts')
+_FONTS_DIR = os.path.join(_BASE_DIR, 'fonts')   # mitgelieferte Schriften (Repo)
 _FONT_FILES = {
     'anton': 'anton.ttf',   # Bebas-Neue-artige Headline-Schrift
     'bold':  'bold.ttf',    # Oswald Bold
 }
 _font_cache = {}
 
+def _font_path(name):
+    """Schriftdatei suchen: erst <DATA_ROOT>/fonts (eigene Uploads), dann Repo-Ordner fonts/.
+    Unbekannte Namen werden als <name>.ttf/.otf probiert; Fallback anton.ttf."""
+    candidates = []
+    mapped = _FONT_FILES.get(name)
+    if mapped:
+        candidates.append(mapped)
+    safe = os.path.basename(str(name or ''))
+    if safe:
+        candidates += [safe, f'{safe}.ttf', f'{safe}.otf']
+    candidates.append(_FONT_FILES['anton'])
+    for folder in (_FONTS_DATA_DIR, _FONTS_DIR):
+        for fn in candidates:
+            p = os.path.join(folder, fn)
+            if os.path.isfile(p):
+                return p
+    return None
+
 def _pil_font(name, size):
     key = (name, size)
     if key not in _font_cache:
-        filename = _FONT_FILES.get(name, _FONT_FILES['anton'])
-        path = os.path.join(_FONTS_DIR, filename)
+        path = _font_path(name)
         try:
-            _font_cache[key] = ImageFont.truetype(path, size)
+            _font_cache[key] = ImageFont.truetype(path, size) if path else ImageFont.load_default()
         except Exception:
             _font_cache[key] = ImageFont.load_default()
     return _font_cache[key]
@@ -1428,6 +1656,48 @@ def _pil_fit_text(draw, text, font_name, max_size, min_size, max_width, max_heig
     return font, [text], font.size * 1.15
 
 
+def _template_bg_path(template):
+    """Lokaler Pfad des Template-Hintergrunds. Liegt die Datei nicht (mehr) im Upload-Ordner
+    (z. B. nach einem Deploy), wird sie einmal von template.preview_url heruntergeladen."""
+    name = os.path.basename(template.preview_image or '')
+    if name:
+        local = os.path.join(_UPLOAD_DIR, name)
+        if os.path.exists(local):
+            return local
+    url = (template.preview_url or '').strip()
+    if not url.startswith('http'):
+        return None
+    if not name:
+        ext = url.split('?')[0].rsplit('.', 1)[-1].lower()
+        ext = ext if ext in ('png', 'jpg', 'jpeg', 'webp', 'gif') else 'png'
+        name = f'template_{template.id}_bg.{ext}'
+    local = os.path.join(_UPLOAD_DIR, name)
+    try:
+        resp = requests.get(url, timeout=20)
+        if not resp.ok or not resp.content:
+            log.warning(f'Template {template.id}: Hintergrund von {url} nicht ladbar ({resp.status_code})')
+            return None
+        with open(local, 'wb') as fh:
+            fh.write(resp.content)
+        if template.preview_image != name:
+            template.preview_image = name
+            db.session.commit()
+        return local
+    except Exception as ex:
+        log.warning(f'Template {template.id}: Hintergrund-Download fehlgeschlagen: {ex}')
+        return None
+
+
+def _city_brand(city):
+    """Brandfarben/-schrift einer Stadt als Dict für Renderer und Frontend."""
+    return {
+        'bg':     (city.brand_bg if city and city.brand_bg else '#ffffff'),
+        'text':   (city.brand_text_color if city and city.brand_text_color else '#000000'),
+        'accent': (city.accent_color if city and city.accent_color else '#3b82f6'),
+        'font':   (city.brand_font if city and city.brand_font else 'Arial'),
+    }
+
+
 def _pil_render(template, vars_dict):
     """Rendert ein Template lokal mit Pillow, ohne Canva.
 
@@ -1441,10 +1711,8 @@ def _pil_render(template, vars_dict):
       ]
     }
     """
-    if not template.preview_image:
-        return None
-    src_path = os.path.join(_BASE_DIR, 'static', 'uploads', template.preview_image)
-    if not os.path.exists(src_path):
+    src_path = _template_bg_path(template)
+    if not src_path:
         return None
 
     try:
@@ -1527,7 +1795,7 @@ def canva_connect():
         'client_id':              CANVA_CLIENT_ID,
         'redirect_uri':           CANVA_REDIRECT_URI,
         'response_type':          'code',
-        'scope':                  'asset:read design:content:read design:content:write brand_template:read',
+        'scope':                  'design:content:read design:meta:read',   # Export-API (PNG/PPTX) für den Template-Import
         'code_challenge':         code_challenge_b64,
         'code_challenge_method':  'S256',
         'state':                  'memeos_canva_auth',
@@ -1806,6 +2074,9 @@ def survey_form(token):
 
 @app.route('/survey/submit', methods=['POST'])
 def survey_submit():
+    if _rate_hits('survey', _SURVEY_WINDOW_SEC) >= _SURVEY_MAX_SUBMIT:
+        return 'Zu viele Übermittlungen. Bitte in einer Minute erneut versuchen.', 429
+    _rate_record('survey')
     token = request.form.get('token')
     survey = ResidentSurvey.query.filter_by(token=token).first_or_404()
     if survey.status == 'completed':
@@ -1903,7 +2174,7 @@ def _send_to_content_os(flask_app, job_id):
                 headers['X-MemeOS-Key'] = CONTENT_OS_KEY
 
             if job.image_filename:
-                img_path = os.path.join(_BASE_DIR, 'static', 'renders', job.image_filename)
+                img_path = os.path.join(_RENDER_DIR, job.image_filename)
                 if os.path.exists(img_path):
                     with open(img_path, 'rb') as f:
                         r = requests.post(
@@ -1988,24 +2259,31 @@ def api_todo_delete(todo_id):
 @app.route('/api/settings', methods=['GET'])
 @login_required
 def api_settings_get():
+    _tg_token = (AppSettings.get('telegram_token', '') or '').strip()
     return jsonify({
         'content_os_url':       CONTENT_OS_URL or AppSettings.get('content_os_url', ''),
         'canva_connected':      _canva_is_connected(),
         'canva_client_id':      bool(CANVA_CLIENT_ID),
         'ai_key_set':           bool(ANTHROPIC_API_KEY),
         'ai_cost_month':        _ai_cost_this_month(),
-        'telegram_token':       AppSettings.get('telegram_token', ''),
+        # Token nie im Klartext ausgeben – nur ob gesetzt + die letzten 4 Zeichen
+        'telegram_token_set':   bool(_tg_token),
+        'telegram_token_hint':  _tg_token[-4:] if _tg_token else '',
         'telegram_chat_id':     AppSettings.get('telegram_chat_id', ''),
         'alert_threshold_days': AppSettings.get('alert_threshold_days', '3'),
+        'data_root':            _DATA_ROOT,
     })
 
 @app.route('/api/settings', methods=['POST'])
 @login_required
 def api_settings_save():
     d = request.json or {}
-    for key in ('content_os_url', 'telegram_token', 'telegram_chat_id', 'alert_threshold_days'):
+    for key in ('content_os_url', 'telegram_chat_id', 'alert_threshold_days'):
         if key in d:
             AppSettings.set(key, d[key])
+    # Leeres Token-Feld heißt "unverändert lassen" (das Feld zeigt den Token ja nicht mehr an)
+    if d.get('telegram_token'):
+        AppSettings.set('telegram_token', str(d['telegram_token']).strip())
     return jsonify({'ok': True})
 
 
@@ -2283,18 +2561,47 @@ def _seed_recycle_settings():
             db.session.add(AppSettings(key=k, value=v))
     db.session.commit()
 
+def _migrate_legacy_data():
+    """Datenmigrationen, die bei jedem Start idempotent laufen."""
+    # 1) Alte Stadtwissen-Kategorien auf die Registry abbilden
+    for old, new in LEGACY_CATEGORY_MAP.items():
+        try:
+            db.session.execute(db.text('UPDATE city_knowledge SET category = :new WHERE category = :old'),
+                               {'new': new, 'old': old})
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    # 2) Canva-Autofill ist weg: render_type 'canva' → 'pil' (wenn PIL-Konfiguration da) sonst 'manual'
+    for sql in (
+        "UPDATE meme_template SET render_type='pil' WHERE render_type='canva' "
+        "AND pil_config IS NOT NULL AND pil_config != '{}' AND pil_config != ''",
+        "UPDATE meme_template SET render_type='manual' WHERE render_type='canva'",
+        "UPDATE meme_template SET render_type='pil' WHERE render_type IS NULL OR render_type=''",
+    ):
+        try:
+            db.session.execute(db.text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+
 with app.app_context():
     db.create_all()
     for _col_sql in [
         'ALTER TABLE meme_post ADD COLUMN carousel_paths TEXT',
         'ALTER TABLE meme_template ADD COLUMN series TEXT',
         'ALTER TABLE meme_template ADD COLUMN series_position INTEGER',
+        'ALTER TABLE meme_template ADD COLUMN preview_url VARCHAR(1000)',
+        'ALTER TABLE memo_inspiration_source ADD COLUMN city_id INTEGER REFERENCES city(id)',
+        'ALTER TABLE memo_inspiration_source ADD COLUMN platform VARCHAR(20) DEFAULT \'instagram\'',
+        'CREATE INDEX IF NOT EXISTS ix_memo_inspiration_source_city_id ON memo_inspiration_source (city_id)',
     ]:
         try:
             db.session.execute(db.text(_col_sql))
             db.session.commit()
         except Exception:
             db.session.rollback()
+    _migrate_legacy_data()
     _seed_todos()
     _seed_cities()
     _seed_template_categories()
@@ -2327,10 +2634,11 @@ def api_events_upcoming():
         d = e.days_until()
         if d is not None and -3 <= d <= horizon:
             ed = e.to_dict()
-            if d <= e.lead_days:
+            if d <= (e.lead_days or 0):
                 ed['_urgent'] = True
             upcoming.append(ed)
-    upcoming.sort(key=lambda x: x['days_until'])
+    # Laufende Events zuerst, dann nach Tagen bis zum Beginn
+    upcoming.sort(key=lambda x: (0 if x['active_now'] else 1, x['days_until']))
     return jsonify(upcoming)
 
 @app.route('/api/events', methods=['POST'])
@@ -2385,20 +2693,27 @@ def api_event_delete(ev_id):
 @login_required
 def api_events_notify():
     """Sendet Telegram-Benachrichtigung für alle Events innerhalb ihres lead_days-Fensters."""
-    token   = get_setting('telegram_token')
-    chat_id = get_setting('telegram_chat_id')
+    token   = (get_setting('telegram_token') or '').strip()
+    chat_id = (get_setting('telegram_chat_id') or '').strip()
     if not token or not chat_id:
         return jsonify({'error': 'Telegram nicht konfiguriert'}), 400
     events = MemeEvent.query.filter_by(active=True).all()
-    sent = 0
+    sent, skipped = 0, 0
+    now = datetime.utcnow()
     for e in events:
         d = e.days_until()
         if d is None or d < 0:
             continue
-        if d > e.lead_days:
+        if d > (e.lead_days or 0):
+            continue
+        # Höchstens eine Nachricht pro Event in 20 Stunden
+        if e.notified_at and (now - e.notified_at) < timedelta(hours=20):
+            skipped += 1
             continue
         msg_lines = [f"{e.emoji} *{e.name}*"]
-        if d == 0:
+        if e.is_active_today():
+            msg_lines.append("🔥 Läuft gerade!")
+        elif d == 0:
             msg_lines.append("🔥 Heute!")
         elif d == 1:
             msg_lines.append("⚡ Morgen!")
@@ -2410,15 +2725,20 @@ def api_events_notify():
         if cats:
             msg_lines.append("💡 Kategorien: " + ", ".join(cats))
         try:
-            import urllib.request as ureq
-            url  = f"https://api.telegram.org/bot{token}/sendMessage"
-            data = json.dumps({'chat_id': chat_id, 'text': '\n'.join(msg_lines), 'parse_mode': 'Markdown'}).encode()
-            req  = ureq.Request(url, data=data, headers={'Content-Type': 'application/json'})
-            ureq.urlopen(req, timeout=5)
-            sent += 1
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={'chat_id': chat_id, 'text': '\n'.join(msg_lines), 'parse_mode': 'Markdown'},
+                timeout=8,
+            )
+            if resp.ok:
+                e.notified_at = now
+                sent += 1
+            else:
+                log.warning(f'Telegram notify failed for event {e.id}: {resp.status_code} {resp.text[:120]}')
         except Exception as ex:
             log.warning(f'Telegram notify failed for event {e.id}: {ex}')
-    return jsonify({'ok': True, 'sent': sent})
+    db.session.commit()
+    return jsonify({'ok': True, 'sent': sent, 'skipped_recent': skipped})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # KATEGORIE-MIX (Freshness) API
@@ -2451,13 +2771,28 @@ def api_category_mix(city_id):
                         'delta': pct - t_pct})
     return jsonify({'days': days, 'total': total, 'mix': result})
 
+@app.route('/api/settings/category-mix', methods=['GET'])
+@login_required
+def api_get_category_mix():
+    """Ziel-Mix der Template-Kategorien in Prozent: {'mix': {'pov': 20, ...}}."""
+    raw = get_setting('category_target_mix') or '{}'
+    try:
+        mix = json.loads(raw)
+        if not isinstance(mix, dict):
+            mix = {}
+    except Exception:
+        mix = {}
+    return jsonify({'mix': mix})
+
 @app.route('/api/settings/category-mix', methods=['POST'])
 @login_required
 def api_save_category_mix():
     d = request.json or {}
     mix = d.get('mix', {})
+    if not isinstance(mix, dict):
+        return jsonify({'error': 'mix muss ein Objekt {kategorie: prozent} sein'}), 400
     set_setting('category_target_mix', json.dumps(mix))
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'mix': mix})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DUPLICATE CHECK API
@@ -2635,15 +2970,22 @@ def api_market_page_delete(page_id):
 # INSPIRATION API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_INSPO_PLATFORMS = ('instagram', 'tiktok', 'facebook', 'x', 'reddit', 'sonstige')
+
+def _inspo_city_id(value):
+    """city_id aus dem Request prüfen: None/leer → None, sonst muss die Stadt existieren."""
+    if value in (None, '', 0, '0'):
+        return None
+    cid = int(value)
+    if not City.query.get(cid):
+        raise ValueError('Stadt nicht gefunden')
+    return cid
+
 @app.route('/api/inspiration/sources', methods=['GET'])
 @login_required
 def api_inspo_sources():
     sources = MemoInspirationSource.query.order_by(MemoInspirationSource.username).all()
-    return jsonify([{
-        'id': s.id, 'username': s.username, 'notes': s.notes,
-        'post_count': s.post_count(), 'new_count': s.new_count(),
-        'last_fetch': s.last_fetch.isoformat() if s.last_fetch else None,
-    } for s in sources])
+    return jsonify([s.to_dict() for s in sources])
 
 @app.route('/api/inspiration/sources', methods=['POST'])
 @login_required
@@ -2654,10 +2996,37 @@ def api_inspo_source_add():
         return jsonify({'error': 'Username fehlt'}), 400
     if MemoInspirationSource.query.filter_by(username=username).first():
         return jsonify({'error': 'Quelle bereits vorhanden'}), 409
-    s = MemoInspirationSource(username=username, notes=d.get('notes', ''))
+    try:
+        city_id = _inspo_city_id(d.get('city_id'))
+    except (ValueError, TypeError) as ex:
+        return jsonify({'error': str(ex) or 'city_id ungültig'}), 400
+    platform = (d.get('platform') or 'instagram').strip().lower()
+    if platform not in _INSPO_PLATFORMS:
+        platform = 'sonstige'
+    s = MemoInspirationSource(username=username, notes=d.get('notes', ''),
+                              city_id=city_id, platform=platform)
     db.session.add(s)
     db.session.commit()
-    return jsonify({'id': s.id, 'username': s.username}), 201
+    return jsonify(s.to_dict()), 201
+
+@app.route('/api/inspiration/sources/<int:src_id>', methods=['PUT'])
+@login_required
+def api_inspo_source_update(src_id):
+    """Stadt-Zuordnung, Plattform und Notizen einer Quelle ändern."""
+    s = MemoInspirationSource.query.get_or_404(src_id)
+    d = request.json or {}
+    if 'city_id' in d:
+        try:
+            s.city_id = _inspo_city_id(d['city_id'])
+        except (ValueError, TypeError) as ex:
+            return jsonify({'error': str(ex) or 'city_id ungültig'}), 400
+    if 'platform' in d:
+        platform = (d.get('platform') or 'instagram').strip().lower()
+        s.platform = platform if platform in _INSPO_PLATFORMS else 'sonstige'
+    if 'notes' in d:
+        s.notes = d['notes'] or ''
+    db.session.commit()
+    return jsonify(s.to_dict())
 
 @app.route('/api/inspiration/sources/<int:src_id>', methods=['DELETE'])
 @login_required
@@ -2683,6 +3052,9 @@ def api_inspo_posts():
     return jsonify([{
         'id': p.id, 'source_id': p.source_id,
         'username': p.source.username if p.source else '',
+        'city_id': p.source.city_id if p.source else None,
+        'city_name': p.source.city.name if p.source and p.source.city else '',
+        'platform': (p.source.platform or 'instagram') if p.source else 'instagram',
         'instagram_code': p.instagram_code,
         'image_url': p.image_url, 'caption': p.caption,
         'like_count': p.like_count, 'media_type': p.media_type,
@@ -2799,9 +3171,12 @@ def api_inspo_ai_sort():
     processed = 0
     knowledge_added = 0
     import re
+    # Einzige Taxonomie: KNOWLEDGE_CATEGORIES (Schlüssel + Label), unbekannte Antworten → 'sonstiges'
+    categories_str = '\n'.join(f'- {k}: {label}' for k, label, _ in KNOWLEDGE_CATEGORIES)
     for p in posts:
-        city_name = p.source.city.name if p.source and p.source.city else 'unbekannte Stadt'
-        city_id   = p.source.city_id if p.source else None
+        city = p.source.city if p.source else None      # kann None sein (Quelle ohne Stadt)
+        city_name = city.name if city else 'unbekannte Stadt'
+        city_id   = city.id if city else None
         try:
             msg = client.messages.create(
                 model='claude-haiku-4-5-20251001',
@@ -2815,9 +3190,10 @@ Likes: {p.like_count or '?'}
 Beantworte zwei Dinge als JSON:
 
 1. Ist der Post relevant als Meme-Inspiration (Humor, Stadtleben, lokale Themen)?
-2. Extrahiere stadtspezifisches Meme-Wissen aus dem Post — also alles, was man wissen muss, um gute Memes über {city_name} zu machen: Viertel-Reputationen, Running Gags, Personen, Slang, Kriminalitätshotspots, Stadtwitze, Rivalitäten etc.
+2. Extrahiere stadtspezifisches Meme-Wissen aus dem Post — also alles, was man wissen muss, um gute Memes über {city_name} zu machen: Viertel-Reputationen, Running Gags, Personen, Slang, Problemorte, Stadtwitze, Rivalitäten etc.
 
-Kategorien: reichenviertel, problemviertel, kriminalitaet, running_gag, person, slang, sehenswuerdigkeit, event, viertel, rivalitaet, witz, sonstiges
+Erlaubte Kategorien (nutze GENAU den Schlüssel vor dem Doppelpunkt):
+{categories_str}
 
 Antworte NUR mit diesem JSON (kein anderer Text):
 {{
@@ -2825,7 +3201,7 @@ Antworte NUR mit diesem JSON (kein anderer Text):
   "theme": "Stadtleben",
   "reasoning": "1 Satz Begründung",
   "city_knowledge": [
-    {{"category": "running_gag", "content": "In {city_name} sagt man X wenn...", "confidence": 0.85}}
+    {{"category": "local_meme", "content": "In {city_name} sagt man X wenn...", "confidence": 0.85}}
   ]
 }}
 
@@ -2841,12 +3217,15 @@ Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als l
                 p.ai_theme     = data.get('theme', '')[:100]
                 p.ai_reasoning = data.get('reasoning', '')
                 processed += 1
-                # Stadtwissen speichern
+                # Stadtwissen nur speichern, wenn die Quelle einer Stadt zugeordnet ist
                 if city_id:
                     for kw in (data.get('city_knowledge') or []):
                         content = (kw.get('content') or '').strip()
-                        cat     = (kw.get('category') or 'sonstiges').strip()
-                        conf    = int(float(kw.get('confidence', 0.7)) * 100)
+                        cat     = normalize_category(kw.get('category'))
+                        try:
+                            conf = max(0, min(100, int(float(kw.get('confidence', 0.7)) * 100)))
+                        except Exception:
+                            conf = 70
                         if content and len(content) > 5:
                             # Duplikat-Check: gleiche Stadt + gleicher Name (grob)
                             exists = CityKnowledge.query.filter_by(
@@ -2863,8 +3242,8 @@ Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als l
                                     source_post_id=p.id,
                                 ))
                                 knowledge_added += 1
-        except Exception:
-            pass
+        except Exception as ex:
+            log.warning(f'KI-Sort Post {p.id}: {ex}')
     db.session.commit()
     return jsonify({'ok': True, 'processed': processed, 'knowledge_added': knowledge_added, 'total': len(posts)})
 
@@ -2922,9 +3301,9 @@ def api_knowledge_add():
         return jsonify({'error': 'city_id und content erforderlich'}), 400
     e = CityKnowledge(
         city_id=city_id,
-        category=d.get('category', 'sonstiges'),
+        category=normalize_category(d.get('category')),   # Registry-Schlüssel, Legacy wird abgebildet
         name=content[:200],
-        description='',
+        description=(d.get('description') or '')[:2000],
         confidence=100,
         source='manual',
     )
@@ -3175,7 +3554,7 @@ def api_upload_batch():
     if not files:
         return jsonify({'error': 'Keine Dateien'}), 400
 
-    upload_dir = os.path.join(_BASE_DIR, 'static', 'uploads')
+    upload_dir = _UPLOAD_DIR
     saved = []  # [{fname, url, ftype, orig_name}]
 
     for f in files:
@@ -3318,8 +3697,7 @@ def api_cloudinary_migrate():
         MemePost.image_url.like('/uploads/%')
     ).all()
     for p in posts:
-        fname = p.image_url.lstrip('/')
-        local = os.path.join(_BASE_DIR, 'static', fname)
+        local = os.path.join(_UPLOAD_DIR, os.path.basename(p.image_url))
         if not os.path.exists(local):
             skipped += 1
             continue
@@ -3336,7 +3714,7 @@ def api_cloudinary_migrate():
         db.or_(RenderJob.image_url == None, RenderJob.image_url == '')
     ).all()
     for j in jobs:
-        local = os.path.join(_BASE_DIR, 'static', 'renders', j.image_filename)
+        local = os.path.join(_RENDER_DIR, j.image_filename)
         if not os.path.exists(local):
             skipped += 1
             continue
@@ -3540,8 +3918,8 @@ def api_vorrat_duplicate(post_id):
 def api_vorrat_export_zip_start():
     d = request.json or {}
     job_id = str(uuid.uuid4())
-    _zip_jobs[job_id] = {'status': 'pending', 'path': None, 'filename': None,
-                          'post_count': 0, 'error': None}
+    db.session.add(ExportJob(id=job_id, status='pending'))
+    db.session.commit()
     t = threading.Thread(
         target=_build_zip_async,
         args=(job_id, d.get('ids', []), d.get('status', 'geplant'), d.get('city_id')),
@@ -3554,37 +3932,42 @@ def api_vorrat_export_zip_start():
 @app.route('/api/vorrat/export-zip/status/<job_id>')
 @login_required
 def api_vorrat_export_zip_status(job_id):
-    job = _zip_jobs.get(job_id)
+    job = ExportJob.query.get(job_id)
     if not job:
         return jsonify({'error': 'Job nicht gefunden'}), 404
-    return jsonify({
-        'status': job['status'],
-        'ready': job['status'] == 'ready',
-        'filename': job.get('filename'),
-        'post_count': job.get('post_count', 0),
-        'error': job.get('error'),
-    })
+    return jsonify(job.to_dict())
+
+
+def _export_cleanup_later(job_id, path, delay=60):
+    """Datei und Tabellenzeile verzögert entfernen (nach dem Download)."""
+    def _run():
+        time.sleep(delay)
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        with app.app_context():
+            try:
+                job = ExportJob.query.get(job_id)
+                if job:
+                    db.session.delete(job)
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @app.route('/api/vorrat/export-zip/download/<job_id>')
 @login_required
 def api_vorrat_export_zip_download(job_id):
-    job = _zip_jobs.get(job_id)
-    if not job or job['status'] != 'ready':
+    job = ExportJob.query.get(job_id)
+    if not job or job.status != 'ready' or not job.path or not os.path.exists(job.path):
         return jsonify({'error': 'ZIP nicht bereit'}), 400
     from flask import send_file
-
-    def _cleanup():
-        time.sleep(60)
-        try:
-            os.remove(job['path'])
-        except Exception:
-            pass
-        _zip_jobs.pop(job_id, None)
-
-    threading.Thread(target=_cleanup, daemon=True).start()
-    return send_file(job['path'], mimetype='application/zip',
-                     as_attachment=True, download_name=job['filename'])
+    _export_cleanup_later(job.id, job.path)
+    return send_file(job.path, mimetype='application/zip',
+                     as_attachment=True, download_name=job.filename)
 
 
 @app.route('/api/city/<int:city_id>/dashboard')
@@ -3615,21 +3998,14 @@ def api_city_dashboard(city_id):
     trending = TrendingTopic.query.filter_by(city_id=city_id, ignored=False)\
         .order_by(TrendingTopic.trend_score.desc()).limit(5).all()
 
-    rc_posts = MemePost.query.filter(
-        MemePost.city_id == city_id, MemePost.status == 'veroeffentlicht',
-        MemePost.published_at <= datetime.utcnow() - timedelta(days=14)
-    ).all()
-    candidates = sorted([
-        {**p.to_dict(), 'recycle_score': _recycle_score(p),
-         'days_since_post': (datetime.utcnow()-p.published_at).days if p.published_at else None}
-        for p in rc_posts
-    ], key=lambda x: x['recycle_score'], reverse=True)[:3]
+    candidates, _rc_settings, _ = _recycle_candidates(city_id=city_id, limit=3)
 
     return jsonify({
         'city': {
             'id': city.id, 'name': city.name, 'state': city.state or '',
             'accent_color': city.accent_color or '#3b82f6',
             'population': city.population, 'instagram_handle': city.instagram_handle or '',
+            'brand': _city_brand(city),
         },
         'post_counts': counts,
         'upcoming': [p.to_dict() for p in upcoming],
@@ -3663,17 +4039,39 @@ def api_vorrat_from_job(job_id):
     db.session.commit()
     return jsonify(p.to_dict()), 201
 
+def _parse_dt(s):
+    """'YYYY-MM-DD' oder ISO-Datetime (auch mit 'Z' / Offset) → naives datetime (UTC).
+    None bei leerem oder ungültigem Wert."""
+    if not s:
+        return None
+    s = str(s).strip()
+    if s.endswith('Z'):
+        s = s[:-1] + '+00:00'
+    try:
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _first_of_next_month(dt):
+    if dt.month == 12:
+        return datetime(dt.year + 1, 1, 1)
+    return datetime(dt.year, dt.month + 1, 1)
+
+
 @app.route('/api/kalender', methods=['GET'])
 @login_required
 def api_kalender():
-    from_str = request.args.get('from')
-    to_str   = request.args.get('to')
-    try:
-        from_dt = datetime.fromisoformat(from_str) if from_str else datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
-        to_dt   = datetime.fromisoformat(to_str)   if to_str   else datetime(from_dt.year, from_dt.month % 12 + 1, 1)
-    except:
-        from_dt = datetime.utcnow()
-        to_dt   = from_dt
+    from_dt = _parse_dt(request.args.get('from'))
+    to_dt   = _parse_dt(request.args.get('to'))
+    if from_dt is None:
+        from_dt = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if to_dt is None:
+        to_dt = _first_of_next_month(from_dt)
     posts = MemePost.query.filter(
         MemePost.scheduled_at >= from_dt,
         MemePost.scheduled_at < to_dt
@@ -3760,10 +4158,58 @@ def api_bulk_multi():
 # TRENDING MONITOR
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _recycle_score(post):
-    """Recycle-Score 0–100 basierend auf Performance + Zeit seit Veröffentlichung."""
+def _recycle_settings():
+    """Die 5 Recycling-Einstellungen mit Defaults, typisiert."""
+    def _int(key, default):
+        try:
+            return int(get_setting(key) or default)
+        except Exception:
+            return default
+    try:
+        excluded = json.loads(get_setting('recycle_excluded_cats') or '["news"]')
+        if not isinstance(excluded, list):
+            excluded = []
+    except Exception:
+        excluded = ['news']
+    return {
+        'min_age_days':        _int('recycle_min_age_days', 180),
+        'min_follower_growth': _int('recycle_min_follower_growth', 20),
+        'min_stars':           _int('recycle_min_stars', 3),
+        'max_per_month':       _int('recycle_max_per_month', 4),
+        'excluded_cats':       [str(c) for c in excluded],
+    }
+
+
+def _follower_growth_since(city_id, since):
+    """Follower-Zuwachs der Stadt seit `since` (letzter Snapshot minus Snapshot zum Zeitpunkt).
+    None, wenn keine zwei verwertbaren Snapshots vorliegen."""
+    if not since:
+        return None
+    latest = CityFollowerSnapshot.query.filter_by(city_id=city_id)\
+                .order_by(CityFollowerSnapshot.recorded_at.desc()).first()
+    if not latest:
+        return None
+    baseline = CityFollowerSnapshot.query.filter(
+        CityFollowerSnapshot.city_id == city_id,
+        CityFollowerSnapshot.recorded_at <= since
+    ).order_by(CityFollowerSnapshot.recorded_at.desc()).first()
+    if not baseline:
+        baseline = CityFollowerSnapshot.query.filter(
+            CityFollowerSnapshot.city_id == city_id,
+            CityFollowerSnapshot.recorded_at > since
+        ).order_by(CityFollowerSnapshot.recorded_at).first()
+    if not baseline or baseline.id == latest.id:
+        return None
+    return latest.count - baseline.count
+
+
+def _recycle_score(post, settings=None):
+    """Recycle-Score 0–100 basierend auf Performance + Zeit seit Veröffentlichung.
+    Zieht 15 Punkte ab, wenn das Follower-Wachstum seit published_at unter recycle_min_follower_growth
+    liegt (nur wenn Snapshots vorhanden sind)."""
     if not post.published_at:
         return 0
+    settings = settings or _recycle_settings()
     er = post.engagement_rate or 0
     days_ago = (datetime.utcnow() - post.published_at).days
     if days_ago < 14:
@@ -3779,7 +4225,66 @@ def _recycle_score(post):
     er_score = min(100, er * 15)
     base = er_score * time_factor
     penalty = min(40, (post.recycle_count or 0) * 20)
+    growth = _follower_growth_since(post.city_id, post.published_at)
+    if growth is not None and growth < settings['min_follower_growth']:
+        penalty += 15
     return max(0, min(100, int(base - penalty)))
+
+
+def _recycle_slots_left(city_id, settings):
+    """max_per_month minus in diesem Monat freigegebene RecycleJobs dieser Stadt."""
+    first = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    approved = RecycleJob.query.filter(
+        RecycleJob.city_id == city_id,
+        RecycleJob.status.in_(['geplant', 'veroeffentlicht']),
+        db.or_(
+            db.and_(RecycleJob.scheduled_for.isnot(None), RecycleJob.scheduled_for >= first,
+                    RecycleJob.scheduled_for < _first_of_next_month(first)),
+            db.and_(RecycleJob.scheduled_for.is_(None), RecycleJob.updated_at >= first),
+        ),
+    ).count()
+    return max(0, settings['max_per_month'] - approved)
+
+
+def _recycle_candidates(city_id=None, min_days=None, limit=None):
+    """Kandidatenliste mit angewandten Recycling-Einstellungen – von /api/recycle/candidates
+    und /api/city/<id>/dashboard gemeinsam genutzt."""
+    settings = _recycle_settings()
+    eff_days = max(int(min_days or 0), settings['min_age_days'])
+    cutoff = datetime.utcnow() - timedelta(days=eff_days)
+    q = MemePost.query.filter(
+        MemePost.status == 'veroeffentlicht',
+        MemePost.published_at <= cutoff
+    )
+    if city_id:
+        q = q.filter_by(city_id=city_id)
+    posts = q.order_by(MemePost.published_at.desc()).all()
+    excluded = set(settings['excluded_cats'])
+    slots_cache: dict = {}
+    result = []
+    for p in posts:
+        tmpl = p.template
+        if tmpl:
+            if tmpl.category in excluded:
+                continue
+            if (tmpl.rating or 0) < settings['min_stars']:
+                continue
+        d = p.to_dict()
+        d['recycle_score'] = _recycle_score(p, settings)
+        d['days_since_post'] = (datetime.utcnow() - p.published_at).days if p.published_at else None
+        d['open_recycle_jobs'] = RecycleJob.query.filter(
+            RecycleJob.source_post_id == p.id,
+            RecycleJob.status.in_(['vorschlag', 'geplant'])
+        ).count()
+        if p.city_id not in slots_cache:
+            slots_cache[p.city_id] = _recycle_slots_left(p.city_id, settings)
+        d['monthly_slots_left'] = slots_cache[p.city_id]
+        d['follower_growth'] = _follower_growth_since(p.city_id, p.published_at)
+        result.append(d)
+    result.sort(key=lambda x: x['recycle_score'], reverse=True)
+    if limit:
+        result = result[:limit]
+    return result, settings, eff_days
 
 
 @app.route('/api/trending')
@@ -3949,28 +4454,15 @@ def api_trending_delete(tid):
 @app.route('/api/recycle/candidates')
 @login_required
 def api_recycle_candidates():
+    """Kandidaten mit angewandten Einstellungen. Antwort bleibt eine Liste (jeder Eintrag hat
+    zusätzlich monthly_slots_left + follower_growth); die wirksamen Einstellungen stehen
+    im Header X-Recycle-Settings (JSON)."""
     city_id  = request.args.get('city_id', type=int)
-    min_days = request.args.get('min_days', 14, type=int)
-    cutoff   = datetime.utcnow() - timedelta(days=min_days)
-    q = MemePost.query.filter(
-        MemePost.status == 'veroeffentlicht',
-        MemePost.published_at <= cutoff
-    )
-    if city_id:
-        q = q.filter_by(city_id=city_id)
-    posts = q.order_by(MemePost.published_at.desc()).all()
-    result = []
-    for p in posts:
-        d = p.to_dict()
-        d['recycle_score'] = _recycle_score(p)
-        d['days_since_post'] = (datetime.utcnow() - p.published_at).days if p.published_at else None
-        d['open_recycle_jobs'] = RecycleJob.query.filter(
-            RecycleJob.source_post_id == p.id,
-            RecycleJob.status.in_(['vorschlag', 'geplant'])
-        ).count()
-        result.append(d)
-    result.sort(key=lambda x: x['recycle_score'], reverse=True)
-    return jsonify(result)
+    min_days = request.args.get('min_days', type=int)
+    result, settings, eff_days = _recycle_candidates(city_id=city_id, min_days=min_days)
+    resp = jsonify(result)
+    resp.headers['X-Recycle-Settings'] = json.dumps({**settings, 'effective_min_days': eff_days})
+    return resp
 
 
 @app.route('/api/recycle/jobs')
@@ -4195,6 +4687,16 @@ def _seed_market():
 
 with app.app_context():
     _seed_market()
+
+
+# ── ERWEITERUNGEN (Phase B) ────────────────────────
+# register_extensions(app) wird hier eingehängt: Scheduler, Blueprints, Queue-System.
+# In Phase A bewusst leer – keine neuen Blueprints, kein Scheduler.
+def register_extensions(flask_app):
+    pass
+
+register_extensions(app)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5200)

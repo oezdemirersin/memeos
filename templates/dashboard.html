@@ -236,6 +236,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .vorrat-cb{position:absolute;top:8px;left:8px;z-index:10;width:18px;height:18px;cursor:pointer;accent-color:var(--accent);opacity:0;transition:opacity .15s;}
 .vorrat-card:hover .vorrat-cb,.vorrat-card.selected .vorrat-cb{opacity:1;}
 .vorrat-card.selected{outline:2px solid var(--accent);outline-offset:0;}
+.vorrat-img video{width:100%;height:100%;object-fit:cover;display:block;}
+.vorrat-slides{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;border-top:1px solid var(--border);background:var(--surface2);}
+.vorrat-slides[hidden]{display:none;}
+.vorrat-slide-thumb{position:relative;flex:0 0 72px;width:72px;height:72px;border-radius:6px;overflow:hidden;background:var(--surface3);border:1px solid var(--border);}
+.vorrat-slide-thumb img,.vorrat-slide-thumb video{width:100%;height:100%;object-fit:cover;display:block;}
+.vorrat-slide-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,.8);pointer-events:none;}
+.vorrat-slide-idx{position:absolute;bottom:2px;right:4px;font-size:9px;color:#fff;background:rgba(0,0,0,.6);border-radius:4px;padding:0 4px;}
 .bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:12px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 40px rgba(0,0,0,.6);z-index:400;white-space:nowrap;transition:opacity .2s,transform .2s;}
 .bulk-bar.hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(12px);}
 
@@ -380,7 +387,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .tlib-type-cell{width:70px;flex-shrink:0;}
 .tlib-rating-cell{width:90px;flex-shrink:0;font-size:13px;color:#f59e0b;cursor:pointer;letter-spacing:1px;}
 .tlib-uses-cell{width:50px;flex-shrink:0;text-align:right;font-size:12px;color:var(--muted);}
-.tlib-actions-cell{width:140px;flex-shrink:0;display:flex;justify-content:flex-end;gap:4px;}
+.tlib-actions-cell{width:230px;flex-shrink:0;display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;}
 /* Carousel upload */
 .hl-carousel-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0;}
 .hl-carousel-strip .hl-slide{position:relative;flex-shrink:0;width:70px;height:70px;border-radius:6px;overflow:hidden;border:2px solid var(--border);}
@@ -731,7 +738,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <div class="card-sm" style="padding:10px 16px;display:flex;align-items:center;gap:8px;">
       <span style="font-size:20px;font-weight:700;color:#10b981;" id="tlib-canva-pct">–</span>
-      <span style="font-size:12px;color:var(--muted);">mit Canva</span>
+      <span style="font-size:12px;color:var(--muted);">mit Canva-Link</span>
     </div>
     <div class="card-sm" style="padding:10px 16px;display:flex;align-items:center;gap:8px;">
       <span style="font-size:20px;font-weight:700;color:#8b5cf6;" id="tlib-uses">–</span>
@@ -764,7 +771,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <option value="use_count">Meistgenutzt</option>
     </select>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap;">
-      <input type="checkbox" id="template-filter-canva" onchange="filterTemplates()"> Nur Canva
+      <input type="checkbox" id="template-filter-canva" onchange="filterTemplates()"> Mit Canva-Link
     </label>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap;">
       <input type="checkbox" id="template-filter-seasonal" onchange="filterTemplates()"> Saisonal aktiv
@@ -788,7 +795,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <span style="width:70px;">Typ</span>
     <span style="width:90px;">Bewertung</span>
     <span style="width:50px;text-align:right;">Genutzt</span>
-    <span style="width:140px;text-align:right;">Aktionen</span>
+    <span style="width:230px;text-align:right;">Aktionen</span>
   </div>
 
   <div id="templates-grid" style="display:flex;flex-direction:column;gap:0;">
@@ -814,8 +821,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <select id="gen-template">
           <option value="">— Template wählen —</option>
           {% for t in templates %}
-          <option value="{{ t.id }}" data-vars="{{ t.required_vars }}" data-canva="{{ t.has_canva() }}" data-desc="{{ t.description or '' }}">
-            {{ t.name }} {% if t.has_canva() %}✓{% else %}(kein Canva){% endif %}
+          <option value="{{ t.id }}" data-vars="{{ t.required_vars }}" data-render-type="{{ t.render_type or 'pil' }}" data-desc="{{ t.description or '' }}">
+            {{ t.name }} · {% if t.render_type == 'manual' %}Manuell{% elif t.render_type == 'pil' or not t.render_type %}PIL{% else %}{{ t.render_type }}{% endif %}
           </option>
           {% endfor %}
         </select>
@@ -863,7 +870,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <select id="bulk-template">
           <option value="">— Template wählen —</option>
           {% for t in templates %}
-          <option value="{{ t.id }}">{{ t.name }} {% if t.has_canva() %}✓{% else %}(kein Canva){% endif %}</option>
+          <option value="{{ t.id }}" data-render-type="{{ t.render_type or 'pil' }}">{{ t.name }} · {% if t.render_type == 'manual' %}Manuell{% elif t.render_type == 'pil' or not t.render_type %}PIL{% else %}{{ t.render_type }}{% endif %}</option>
           {% endfor %}
         </select>
       </div>
@@ -1014,7 +1021,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
   <div style="max-width:600px;display:flex;flex-direction:column;gap:16px;">
     <div class="card">
-      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Canva API</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Canva-Verbindung (für Template-Import)</div>
       <div id="canva-status-card">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <div class="dot {{ 'green' if canva_connected else 'red' }}" id="settings-canva-dot"></div>
@@ -1022,7 +1029,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
             <div style="font-size:13px;font-weight:600;" id="settings-canva-text">
               {{ 'Canva verbunden' if canva_connected else 'Canva nicht verbunden' }}
             </div>
-            <div style="font-size:11px;color:var(--muted);">Autofill API für Template-Rendering</div>
+            <div style="font-size:11px;color:var(--muted);">Wird für den Import von Canva-Designs als PPTX genutzt. Autofill gibt es nicht mehr (Canva Enterprise).</div>
           </div>
         </div>
         {% if canva_connected %}
@@ -1070,7 +1077,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Telegram-Benachrichtigungen</div>
       <div class="form-group">
         <label>Bot-Token</label>
-        <input type="password" id="settings-telegram-token" placeholder="123456:ABC-DEFxxx">
+        <input type="password" id="settings-telegram-token" placeholder="123456:ABC-DEFxxx" autocomplete="off">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="settings-telegram-token-hint">Leer lassen, um den gespeicherten Token zu behalten.</div>
       </div>
       <div class="form-group">
         <label>Chat-ID</label>
@@ -1093,6 +1101,38 @@ tr:hover td{background:rgba(255,255,255,.02);}
           <span style="font-size:12px;color:var(--muted);">Tage (erscheint als ⚠ auf Karte)</span>
           <button class="btn btn-ghost btn-sm" onclick="saveAlertDays()">Speichern</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Kategorie-Zielmix ── -->
+    <div class="card" id="category-mix-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Kategorie-Zielmix</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Wunsch-Anteil je Template-Kategorie in Prozent. Steuert, welche Kategorien bei Vorschlägen bevorzugt werden.</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <thead>
+            <tr style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
+              <th style="text-align:left;padding:4px;font-weight:600;">Kategorie</th>
+              <th style="text-align:left;padding:4px;font-weight:600;">Gruppe</th>
+              <th style="text-align:right;padding:4px;font-weight:600;">Anteil</th>
+            </tr>
+          </thead>
+          <tbody id="category-mix-body">
+            {% for k, label, emoji, group in template_categories %}
+            <tr style="border-top:1px solid var(--border);">
+              <td style="padding:6px 4px;">{{ emoji }} {{ label }}</td>
+              <td style="padding:6px 4px;color:var(--muted);font-size:11px;">{{ group }}</td>
+              <td style="padding:6px 4px;text-align:right;white-space:nowrap;"><input type="number" class="cat-mix-input" data-cat="{{ k }}" min="0" max="100" step="1" value="0" oninput="_updateCategoryMixSum()" style="width:70px;text-align:right;"> %</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">
+        <div style="font-size:12px;color:var(--muted);">Summe: <strong id="category-mix-sum" style="color:var(--text);">0</strong> %</div>
+        <span id="category-mix-warn" style="font-size:11px;color:var(--warning);display:none;">Summe ist nicht 100 %</span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveCategoryMix()">Speichern</button>
       </div>
     </div>
 
@@ -1578,9 +1618,19 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div style="position:sticky;top:20px;">
       <div class="card" style="padding:16px;margin-bottom:12px;">
         <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:10px;">SEITE BEOBACHTEN</div>
-        <div style="display:flex;gap:6px;">
-          <input type="text" id="inspo-new-source" placeholder="@username" style="flex:1;">
-          <button class="btn btn-primary btn-sm" onclick="addInspoSource()">+</button>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="inspo-new-source" placeholder="@username" style="flex:1;">
+            <button class="btn btn-primary btn-sm" onclick="addInspoSource()">+</button>
+          </div>
+          <select id="inspo-new-city" title="Stadt, der die Quelle zugeordnet wird" style="font-size:12px;">
+            <option value="">Stadt wählen …</option>
+            {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <select id="inspo-new-platform" title="Plattform" style="font-size:12px;">
+            <option value="instagram" selected>Instagram</option>
+            <option value="tiktok">TikTok</option>
+          </select>
         </div>
       </div>
 
@@ -1589,6 +1639,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
           QUELLEN (<span id="inspo-source-count">0</span>)
         </div>
         <div id="inspo-sources-list" style="max-height:400px;overflow-y:auto;"></div>
+        <div style="padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);line-height:1.4;">Ohne Stadt landet kein Stadtwissen aus dieser Quelle im Wiki.</div>
       </div>
     </div>
 
@@ -1665,18 +1716,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </select>
       <select id="wissen-cat-filter" onchange="loadStadtwissen()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
         <option value="">Alle Kategorien</option>
-        <option value="reichenviertel">🏘️ Reichenviertel</option>
-        <option value="problemviertel">🏚️ Problemviertel</option>
-        <option value="kriminalitaet">🚨 Kriminalität</option>
-        <option value="running_gag">😂 Running Gags</option>
-        <option value="person">👤 Personen</option>
-        <option value="slang">💬 Slang</option>
-        <option value="sehenswuerdigkeit">🗺️ Sehenswürdigkeiten</option>
-        <option value="event">🎉 Events</option>
-        <option value="viertel">📍 Viertel</option>
-        <option value="rivalitaet">⚔️ Rivalitäten</option>
-        <option value="witz">🤣 Witze</option>
-        <option value="sonstiges">📝 Sonstiges</option>
+        {% for key, label, color in categories %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
       </select>
       <select id="wissen-verified-filter" onchange="loadStadtwissen()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
         <option value="">Alle Status</option>
@@ -1718,18 +1758,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div>
         <label class="form-label">Kategorie</label>
         <select id="wissen-add-cat" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);">
-          <option value="reichenviertel">🏘️ Reichenviertel</option>
-          <option value="problemviertel">🏚️ Problemviertel</option>
-          <option value="kriminalitaet">🚨 Kriminalität</option>
-          <option value="running_gag">😂 Running Gags / Insider</option>
-          <option value="person">👤 Bekannte Personen</option>
-          <option value="slang">💬 Lokaler Slang</option>
-          <option value="sehenswuerdigkeit">🗺️ Sehenswürdigkeiten</option>
-          <option value="event">🎉 Events & Traditionen</option>
-          <option value="viertel">📍 Wichtige Viertel</option>
-          <option value="rivalitaet">⚔️ Stadt-Rivalitäten</option>
-          <option value="witz">🤣 Stadt-Witze</option>
-          <option value="sonstiges">📝 Sonstiges</option>
+          {% for key, label, color in categories %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
         </select>
       </div>
       <div>
@@ -2577,9 +2606,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div class="form-group">
         <label>Render-Typ</label>
         <select id="tmpl-render-type">
-          <option value="canva">Canva</option>
-          <option value="pil">PIL (lokal generiert)</option>
-          <option value="manual">Manuell</option>
+          <option value="pil" selected>PIL (lokal gerendert)</option>
+          <option value="manual">Manuell (nur Brief)</option>
         </select>
       </div>
       <div class="form-group">
@@ -2597,10 +2625,22 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="form-group"><label>Beispiel-Text</label><textarea id="tmpl-example" rows="2" placeholder='z.B. "POV: Du musst kurz durch [PROBLEMORT]"'></textarea></div>
     <div class="form-group"><label>Interne Notizen</label><textarea id="tmpl-notes" rows="2" placeholder="Was funktioniert gut? Welche Städte performen? Tipps für spätere Nutzung…"></textarea></div>
 
-    <!-- Canva -->
-    <div style="font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;">Canva</div>
+    <!-- Hintergrundbild -->
+    <div style="font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;">Hintergrundbild</div>
+    <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px;">
+      <div id="tmpl-bg-thumb" style="width:96px;height:96px;border-radius:8px;background:var(--surface3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;overflow:hidden;flex-shrink:0;">kein Bild</div>
+      <div style="flex:1;min-width:0;">
+        <input type="file" id="tmpl-bg-file" accept="image/png,image/jpeg,image/gif,image/webp" onchange="_previewTemplateBgFile(this)" style="font-size:12px;">
+        <div style="font-size:11px;color:var(--muted2);margin-top:6px;">Wird nach dem Speichern hochgeladen. Textboxen und Variablen legst du im Studio fest.</div>
+        <div style="margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" id="tmpl-studio-btn" onclick="openStudio(document.getElementById('tmpl-id').value)" style="display:none;">Studio öffnen →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canva-Link -->
+    <div style="font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;">Canva-Link (optional)</div>
     <div class="form-row">
-      <div class="form-group"><label>Template ID</label><input type="text" id="tmpl-canva-id" placeholder="z.B. EAHLSU60FlE"></div>
       <div class="form-group"><label>Direktlink zum Design</label><input type="url" id="tmpl-canva-url" placeholder="https://www.canva.com/design/…/edit"></div>
     </div>
 
@@ -2613,11 +2653,6 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <div class="chip" data-var="{{ v }}" onclick="toggleVar(this)">{{ v }}</div>
         {% endfor %}
       </div>
-    </div>
-
-    <div class="form-group">
-      <label>Canva Feld-Mapping (JSON) <span style="color:var(--muted);font-weight:400;">— Variable → Canva Feldname</span></label>
-      <textarea id="tmpl-field-map" rows="3" placeholder='{"problem_place": "mein_feld_in_canva", "landmark": "wahrzeichen_feld"}'></textarea>
     </div>
 
     <div class="form-row">
@@ -2641,6 +2676,29 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="modal-footer" style="position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);margin-top:0;padding-top:16px;">
       <button class="btn btn-ghost" onclick="closeModal('modal-template')">Abbrechen</button>
       <button class="btn btn-primary" onclick="saveTemplate()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Karussell rendern (Serie → alle Slides für eine Stadt) -->
+<div class="modal-overlay" id="modal-carousel">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">KARUSSELL RENDERN</div>
+      <button class="modal-close" onclick="closeCarouselModal()">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted2);margin-bottom:12px;">Serie: <strong id="carousel-series-name" style="color:var(--text);"></strong></div>
+    <div class="form-group">
+      <label>Stadt</label>
+      <select id="carousel-city">
+        <option value="">— Stadt wählen —</option>
+        {% for city in cities %}<option value="{{ city.id }}">{{ city.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div id="carousel-result" style="display:none;margin-top:8px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCarouselModal()">Schließen</button>
+      <button class="btn btn-primary" id="carousel-start-btn" onclick="startCarouselRender()">Rendern</button>
     </div>
   </div>
 </div>
@@ -2783,7 +2841,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') updateBulkSelection();
   if(name==='hochladen') hlGoToPhase1();
@@ -3055,14 +3113,23 @@ function _updateTlibStats(templates) {
   }
 }
 
+// Render-Typ: 'pil' (lokal gerendert) | 'manual' (nur Brief); Fremdwerte sichtbar lassen
+function _renderTypeBadge(t) {
+  if (t.render_type === 'pil')    return `<span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;">PIL</span>`;
+  if (t.render_type === 'manual') return `<span class="badge badge-gray" style="font-size:10px;">Manuell</span>`;
+  return `<span class="badge badge-gray" style="font-size:10px;" title="Unbekannter Render-Typ">${_esc(t.render_type || '–')}</span>`;
+}
+
+// Template-Studio (Phase B): eigene Seite unter /studio/<template_id>
+function openStudio(id) {
+  if (!id) { toast('Erst Template speichern, dann Studio öffnen', 'error'); return; }
+  window.open(`/studio/${id}`, '_blank');
+}
+
 function _renderTemplateCard(t) {
   const stars = '★'.repeat(t.rating||0) + '☆'.repeat(5-(t.rating||0));
   const seasonal = _isSaisonActive(t);
-  const renderBadge = t.render_type === 'pil'
-    ? `<span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;">PIL</span>`
-    : t.render_type === 'manual'
-    ? `<span class="badge badge-gray" style="font-size:10px;">Manuell</span>`
-    : (t.has_canva ? `<span class="badge badge-green" style="font-size:10px;">Canva ✓</span>` : `<span class="badge badge-gray" style="font-size:10px;">kein Canva</span>`);
+  const renderBadge = _renderTypeBadge(t);
   const thumb = t.preview_image
     ? `<img src="/uploads/${t.preview_image}">`
     : `${t.category_emoji||'📋'}`;
@@ -3085,6 +3152,7 @@ function _renderTemplateCard(t) {
     <div class="tlib-uses-cell">${t.use_count||0}×</div>
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
+      <button class="btn btn-ghost btn-xs" onclick="openStudio(${t.id})" title="Template-Studio öffnen">Studio</button>
       ${canvaBtn}
       <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
       <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
@@ -3181,6 +3249,7 @@ function _renderSeriesGroup(sname, templates) {
     <div class="tlib-uses-cell">${totalUses}×</div>
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="event.stopPropagation();openGeneratorWith(${first.id})" title="Erste Slide generieren">⚡</button>
+      <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();openCarouselModal(this.dataset.series)" title="Alle Slides dieser Serie für eine Stadt rendern">Karussell rendern</button>
       <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openTemplateModal(${first.id})" title="Erste Slide bearbeiten">✏️</button>
     </div>
   </div>`;
@@ -3201,12 +3270,13 @@ function _renderSeriesGroup(sname, templates) {
         </div>
         <div class="tlib-cat-cell"></div>
         <div class="tlib-type-cell">
-          ${t.render_type==='pil'?'<span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;">PIL</span>':t.has_canva?'<span class="badge badge-green" style="font-size:10px;">Canva ✓</span>':'<span class="badge badge-gray" style="font-size:10px;">kein Canva</span>'}
+          ${_renderTypeBadge(t)}
         </div>
         <div class="tlib-rating-cell" onclick="quickRateTemplate(${t.id},this)" title="Bewerten">${subStars}</div>
         <div class="tlib-uses-cell">${t.use_count||0}×</div>
         <div class="tlib-actions-cell">
           <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
+          <button class="btn btn-ghost btn-xs" onclick="openStudio(${t.id})" title="Template-Studio öffnen">Studio</button>
           ${t.canva_url?`<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;padding:3px 7px;">↗</a>`:''}
           <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
           <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
@@ -3270,9 +3340,8 @@ function openTemplateModal(id) {
     document.getElementById('tmpl-description').value = t.description || '';
     document.getElementById('tmpl-example').value = t.example_text || '';
     document.getElementById('tmpl-notes').value = t.notes || '';
-    document.getElementById('tmpl-canva-id').value = t.canva_template_id || '';
     document.getElementById('tmpl-canva-url').value = t.canva_url || '';
-    document.getElementById('tmpl-render-type').value = t.render_type || 'canva';
+    document.getElementById('tmpl-render-type').value = t.render_type === 'manual' ? 'manual' : 'pil';
     document.getElementById('tmpl-category').value = t.category || 'allgemein';
     document.getElementById('tmpl-tags').value = t.tags.join(', ');
     document.getElementById('tmpl-min-pop').value = t.min_population || 0;
@@ -3280,24 +3349,53 @@ function openTemplateModal(id) {
     document.getElementById('tmpl-season-to').value = t.seasonal_to || '';
     document.getElementById('tmpl-series').value = t.series || '';
     document.getElementById('tmpl-series-pos').value = t.series_position || '';
-    document.getElementById('tmpl-field-map').value = JSON.stringify(t.canva_field_map || {}, null, 2);
     setModalRating(t.rating || 0);
     document.querySelectorAll('.chip[data-var]').forEach(c => {
-      c.classList.toggle('selected', t.required_vars.includes(c.dataset.var));
+      c.classList.toggle('selected', (t.required_vars||[]).includes(c.dataset.var));
     });
+    _setTemplateBgThumb(t.preview_image ? `/uploads/${t.preview_image}` : null);
+    document.getElementById('tmpl-studio-btn').style.display = '';
   } else {
     document.getElementById('tmpl-modal-title').textContent = 'TEMPLATE HINZUFÜGEN';
     document.getElementById('tmpl-id').value = '';
-    ['tmpl-name','tmpl-description','tmpl-example','tmpl-notes','tmpl-canva-id','tmpl-canva-url',
+    ['tmpl-name','tmpl-description','tmpl-example','tmpl-notes','tmpl-canva-url',
      'tmpl-tags','tmpl-season-from','tmpl-season-to','tmpl-series','tmpl-series-pos'].forEach(f => {
       const el = document.getElementById(f); if(el) el.value = '';
     });
     document.getElementById('tmpl-min-pop').value = 0;
-    document.getElementById('tmpl-render-type').value = 'canva';
+    document.getElementById('tmpl-render-type').value = 'pil';
     document.getElementById('tmpl-category').value = 'allgemein';
-    document.getElementById('tmpl-field-map').value = '{}';
+    _setTemplateBgThumb(null);
+    document.getElementById('tmpl-studio-btn').style.display = 'none';
   }
+  const fileInp = document.getElementById('tmpl-bg-file');
+  if (fileInp) fileInp.value = '';
   openModal('modal-template');
+}
+
+function _setTemplateBgThumb(url) {
+  const box = document.getElementById('tmpl-bg-thumb');
+  if (!box) return;
+  box.innerHTML = url ? `<img src="${_esc(url)}" style="width:100%;height:100%;object-fit:cover;display:block;">` : 'kein Bild';
+}
+
+function _previewTemplateBgFile(inp) {
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => _setTemplateBgThumb(ev.target.result);
+  reader.readAsDataURL(f);
+}
+
+// Hintergrundbild per FormData an POST /api/templates/<id>/upload-preview (Feld 'file')
+async function _uploadTemplateBg(templateId, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const r = await fetch(`/api/templates/${templateId}/upload-preview`, {
+    method: 'POST', headers: {'X-CSRF-Token': '{{ csrf_token }}'}, body: fd,
+  }).then(x => x.json()).catch(() => ({error: 'Upload fehlgeschlagen'}));
+  if (r.error) { toast('Hintergrundbild: ' + r.error, 'error'); return null; }
+  return r.filename || null;
 }
 
 function toggleVar(chip) { chip.classList.toggle('selected'); }
@@ -3305,21 +3403,17 @@ function toggleVar(chip) { chip.classList.toggle('selected'); }
 async function saveTemplate() {
   const id = document.getElementById('tmpl-id').value;
   const selectedVars = [...document.querySelectorAll('.chip.selected[data-var]')].map(c => c.dataset.var);
-  let fieldMap = {};
-  try { fieldMap = JSON.parse(document.getElementById('tmpl-field-map').value || '{}'); } catch(e) {}
   const tags = document.getElementById('tmpl-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
   const data = {
     name: document.getElementById('tmpl-name').value,
     description: document.getElementById('tmpl-description').value,
     example_text: document.getElementById('tmpl-example').value,
     notes: document.getElementById('tmpl-notes').value,
-    canva_template_id: document.getElementById('tmpl-canva-id').value,
     canva_url: document.getElementById('tmpl-canva-url').value,
     render_type: document.getElementById('tmpl-render-type').value,
     rating: parseInt(document.getElementById('tmpl-rating').value) || 0,
     category: document.getElementById('tmpl-category').value,
     required_vars: selectedVars,
-    canva_field_map: fieldMap,
     tags,
     min_population: parseInt(document.getElementById('tmpl-min-pop').value) || 0,
     seasonal_from: document.getElementById('tmpl-season-from').value,
@@ -3329,6 +3423,13 @@ async function saveTemplate() {
   };
   const r = id ? await api('PUT',`/api/templates/${id}`,data) : await api('POST','/api/templates',data);
   if(r.error) { toast(r.error,'error'); return; }
+  // Hintergrundbild: beim Neuanlegen erst speichern, dann mit der neuen id hochladen
+  const bgFile = document.getElementById('tmpl-bg-file')?.files?.[0];
+  const savedId = (r.template && r.template.id) || (id ? parseInt(id) : null);
+  if (bgFile && savedId) {
+    const filename = await _uploadTemplateBg(savedId, bgFile);
+    if (filename && r.template) r.template.preview_image = filename;
+  }
   toast('Template gespeichert!','success');
   closeModal('modal-template');
   if(r.template) {
@@ -3336,7 +3437,85 @@ async function saveTemplate() {
     if(idx>=0) _allTemplates[idx]=r.template; else _allTemplates.push(r.template);
     _updateTlibStats(_allTemplates);
     _applyTlibFilters();
+    if (bgFile) loadTemplates();
   } else { loadTemplates(); }
+}
+
+// ── KARUSSELL RENDERN (Serie) ──
+let _carouselSeries = null;
+let _carouselPollTimer = null;
+
+function openCarouselModal(series) {
+  _carouselSeries = series;
+  document.getElementById('carousel-series-name').textContent = series || '';
+  const res = document.getElementById('carousel-result');
+  res.style.display = 'none'; res.innerHTML = '';
+  const btn = document.getElementById('carousel-start-btn');
+  btn.disabled = false; btn.textContent = 'Rendern';
+  openModal('modal-carousel');
+}
+
+function closeCarouselModal() {
+  if (_carouselPollTimer) { clearTimeout(_carouselPollTimer); _carouselPollTimer = null; }
+  closeModal('modal-carousel');
+}
+
+async function startCarouselRender() {
+  const cityId = document.getElementById('carousel-city').value;
+  if (!cityId) { toast('Stadt wählen!', 'error'); return; }
+  if (!_carouselSeries) { toast('Keine Serie gewählt', 'error'); return; }
+  const btn = document.getElementById('carousel-start-btn');
+  const res = document.getElementById('carousel-result');
+  btn.disabled = true; btn.textContent = 'Läuft …';
+  res.style.display = '';
+  res.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);"><div class="spinner"></div> Karussell wird gerendert …</div>';
+
+  const r = await api('POST', '/api/generate/carousel', { city_id: parseInt(cityId), series: _carouselSeries });
+  if (!r || r.error || !r.post_id) {
+    res.innerHTML = `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;">${_esc((r && r.error) || 'Unbekannter Fehler')}</div>`;
+    btn.disabled = false; btn.textContent = 'Erneut versuchen';
+    return;
+  }
+  const postId  = r.post_id;
+  const started = Date.now();
+  const poll = async () => {
+    _carouselPollTimer = null;
+    const c = await api('GET', `/api/posts/${postId}/carousel`).catch(() => null);
+    if (c && c.status && c.status !== 'rendering') {
+      _renderCarouselResult(postId, c);
+      btn.disabled = false; btn.textContent = 'Noch einmal';
+      return;
+    }
+    if (Date.now() - started > 60000) {
+      res.innerHTML = `<div style="font-size:12px;color:var(--warning);padding:8px;background:rgba(245,158,11,.1);border-radius:6px;">Zeitüberschreitung (60 s) – der Post wird im Hintergrund weiter gerendert.</div>
+        <div style="margin-top:10px;"><button class="btn btn-ghost btn-sm" onclick="closeCarouselModal();showPage('vorrat')">Im Vorrat öffnen →</button></div>`;
+      btn.disabled = false; btn.textContent = 'Rendern';
+      return;
+    }
+    _carouselPollTimer = setTimeout(poll, 3000);
+  };
+  _carouselPollTimer = setTimeout(poll, 3000);
+}
+
+function _renderCarouselResult(postId, c) {
+  const res  = document.getElementById('carousel-result');
+  const urls = Array.isArray(c.image_urls) ? c.image_urls : [];
+  const failed = ['failed', 'error'].includes(c.status);
+  const errMsg = c.error_message || c.error || '';
+  res.innerHTML = `
+    <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      ${failed ? `<span class="badge badge-red">Fehler</span>` : `<span class="badge badge-green">${_esc(c.status)}</span>`}
+      <span style="color:var(--muted);">${_esc(c.title || '')}${c.title ? ' · ' : ''}${c.slide_count || urls.length} Slides</span>
+    </div>
+    ${failed && errMsg ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:8px;">${_esc(errMsg)}</div>` : ''}
+    ${urls.length ? `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">${urls.map((u,i)=>`<div class="vorrat-slide-thumb" title="Slide ${i+1}"><img src="${_esc(u)}" loading="lazy"><span class="vorrat-slide-idx">${i+1}</span></div>`).join('')}</div>` : ''}
+    <div style="margin-top:10px;"><button class="btn btn-ghost btn-sm" onclick="closeCarouselModal();openVorratFromJob(${postId})">Im Vorrat öffnen →</button></div>`;
+}
+
+// Vorrat-Post aus Job/Karussell öffnen
+function openVorratFromJob(postId) {
+  showPage('vorrat');
+  if (postId) openVorratEdit(parseInt(postId));
 }
 
 async function deleteTemplate(id) {
@@ -3515,7 +3694,7 @@ async function pollJob(jobId, statusEl) {
   for(let i=0; i<60; i++) {
     await new Promise(res => setTimeout(res, 3000));
     const job = await api('GET', `/api/jobs/${jobId}`);
-    if(statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:var(--muted);">Status: ${job.status_label} | Fit-Score: ${job.fit_score ?? '—'}</div>`;
+    if(statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:var(--muted);">Status: ${job.status_label} | Fit-Score: ${job.fit_score ?? '–'}</div>`;
     if(['done','failed','approved','rejected'].includes(job.status)) {
       renderJobResult(job);
       if(statusEl) statusEl.style.display='none';
@@ -3547,24 +3726,51 @@ function renderJobResult(job) {
         <div style="font-size:13px;line-height:1.5;">${job.manual_brief}</div>
        </div>` : '';
 
+  const failed = job.status === 'failed';
+  const retryBtn = `<button class="btn btn-ghost btn-sm" onclick="retryGenerate(${job.template_id||'null'}, ${job.city_id||'null'})">↻ Erneut versuchen</button>`;
+  const vorratBtn = job.post_id ? `<button class="btn btn-ghost btn-sm" onclick="openVorratFromJob(${job.post_id})">Im Vorrat öffnen →</button>` : '';
+
   el.innerHTML = `<div>
     <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;padding:10px;background:var(--surface2);border-radius:8px;">
-      <div style="font-size:32px;font-family:var(--font-display);color:${scoreColor};min-width:44px;text-align:center;">${job.fit_score ?? '—'}</div>
+      <div style="font-size:32px;font-family:var(--font-display);color:${scoreColor};min-width:44px;text-align:center;">${job.fit_score ?? '–'}</div>
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Fit-Score</div>
-        <div style="font-size:13px;color:var(--text);margin-top:2px;">${job.fit_reasoning || '—'}</div>
+        <div style="font-size:13px;color:var(--text);margin-top:2px;">${job.fit_reasoning || (job.fit_score == null ? 'Keine KI-Bewertung' : '–')}</div>
       </div>
     </div>
     ${varsHtml}
     ${briefHtml}
     ${job.image_url ? `<img src="${job.image_url}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
-    ${job.error_message ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:10px;">${job.error_message}</div>` : ''}
+    ${failed ? `<div style="padding:10px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:8px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Fehlgeschlagen</div>
+        <div style="font-size:12px;color:#fca5a5;">${_esc(job.error_message || 'Kein Fehlertext vorhanden')}</div>
+      </div>`
+      : (job.error_message ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:10px;">${_esc(job.error_message)}</div>` : '')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${failed ? retryBtn : `
       <button class="btn btn-success btn-sm" onclick="approveJob(${job.id})">✓ Freigeben</button>
-      <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>
+      <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>`}
+      ${vorratBtn}
       ${job.image_url ? `<a href="${job.image_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
     </div>
   </div>`;
+}
+
+// Fehlgeschlagenen Job mit gleichem Template + Stadt neu starten (POST /api/generate)
+async function retryGenerate(templateId, cityId) {
+  if (!templateId || !cityId) { toast('Template oder Stadt fehlt – manuell im Generator wählen', 'error'); return; }
+  showPage('generator');
+  const tSel = document.getElementById('gen-template');
+  const cSel = document.getElementById('gen-city');
+  if (tSel) { tSel.value = String(templateId); tSel.dispatchEvent(new Event('change')); }
+  if (cSel) cSel.value = String(cityId);
+  const statusEl = document.getElementById('gen-status');
+  statusEl.style.display = '';
+  statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div> Neuer Versuch …</div>';
+  document.getElementById('gen-result').innerHTML = '<div class="empty"><p>Generierung läuft…</p></div>';
+  const r = await api('POST', '/api/generate', { template_id: parseInt(templateId), city_id: parseInt(cityId) });
+  if (r.error) { toast(r.error, 'error'); statusEl.style.display = 'none'; return; }
+  pollJob(r.job_id, statusEl);
 }
 
 async function approveJob(id) {
@@ -3642,8 +3848,8 @@ function renderBulkJobs(jobs) {
   el.innerHTML = jobs.map(j=>`
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
       <div style="flex:1;font-size:12px;font-weight:600;">${j.city_name}</div>
-      ${j.fit_score ? `<div style="font-size:12px;color:${j.fit_color};font-weight:700;">${j.fit_score}</div>` : ''}
-      <span class="badge ${j.status==='done'||j.status==='approved'?'badge-green':j.status==='failed'||j.status==='rejected'?'badge-red':j.status==='running'?'badge-blue':'badge-gray'}" style="font-size:10px;">${j.status_label}</span>
+      <div style="font-size:12px;color:${j.fit_color||'var(--muted)'};font-weight:700;">${j.fit_score ?? '–'}</div>
+      <span class="badge ${j.status==='done'||j.status==='approved'?'badge-green':j.status==='failed'||j.status==='rejected'?'badge-red':j.status==='running'?'badge-blue':'badge-gray'}" style="font-size:10px;" title="${j.status==='failed' ? _esc(j.error_message||'') : ''}">${j.status_label}</span>
     </div>`).join('');
 }
 
@@ -3664,8 +3870,12 @@ async function loadReviewJobs() {
           <span id="dup-warn-${j.id}" style="display:none;background:#f59e0b;color:#000;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;">⚠ Duplikat</span>
         </div>
         <div class="job-card-meta">${j.template_name}</div>
-        <div class="fit-bar"><div class="fit-bar-fill" style="width:${j.fit_score||0}%;background:${j.fit_color};"></div></div>
-        <div style="font-size:11px;color:${j.fit_color};font-weight:600;margin-bottom:4px;">Score: ${j.fit_score ?? '—'} · ${j.fit_reasoning || ''}</div>
+        <div class="fit-bar"><div class="fit-bar-fill" style="width:${j.fit_score||0}%;background:${j.fit_color||'var(--border)'};"></div></div>
+        <div style="font-size:11px;color:${j.fit_color||'var(--muted)'};font-weight:600;margin-bottom:4px;">Score: ${j.fit_score ?? '–'} · ${j.fit_reasoning || (j.fit_score == null ? 'Keine KI-Bewertung' : '')}</div>
+        ${j.status==='failed' ? `<div style="padding:8px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:6px;margin-bottom:6px;">
+            <div style="font-size:10px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Fehlgeschlagen</div>
+            <div style="font-size:11px;color:#fca5a5;">${_esc(j.error_message || 'Kein Fehlertext vorhanden')}</div>
+          </div>` : ''}
         ${j.manual_brief ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic;">"${j.manual_brief}"</div>` : ''}
         ${Object.keys(j.vars_used||{}).length ? `<div style="margin-bottom:6px;">${Object.entries(j.vars_used).map(([k,v])=>`<span class="badge badge-blue" style="font-size:10px;margin-right:3px;">${k}: ${v}</span>`).join('')}</div>` : ''}
         <div id="dup-detail-${j.id}" style="display:none;font-size:10px;color:#f59e0b;margin-bottom:4px;"></div>
@@ -3673,7 +3883,10 @@ async function loadReviewJobs() {
           ${j.status==='done' ? `
             <button class="btn btn-success btn-xs" onclick="approveJob(${j.id})">✓ OK</button>
             <button class="btn btn-danger btn-xs" onclick="rejectJob(${j.id})">✕</button>
+          ` : j.status==='failed' ? `
+            <button class="btn btn-ghost btn-xs" onclick="retryGenerate(${j.template_id||'null'}, ${j.city_id||'null'})" title="Mit gleichem Template und Stadt neu starten">↻ Erneut versuchen</button>
           ` : `<span class="badge ${j.status==='approved'||j.status==='sent'?'badge-green':j.status==='rejected'?'badge-red':'badge-gray'}">${j.status_label}</span>`}
+          ${j.post_id ? `<button class="btn btn-ghost btn-xs" onclick="openVorratFromJob(${j.post_id})" title="Angelegten Vorrat-Post öffnen">Im Vorrat öffnen</button>` : ''}
           ${j.image_url ? `<a href="${j.image_url}" download class="btn btn-ghost btn-xs">↓</a>` : ''}
           ${j.status==='approved' && !j.sent_to_content_os ? `<button class="btn btn-ghost btn-xs" onclick="resendJob(${j.id})">→ ContentOS</button>` : ''}
           <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteJob(${j.id})">🗑</button>
@@ -4453,16 +4666,31 @@ function renderVorratGrid(data) {
   grid.innerHTML = data.map(p => {
     const st  = VORRAT_STATUS[p.status] || VORRAT_STATUS.entwurf;
     const dot = `<span class="vorrat-status-dot" style="background:${st.color}"></span>`;
-    const img = p.image_url
-      ? `<img src="${p.image_url}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'vorrat-img-placeholder\\'>Kein Bild</div>'">`
-      : `<div class="vorrat-img-placeholder">Kein Bild</div>`;
+    // Slides (Karussell): [{url, kind:'image'|'video'}], Hauptbild = erstes Slide
+    const slides = Array.isArray(p.slides) ? p.slides : [];
+    const slideCount = p.slide_count || slides.length || (p.image_url ? 1 : 0);
+    const first = slides[0] || (p.image_url ? {url: p.image_url, kind: 'image'} : null);
+    const img = !first
+      ? `<div class="vorrat-img-placeholder">Kein Bild</div>`
+      : first.kind === 'video'
+        ? `<video src="${_esc(first.url)}" muted preload="metadata" playsinline></video><span class="vorrat-slide-play">▶</span>`
+        : `<img src="${_esc(first.url)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'vorrat-img-placeholder\\'>Kein Bild</div>'">`;
+    const slidesOpen = _vorratSlidesOpen === p.id;
+    const slideStrip = slideCount > 1 ? `<div class="vorrat-slides" id="vslides-${p.id}" ${slidesOpen?'':'hidden'}>
+        ${slides.map((sl,i) => sl.kind === 'video'
+          ? `<div class="vorrat-slide-thumb" title="Slide ${i+1} (Video)"><video src="${_esc(sl.url)}" muted preload="metadata" playsinline></video><span class="vorrat-slide-play">▶</span><span class="vorrat-slide-idx">${i+1}</span></div>`
+          : `<div class="vorrat-slide-thumb" title="Slide ${i+1}"><img src="${_esc(sl.url)}" loading="lazy"><span class="vorrat-slide-idx">${i+1}</span></div>`).join('')}
+      </div>` : '';
     const isSel = _vorratSelected.has(p.id);
     return `<div class="vorrat-card ${isSel?'selected':''}" id="vcard-${p.id}">
       <input type="checkbox" class="vorrat-cb" data-id="${p.id}" ${isSel?'checked':''}
         onchange="toggleVorratSelect(${p.id},this)"
         style="${_vorratSelectMode?'opacity:1;':''}" title="Auswählen">
       <div class="vorrat-img">${img}
-        <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.post_type}</div>
+        <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;">
+          ${slideCount > 1 ? `<div style="background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;" title="${slideCount} Slides">1/${slideCount}</div>` : ''}
+          <div style="background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.post_type}</div>
+        </div>
         <div style="position:absolute;top:6px;left:30px;background:${p.city_color||'#3b82f6'};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.city_name}</div>
       </div>
       <div class="vorrat-body">
@@ -4473,14 +4701,31 @@ function renderVorratGrid(data) {
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           ${dot}<span style="font-size:11px;color:${st.color};">${st.label}</span>
           <div style="flex:1;"></div>
+          ${slideCount > 1 ? `<button class="btn btn-xs btn-ghost" id="vslides-btn-${p.id}" onclick="toggleVorratSlides(${p.id})" title="Alle Slides anzeigen">Slides ${slidesOpen?'▼':'▶'}</button>` : ''}
           <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})" title="Bearbeiten">✏</button>
           <button class="btn btn-xs btn-ghost" onclick="openDuplicateModal(${p.id})" title="Duplizieren">⧉</button>
           <button class="btn btn-xs btn-ghost" onclick="openPerfModal(${p.id},'${(p.title||p.city_name).replace(/'/g,"\\'")}')">📊</button>
           <button class="btn btn-xs btn-ghost" onclick="deleteVorratPost(${p.id})" style="color:var(--muted)">✕</button>
         </div>
       </div>
+      ${slideStrip}
     </div>`;
   }).join('');
+}
+
+// Nur ein Post gleichzeitig aufgeklappt
+let _vorratSlidesOpen = null;
+function toggleVorratSlides(id) {
+  const prev = _vorratSlidesOpen;
+  _vorratSlidesOpen = (prev === id) ? null : id;
+  const setState = (pid, open) => {
+    const strip = document.getElementById(`vslides-${pid}`);
+    if (strip) strip.hidden = !open;
+    const btn = document.getElementById(`vslides-btn-${pid}`);
+    if (btn) btn.textContent = open ? 'Slides ▼' : 'Slides ▶';
+  };
+  if (prev !== null && prev !== id) setState(prev, false);
+  setState(id, _vorratSlidesOpen === id);
 }
 
 function openVorratCreateModal() {
@@ -4598,8 +4843,10 @@ let _kalMonth = new Date().getMonth(); // 0-based
 async function loadKalender() {
   const from = new Date(_kalYear, _kalMonth, 1);
   const to   = new Date(_kalYear, _kalMonth + 1, 1);
-  const fromStr = from.toISOString().substring(0,10);
-  const toStr   = to.toISOString().substring(0,10);
+  // Lokale Datumsteile statt toISOString() (UTC-Verschiebung an Monatsgrenzen)
+  const _ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fromStr = _ymd(from);
+  const toStr   = _ymd(to);
   document.getElementById('kalender-title').textContent =
     from.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   const posts = await api('GET', `/api/kalender?from=${fromStr}&to=${toStr}`);
@@ -5899,6 +6146,9 @@ async function deleteMarktPage(pageId) {
 // ══════════════════════════════════════════
 // INSPIRATION
 // ══════════════════════════════════════════
+let _inspoSources = [];
+const INSPO_PLATFORM_LABEL = { instagram: 'Instagram', tiktok: 'TikTok' };
+
 async function loadInspoSources() {
   const sources = await api('GET', '/api/inspiration/sources');
   const list    = document.getElementById('inspo-sources-list');
@@ -5906,30 +6156,71 @@ async function loadInspoSources() {
   const filterSel = document.getElementById('inspo-source-filter');
   const manualSel = document.getElementById('inspo-manual-source');
   if (!list) return;
+  _inspoSources = Array.isArray(sources) ? sources : [];
 
-  countEl.textContent = sources.length;
-  const opts = sources.map(s=>`<option value="${s.id}">${s.username}</option>`).join('');
+  countEl.textContent = _inspoSources.length;
+  const opts = _inspoSources.map(s=>`<option value="${s.id}">${_esc(s.username)}${s.city_name ? ' · ' + _esc(s.city_name) : ''}</option>`).join('');
   filterSel.innerHTML = '<option value="">Alle Quellen</option>' + opts;
   manualSel.innerHTML = '<option value="">—</option>' + opts;
 
-  list.innerHTML = sources.length ? sources.map(s=>`
+  list.innerHTML = _inspoSources.length ? _inspoSources.map(s => {
+    const cityLabel = s.city_name
+      ? `<span style="color:var(--text);">${_esc(s.city_name)}</span>`
+      : `<span style="color:var(--warning);">keine Stadt</span>`;
+    const platform = INSPO_PLATFORM_LABEL[s.platform] || 'Instagram';
+    return `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);">
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;">${s.username}</div>
-        <div style="font-size:11px;color:var(--muted);">${s.post_count||0} Posts</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;">${_esc(s.username)}</div>
+        <div style="font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+          <span>${s.post_count||0} Posts</span><span>·</span><span>${platform}</span><span>·</span>
+          <span id="inspo-src-city-${s.id}" onclick="editInspoSourceCity(${s.id})" title="Stadt ändern" style="cursor:pointer;text-decoration:underline dotted;">${cityLabel}</span>
+        </div>
       </div>
       <button class="btn btn-xs btn-ghost" onclick="deleteInspoSource(${s.id})">✕</button>
-    </div>`).join('') :
+    </div>`;
+  }).join('') :
     '<div style="padding:16px;color:var(--muted);font-size:12px;">Noch keine Quellen</div>';
+}
+
+// Klick auf den Stadtnamen → Inline-Select, Änderung → PUT /api/inspiration/sources/<id>
+function editInspoSourceCity(id) {
+  const span = document.getElementById(`inspo-src-city-${id}`);
+  if (!span || span.querySelector('select')) return;
+  const src  = _inspoSources.find(s => s.id === id);
+  const tmpl = document.getElementById('inspo-new-city');
+  const sel  = document.createElement('select');
+  sel.style.cssText = 'font-size:11px;padding:2px 4px;max-width:150px;';
+  sel.innerHTML = '<option value="">keine Stadt</option>' +
+    [...(tmpl ? tmpl.options : [])].filter(o => o.value)
+      .map(o => `<option value="${o.value}" ${src && String(src.city_id) === o.value ? 'selected' : ''}>${_esc(o.textContent)}</option>`).join('');
+  sel.onchange = async () => {
+    const cityId = sel.value ? parseInt(sel.value) : null;
+    const r = await api('PUT', `/api/inspiration/sources/${id}`, { city_id: cityId });
+    if (r && r.error) { toast(r.error, 'error'); return; }
+    toast(cityId ? 'Stadt zugeordnet' : 'Stadt entfernt', 'success');
+    loadInspoSources();
+  };
+  sel.onkeydown = (ev) => { if (ev.key === 'Escape') loadInspoSources(); };
+  span.innerHTML = '';
+  span.appendChild(sel);
+  sel.focus();
 }
 
 async function addInspoSource() {
   const input = document.getElementById('inspo-new-source');
   const username = input.value.trim().replace(/^@/,'');
   if (!username) return;
-  await api('POST', '/api/inspiration/sources', { username:'@'+username });
+  const cityId   = document.getElementById('inspo-new-city')?.value || '';
+  const platform = document.getElementById('inspo-new-platform')?.value || 'instagram';
+  const r = await api('POST', '/api/inspiration/sources', {
+    username: '@' + username,
+    city_id:  cityId ? parseInt(cityId) : null,
+    platform,
+  });
+  if (r && r.error) { toast(r.error, 'error'); return; }
   input.value = '';
-  toast('Quelle hinzugefügt!', 'success');
+  toast(cityId ? 'Quelle hinzugefügt!' : 'Quelle hinzugefügt – ohne Stadt landet kein Stadtwissen im Wiki', cityId ? 'success' : 'info');
   loadInspoSources();
 }
 
@@ -6248,7 +6539,11 @@ async function loadSettingsPage() {
   const tToken = document.getElementById('settings-telegram-token');
   const tChat  = document.getElementById('settings-telegram-chat');
   const aDay   = document.getElementById('settings-alert-days');
-  if (tToken && d.telegram_token) tToken.value = d.telegram_token;
+  // Token wird nie im Klartext geliefert: Feld bleibt leer, Platzhalter zeigt nur die letzten Zeichen
+  if (tToken) {
+    tToken.value = '';
+    tToken.placeholder = d.telegram_token_set ? `gesetzt (…${d.telegram_token_hint || ''})` : '123456:ABC-DEFxxx';
+  }
   if (tChat  && d.telegram_chat_id) tChat.value = d.telegram_chat_id;
   if (aDay   && d.alert_threshold_days) aDay.value = d.alert_threshold_days;
   const cosUrl = document.getElementById('settings-content-os-url');
@@ -6258,8 +6553,46 @@ async function loadSettingsPage() {
 async function saveTelegramSettings() {
   const token   = document.getElementById('settings-telegram-token')?.value.trim();
   const chat_id = document.getElementById('settings-telegram-chat')?.value.trim();
-  const r = await api('POST', '/api/settings', { telegram_token: token, telegram_chat_id: chat_id });
+  // Token nur senden, wenn der Nutzer etwas eingetippt hat (leer = gespeicherten behalten)
+  const body = { telegram_chat_id: chat_id };
+  if (token) body.telegram_token = token;
+  const r = await api('POST', '/api/settings', body);
   toast(r.ok ? 'Telegram-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
+  if (r.ok) loadSettingsPage();
+}
+
+// ── Kategorie-Zielmix (GET/POST /api/settings/category-mix, {'mix': {key: prozent}}) ──
+async function loadCategoryMix() {
+  const r = await api('GET', '/api/settings/category-mix').catch(() => null);
+  const mix = (r && r.mix) || {};
+  document.querySelectorAll('.cat-mix-input').forEach(inp => {
+    const v = mix[inp.dataset.cat];
+    inp.value = (v !== undefined && v !== null) ? v : 0;
+  });
+  _updateCategoryMixSum();
+}
+
+function _updateCategoryMixSum() {
+  let sum = 0;
+  document.querySelectorAll('.cat-mix-input').forEach(inp => { sum += parseFloat(inp.value) || 0; });
+  const sumEl = document.getElementById('category-mix-sum');
+  if (sumEl) {
+    sumEl.textContent = Math.round(sum * 10) / 10;
+    sumEl.style.color = (sum === 0 || Math.round(sum) === 100) ? 'var(--text)' : 'var(--warning)';
+  }
+  const warn = document.getElementById('category-mix-warn');
+  if (warn) warn.style.display = (sum === 0 || Math.round(sum) === 100) ? 'none' : '';
+}
+
+async function saveCategoryMix() {
+  const mix = {};
+  document.querySelectorAll('.cat-mix-input').forEach(inp => {
+    const v = parseFloat(inp.value) || 0;
+    if (v > 0) mix[inp.dataset.cat] = v;
+  });
+  const r = await api('POST', '/api/settings/category-mix', { mix });
+  if (r && !r.error) toast('Kategorie-Zielmix gespeichert', 'success');
+  else toast((r && r.error) || 'Fehler beim Speichern', 'error');
 }
 
 async function saveAlertDays() {
@@ -6314,7 +6647,9 @@ async function loadEvents() {
 }
 
 function _applyEvFilter() {
-  const list  = _evFilter ? _allEvents.filter(e => e.event_type === _evFilter) : _allEvents;
+  let list  = _evFilter ? _allEvents.filter(e => e.event_type === _evFilter) : _allEvents;
+  // Laufende Events (active_now) stehen oben, Rest in Serverreihenfolge
+  list = [...list].sort((a, b) => (b.active_now ? 1 : 0) - (a.active_now ? 1 : 0));
   const listEl = document.getElementById('ev-list');
   const emptyEl = document.getElementById('ev-empty');
   if (!list.length) {
@@ -6329,7 +6664,8 @@ function _applyEvFilter() {
 function _renderEventRow(e) {
   const du = e.days_until;
   let duLabel = '—';
-  if (du !== null && du !== undefined) {
+  if (e.active_now) duLabel = `<span style="color:#22c55e;font-weight:700;">läuft</span>`;
+  else if (du !== null && du !== undefined) {
     if (du < 0) duLabel = `<span style="color:var(--muted);">vor ${Math.abs(du)} T.</span>`;
     else if (du === 0) duLabel = `<span style="color:#22c55e;font-weight:700;">heute</span>`;
     else if (du <= (e.lead_days||7)) duLabel = `<span style="color:#f59e0b;font-weight:700;">in ${du} T.</span>`;
@@ -6342,7 +6678,7 @@ function _renderEventRow(e) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);${e.active?'':'opacity:.45;'}">
     <span style="font-size:20px;width:32px;text-align:center;">${e.emoji||'📅'}</span>
     <div style="flex:1;min-width:0;">
-      <div style="font-size:13px;font-weight:600;">${_esc(e.name)}</div>
+      <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${_esc(e.name)}${e.active_now ? '<span class="badge badge-green" style="font-size:9px;padding:1px 6px;">läuft</span>' : ''}</div>
       <div style="font-size:11px;color:${tc};">${e.event_type}${e.recurring?' · jährlich':''}</div>
     </div>
     <div style="width:90px;font-size:12px;">${e.date_from||'—'}</div>
@@ -6740,19 +7076,10 @@ async function saveRecycleSettings() {
 // ══════════════════════════════════════════
 // STADTWISSEN
 // ══════════════════════════════════════════
+// Einzige Quelle der Taxonomie: KNOWLEDGE_CATEGORIES (Jinja: categories)
 const WISSEN_CATS = {
-  reichenviertel:    '🏘️ Reichenviertel',
-  problemviertel:    '🏚️ Problemviertel',
-  kriminalitaet:     '🚨 Kriminalität',
-  running_gag:       '😂 Running Gags',
-  person:            '👤 Personen',
-  slang:             '💬 Slang',
-  sehenswuerdigkeit: '🗺️ Sehenswürdigkeiten',
-  event:             '🎉 Events',
-  viertel:           '📍 Viertel',
-  rivalitaet:        '⚔️ Rivalitäten',
-  witz:              '🤣 Witze',
-  sonstiges:         '📝 Sonstiges',
+  {% for key, label, color in categories %}{{ key|tojson }}: {{ label|tojson }},
+  {% endfor %}
 };
 
 async function loadStadtwissen() {
@@ -6794,7 +7121,7 @@ async function loadStadtwissen() {
 }
 
 function _renderWissenEntry(e, isPending) {
-  const catLabel = WISSEN_CATS[e.category] || e.category;
+  const catLabel = e.category_label || WISSEN_CATS[e.category] || e.category;
   const conf     = e.confidence < 1 ? `<span style="color:var(--text-muted);font-size:11px;">${Math.round(e.confidence*100)}%</span>` : '';
   const src      = e.source_post_id ? `<a href="#" onclick="event.preventDefault()" style="font-size:11px;color:var(--accent);">📸 Post #${e.source_post_id}</a>` : '';
   const actions  = isPending
