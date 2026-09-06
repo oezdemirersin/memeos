@@ -69,6 +69,7 @@ _MIGRATION_COLUMNS = [
     ('memo_inspiration_source', 'city_id'),
     ('meme_template', 'preview_url'),
     ('city', 'lat'),
+    ('render_task', 'quality'),     # E2: Qualitätsmerkmal der Queue
 ]
 _MIGRATION_TABLES = ['export_job', 'render_task']
 
@@ -591,6 +592,134 @@ def check_disk():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 7d. Render-Probe
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RENDER_PROBE_SLOW_MS = 4000        # darüber lohnt der Hinweis, dass ein Groß-Batch dauert
+_PROBE_VAR_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+
+def _probe_template(upload_dir):
+    """Erstes aktives PIL-Template, dessen Hintergrund lokal liegt (kein Nachladen aus dem Netz)."""
+    for t in (MemeTemplate.query.filter_by(active=True, render_type='pil')
+              .order_by(MemeTemplate.id).all()):
+        name = os.path.basename(t.preview_image or '')
+        if name and os.path.isfile(os.path.join(upload_dir, name)):
+            return t, os.path.join(upload_dir, name)
+    return None, None
+
+
+def _probe_config(config):
+    """Config für die Probe entschärfen: Bild-Elemente mit fester http-Quelle fliegen raus,
+    damit der Selbsttest nichts aus dem Netz lädt. Rückgabe (config, entfernte Anzahl)."""
+    elements = config.get('elements') if isinstance(config, dict) else None
+    if not isinstance(elements, list):
+        return {'canvas': (config or {}).get('canvas'), 'elements': []}, 0
+    kept, dropped = [], 0
+    for el in elements:
+        if not isinstance(el, dict):
+            continue
+        src = str(el.get('src') or el.get('fallback') or '').strip().lower()
+        if str(el.get('type') or 'text').lower() == 'image' and src.startswith(('http://', 'https://')):
+            dropped += 1
+            continue
+        kept.append(el)
+    out = {'elements': kept}
+    if isinstance(config.get('canvas'), dict):
+        out['canvas'] = config['canvas']
+    return out, dropped
+
+
+def _probe_values(template, config, render_mod):
+    """Platzhalterwerte für alle Variablen des Templates: memeos_render.sample_values_placeholder."""
+    names = []
+    for name in (template.get_required_vars() or []):
+        if str(name).strip() and str(name).strip() not in names:
+            names.append(str(name).strip())
+    for el in config.get('elements') or []:
+        if not isinstance(el, dict):
+            continue
+        var = str(el.get('var') or '').strip()
+        if var and var not in names:
+            names.append(var)
+        if str(el.get('type') or 'text').lower() == 'text':
+            for found in _PROBE_VAR_RE.findall(str(el.get('text') or '')):
+                if found not in names:
+                    names.append(found)
+    sample = getattr(render_mod, 'sample_values_placeholder', None)
+    if not callable(sample):
+        return {n: f'[{n}]' for n in names}
+    return {n: sample(n) for n in names}
+
+
+def check_render_probe():
+    """Ein echtes Template mit Platzhaltern rendern – die Probe, die ein Groß-Batch vorwegnimmt.
+
+    Schreibt nichts: die PNG-Bytes bleiben im Speicher. Templates ohne lokalen Hintergrund
+    werden übersprungen (sie würden extern nachgeladen)."""
+    render_mod = _optional_module('memeos_render')
+    checks = []
+    if render_mod is None or not hasattr(render_mod, 'render'):
+        return [_check('render_probe', 'Render-Probe', True,
+                       'memeos_render fehlt – Probe nicht möglich', 'info')]
+
+    have_cv2 = True
+    try:
+        import cv2        # noqa: F401
+        import numpy      # noqa: F401
+    except Exception as ex:
+        have_cv2 = False
+        cv2_detail = f'cv2/numpy nicht verfügbar ({type(ex).__name__}) – cover:inpaint fällt auf fill:auto zurück'
+    else:
+        cv2_detail = 'cv2 und numpy vorhanden (cover:inpaint möglich)'
+    checks.append(_check('render_cv2', 'Render-Probe: Inpaint-Bibliotheken', True, cv2_detail, 'info'))
+
+    upload_dir = os.path.join(_data_root(), 'uploads')
+    template, bg_path = _probe_template(upload_dir)
+    if template is None:
+        checks.append(_check('render_probe', 'Render-Probe', True,
+                             'Kein aktives PIL-Template mit lokalem Hintergrundbild – nichts zu proben',
+                             'info'))
+        return checks
+
+    label = f'#{template.id} {template.name}'
+    try:
+        config = json.loads(template.pil_config or '{}')
+        if not isinstance(config, dict):
+            config = {}
+    except Exception as ex:
+        return checks + [_check('render_probe', 'Render-Probe', False,
+                                f'{label}: pil_config nicht lesbar ({ex})', 'warn')]
+
+    config, dropped = _probe_config(config)
+    values = _probe_values(template, config, render_mod)
+    started = time.time()
+    try:
+        png = render_mod.render(bg_path, config, values, brand=None)
+    except Exception as ex:
+        return checks + [_check('render_probe', 'Render-Probe', False,
+                                f'{label}: Rendern abgestürzt ({type(ex).__name__}: {str(ex)[:200]})',
+                                'warn')]
+    took = int((time.time() - started) * 1000)
+    if not png:
+        return checks + [_check('render_probe', 'Render-Probe', False,
+                                f'{label}: leeres PNG nach {took} ms', 'warn')]
+
+    parts = [f'{label}: {len(png) // 1024} KB PNG in {took} ms',
+             f'{len(values)} Platzhalter eingesetzt']
+    if dropped:
+        parts.append(f'{dropped} Bild-Element(e) mit Netzquelle ausgelassen')
+    if not have_cv2:
+        parts.append('ohne cv2')
+    if took > RENDER_PROBE_SLOW_MS:
+        return checks + [_check('render_probe', 'Render-Probe', False,
+                                ', '.join(parts) + f' – langsamer als {RENDER_PROBE_SLOW_MS} ms, '
+                                'ein Batch über 100 Städte dauert entsprechend', 'warn')]
+    checks.append(_check('render_probe', 'Render-Probe', True, ', '.join(parts), 'info'))
+    return checks
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 8. Migrationen
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -630,6 +759,7 @@ def run_checks(flask_app, quick=False, skip=()):
         ('data',        'Daten',         check_data,                          'warn', False),
         ('studio',      'Studio',        lambda: check_studio(flask_app),     'warn', False),
         ('disk',        'Speicherplatz', check_disk,                          'warn', True),
+        ('render_probe', 'Render-Probe', check_render_probe,                  'warn', False),
         ('migrations',  'Migrationen',   check_migrations,                    'warn', False),
     ]
     checks = []

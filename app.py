@@ -418,6 +418,7 @@ except Exception as ex:   # pragma: no cover
 ADMIN_USERNAME    = os.getenv('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD    = os.getenv('ADMIN_PASSWORD', '')   # leer → Env-Login deaktiviert (kein Standardwert mehr)
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+DEEPSEEK_API_KEY  = os.getenv('DEEPSEEK_API_KEY', '')   # leer → Anbieterwechsel fällt still auf Anthropic zurück
 CANVA_CLIENT_ID   = os.getenv('CANVA_CLIENT_ID', '')
 CANVA_CLIENT_SECRET = os.getenv('CANVA_CLIENT_SECRET', '')
 CONTENT_OS_URL    = os.getenv('CONTENT_OS_URL', '')
@@ -1685,106 +1686,446 @@ def api_carousel_send(post_id):
     return jsonify({'ok': True, 'status': 'sending'})
 
 
-def _claude_fit_and_vars(city, template):
-    """Fit-Score + Variablenwerte für Stadt × Template.
+# ═══════════════════════════════════════════════════════════════════════════════
+# KI: ANBIETER, PREISE, KOSTENBREMSE  (E1)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    Rückgabe immer ein Dict mit fit_score (int|None), reasoning, vars (dict), brief.
-    - Ohne API-Key: kein Fehler, aber nur city_name wird belegt; 'warning' erklärt das.
-    - KI nicht erreichbar / unbrauchbare Antwort (nach einem Retry): 'error' gesetzt, fit_score None.
-    """
-    required_vars = template.get_required_vars()
+AI_MODEL_ANTHROPIC = 'claude-haiku-4-5-20251001'   # Standardmodell für alle Anthropic-Aufrufe
+DEEPSEEK_BASE_URL  = 'https://api.deepseek.com'
 
+# ── Preistabelle ───────────────────────────────────────────────────────────────
+# Gepflegt wird ausschließlich hier: Listenpreis je 1 Mio Token in US-Dollar. Alles andere
+# (EUR pro 1000 Token, Cache-Preise) wird daraus gerechnet.
+#   Anthropic, Stand 09/2026:  Haiku 4.5  1,00 $ Eingabe / 5,00 $ Ausgabe je 1 Mio Token
+#                              Sonnet 4.5 3,00 $ Eingabe / 15,00 $ Ausgabe je 1 Mio Token
+#   Cache bei Anthropic:       Schreiben = 1,25 × Eingabe, Lesen = 0,10 × Eingabe
+#   DeepSeek, Stand 09/2026:   deepseek-chat 0,27 $ / 1,10 $; Cache-Treffer ≈ 0,26 × Eingabe,
+#                              für das Schreiben in den Cache verlangt DeepSeek nichts extra.
+_USD_EUR = 0.92        # grober Umrechnungskurs USD → EUR
+
+
+def _preise(eingabe_usd_mio, ausgabe_usd_mio, cache_write_faktor=1.25, cache_read_faktor=0.10):
+    """Preiseintrag in EUR je 1000 Token aus den Listenpreisen je 1 Mio Token (USD)."""
+    eingabe = eingabe_usd_mio / 1000.0 * _USD_EUR
+    return {
+        'input':       eingabe,
+        'output':      ausgabe_usd_mio / 1000.0 * _USD_EUR,
+        'cache_write': eingabe * cache_write_faktor,
+        'cache_read':  eingabe * cache_read_faktor,
+    }
+
+
+MODEL_PRICES = {
+    'claude-haiku-4-5':  _preise(1.00, 5.00),
+    'claude-sonnet-4-5': _preise(3.00, 15.00),
+    'deepseek-chat':     _preise(0.27, 1.10, cache_write_faktor=1.00, cache_read_faktor=0.26),
+    'deepseek-reasoner': _preise(0.55, 2.19, cache_write_faktor=1.00, cache_read_faktor=0.26),
+}
+# Unbekanntes Modell: bewusst der teurere Sonnet-Satz. Lieber zu hoch schätzen — sonst greift
+# die Kostenbremse zu spät.
+MODEL_PRICE_DEFAULT = _preise(3.00, 15.00)
+
+
+def _model_price(model):
+    """Preiseintrag für ein Modell. Datums-Endungen wie '-20251001' werden mitgenommen,
+    weil über die längste passende Namensvorsilbe gesucht wird."""
+    name = (model or '').strip()
+    if name in MODEL_PRICES:
+        return MODEL_PRICES[name]
+    treffer = [k for k in MODEL_PRICES if name.startswith(k)]
+    if treffer:
+        return MODEL_PRICES[max(treffer, key=len)]
+    return MODEL_PRICE_DEFAULT
+
+
+def _ai_cost(model, input_tokens=0, output_tokens=0, cache_creation_tokens=0, cache_read_tokens=0):
+    """Kosten eines Aufrufs in EUR."""
+    p = _model_price(model)
+    return ((int(input_tokens or 0)          * p['input']
+             + int(output_tokens or 0)       * p['output']
+             + int(cache_creation_tokens or 0) * p['cache_write']
+             + int(cache_read_tokens or 0)   * p['cache_read']) / 1000.0)
+
+
+# ── Anbieter-Umschalter ────────────────────────────────────────────────────────
+def _deepseek_key():
+    return (DEEPSEEK_API_KEY or AppSettings.get('deepseek_api_key', '') or '').strip()
+
+
+def _deepseek_model():
+    return (AppSettings.get('deepseek_model', 'deepseek-chat') or 'deepseek-chat').strip()
+
+
+def _ai_provider_gewaehlt():
+    return (AppSettings.get('ai_provider', 'anthropic') or 'anthropic').strip().lower()
+
+
+def _ai_provider():
+    """Tatsächlich benutzter Anbieter. Ohne DeepSeek-Schlüssel fällt die Wahl still auf
+    Anthropic zurück (gemeldet wird das in /api/settings)."""
+    if _ai_provider_gewaehlt() == 'deepseek' and _deepseek_key():
+        return 'deepseek'
+    return 'anthropic'
+
+
+def _ai_key_vorhanden():
+    """Hat der aktive Anbieter einen Schlüssel?"""
+    return _ai_provider() == 'deepseek' or bool(ANTHROPIC_API_KEY)
+
+
+# ── Kostenbremse ───────────────────────────────────────────────────────────────
+def _ai_budget_eur():
+    """Monatsbudget in EUR; 0 (Standard) heißt aus."""
+    roh = (AppSettings.get('ai_budget_month_eur', '0') or '0').strip().replace(',', '.')
+    try:
+        return max(0.0, float(roh))
+    except ValueError:
+        return 0.0
+
+
+def _ai_budget_gesperrt():
+    """None wenn Aufrufe erlaubt sind, sonst der fertige Fehlertext."""
+    budget = _ai_budget_eur()
+    if budget <= 0:
+        return None
+    verbraucht = _ai_cost_this_month()
+    if verbraucht >= budget:
+        return (f'KI-Budget für diesen Monat erreicht '
+                f'({verbraucht:.2f} von {budget:.2f} EUR)')
+    return None
+
+
+# ── Ein Aufruf, zwei Anbieter ──────────────────────────────────────────────────
+def _system_text(system_blocks):
+    """System-Blöcke zu einem Text zusammenziehen (für Anbieter ohne Block-Format)."""
+    teile = []
+    for block in (system_blocks or []):
+        text = (block.get('text') if isinstance(block, dict) else str(block)) or ''
+        if text.strip():
+            teile.append(text.strip())
+    return '\n\n'.join(teile)
+
+
+def _usage_wert(usage, name):
+    try:
+        return int(getattr(usage, name, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _anthropic_complete(system_blocks, user_text, max_tokens, feature):
     if not ANTHROPIC_API_KEY:
-        return {
-            'fit_score': None,
-            'reasoning': 'Kein Anthropic-Key',
-            'vars': {v: city.name for v in required_vars if v == 'city_name'},
-            'brief': '',
-            'warning': 'Kein Anthropic-Key: nur Stadtname eingesetzt',
-        }
+        return '', 'Kein Anthropic-Key'
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
+        msg = client.messages.create(
+            model=AI_MODEL_ANTHROPIC,
+            max_tokens=max_tokens,
+            system=system_blocks,
+            messages=[{'role': 'user', 'content': user_text}],
+        )
+    except Exception as ex:
+        return '', f'{type(ex).__name__}: {str(ex)[:120]}'
+    usage = getattr(msg, 'usage', None)
+    _log_ai_usage(feature, AI_MODEL_ANTHROPIC,
+                  _usage_wert(usage, 'input_tokens'), _usage_wert(usage, 'output_tokens'),
+                  cache_creation_tokens=_usage_wert(usage, 'cache_creation_input_tokens'),
+                  cache_read_tokens=_usage_wert(usage, 'cache_read_input_tokens'),
+                  provider='anthropic')
+    teile = []
+    for block in (getattr(msg, 'content', None) or []):
+        if getattr(block, 'type', 'text') == 'text':
+            teile.append(getattr(block, 'text', '') or '')
+    raw = ''.join(teile).strip()
+    if not raw:
+        return '', f'Leere Antwort vom Modell (max_tokens {max_tokens} zu klein?)'
+    return raw, None
 
+
+def _deepseek_complete(system_blocks, user_text, max_tokens, feature):
+    key = _deepseek_key()
+    if not key:
+        return '', 'Kein DeepSeek-Schlüssel'
+    model = _deepseek_model()
+    try:
+        antwort = requests.post(
+            DEEPSEEK_BASE_URL + '/chat/completions',
+            headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+            json={'model': model, 'max_tokens': max_tokens, 'stream': False,
+                  'messages': [{'role': 'system', 'content': _system_text(system_blocks)},
+                               {'role': 'user',   'content': user_text}]},
+            timeout=60)
+    except Exception as ex:
+        return '', f'{type(ex).__name__}: {str(ex)[:120]}'
+    if antwort.status_code != 200:
+        return '', f'DeepSeek HTTP {antwort.status_code}: {str(antwort.text)[:120]}'
+    try:
+        daten = antwort.json()
+    except Exception as ex:
+        return '', f'DeepSeek-Antwort nicht lesbar: {type(ex).__name__}'
+    usage = daten.get('usage') or {}
+    try:
+        cache_read = int(usage.get('prompt_cache_hit_tokens') or 0)
+        eingabe    = max(0, int(usage.get('prompt_tokens') or 0) - cache_read)
+        ausgabe    = int(usage.get('completion_tokens') or 0)
+    except (TypeError, ValueError):
+        cache_read, eingabe, ausgabe = 0, 0, 0
+    _log_ai_usage(feature, model, eingabe, ausgabe,
+                  cache_read_tokens=cache_read, provider='deepseek')
+    auswahl = daten.get('choices') or []
+    text = ''
+    if auswahl:
+        text = ((auswahl[0].get('message') or {}).get('content') or '')
+    if not text.strip():
+        # Reasoning-Modelle liefern bei zu kleinem max_tokens eine LEERE Antwort ohne Fehler.
+        # Das hier ausdrücklich als Fehler behandeln, sonst gilt ein toter Aufruf als Erfolg.
+        return '', (f'Leere Antwort von DeepSeek ({model}) — bei Reasoning-Modellen ist '
+                    f'max_tokens ({max_tokens}) zu klein')
+    return text.strip(), None
+
+
+def _ai_complete(system_blocks, user_text, max_tokens, feature):
+    """Ein KI-Aufruf beim eingestellten Anbieter.
+
+    system_blocks: Liste von Blöcken {'type': 'text', 'text': ..., optional 'cache_control': {...}}.
+                   Anthropic bekommt sie unverändert als system-Blöcke (Prompt-Caching),
+                   DeepSeek als eine zusammengefügte system-Nachricht.
+    Rückgabe: (text, fehler). Bei Erfolg ist fehler None, sonst ist text ''.
+    Wirft nichts; eine leere Antwort gilt ausdrücklich als Fehler.
+    """
+    if _ai_provider() == 'deepseek':
+        return _deepseek_complete(system_blocks, user_text, max_tokens, feature)
+    return _anthropic_complete(system_blocks, user_text, max_tokens, feature)
+
+
+# ── Prompt-Bausteine (stabil = cachebar) ───────────────────────────────────────
+# Unveränderlicher Teil: Rolle, Anweisung, Antwortformat. Steht als erster system-Block und
+# ist für ALLE Städte identisch — Zeitstempel oder Zufallswerte haben hier nichts zu suchen,
+# sonst ist der Cache bei jedem Aufruf kalt.
+_KI_SYSTEM_EINZEL = """Du bist Meme-Experte für deutsche Stadtseiten auf Instagram.
+
+Deine Aufgabe zu einem Meme-Template und einer Stadt:
+1. Wie gut passt das Template zu der Stadt? (fit_score: 0–100)
+   < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
+2. Welche konkreten Werte sollen für die benötigten Variablen eingesetzt werden?
+3. Schreibe einen kurzen "Manual Brief" für den Fall, dass kein fertiges Template vorliegt
+   (was soll der Meme-Creator machen?)
+
+Antworte NUR mit JSON, ohne Vorrede und ohne Code-Zaun:
+{
+  "fit_score": <Zahl 0-100>,
+  "reasoning": "<kurze Begründung, max 100 Zeichen>",
+  "vars": {"variable_name": "konkreter Wert", ...},
+  "brief": "<was soll der Creator machen, max 200 Zeichen>"
+}"""
+
+_KI_SYSTEM_MULTI = """Du bist Meme-Experte für deutsche Stadtseiten auf Instagram.
+
+Du bekommst MEHRERE Meme-Templates für dieselbe Stadt und bewertest jedes einzeln:
+1. Wie gut passt das Template zu der Stadt? (fit_score: 0–100)
+   < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
+2. Welche konkreten Werte sollen für die benötigten Variablen eingesetzt werden?
+   Nutze für jedes Template nur die dort genannten Variablen.
+3. Schreibe einen kurzen "Manual Brief" für den Fall, dass kein fertiges Template vorliegt.
+
+Gehören die Templates zu einer Serie, sollen die Werte zusammenpassen und sich nicht
+wiederholen — jede Folie bringt etwas Neues.
+
+Antworte NUR mit JSON, ohne Vorrede und ohne Code-Zaun. Schlüssel der obersten Ebene ist
+die Template-ID als Zeichenkette, und zwar für JEDES angefragte Template:
+{
+  "<template_id>": {
+    "fit_score": <Zahl 0-100>,
+    "reasoning": "<kurze Begründung, max 100 Zeichen>",
+    "vars": {"variable_name": "konkreter Wert", ...},
+    "brief": "<was soll der Creator machen, max 200 Zeichen>"
+  }
+}"""
+
+
+def _stadtwissen_block(city):
+    """Stadt-Block für den Prompt: teuer, aber pro Stadt stabil — deshalb eigener
+    Cache-Block. Feste Sortierung (Konfidenz, dann ID) und keine Zeitstempel im Text,
+    sonst wäre der Cache bei jedem Aufruf kalt."""
     now = datetime.utcnow()
     knowledge = CityKnowledge.query.filter_by(city_id=city.id, active=True)\
                     .filter(db.or_(CityKnowledge.cooldown_until.is_(None),
                                    CityKnowledge.cooldown_until < now))\
-                    .order_by(CityKnowledge.confidence.desc()).all()
-
+                    .order_by(CityKnowledge.confidence.desc(), CityKnowledge.id.asc()).all()
     knowledge_str = '\n'.join([
         f"- [{e.category}] {e.name} (Konfidenz: {e.confidence}, Quelle: {e.source})"
         + (f": {e.description}" if e.description else '')
         for e in knowledge
     ]) or 'Keine Knowledge-Einträge vorhanden'
+    return (f"Stadt: {city.name} ({city.state}, ~{city.population or '?'} Einwohner)\n\n"
+            f"Stadt-Wissen ({city.name}):\n{knowledge_str}")
 
+
+def _ki_system_blocks(city, grundtext):
+    """Zwei system-Blöcke, beide mit Cache-Marke: erst der unveränderliche Teil (für alle
+    Städte gleich), dann das Stadtwissen (pro Stadt stabil)."""
+    return [
+        {'type': 'text', 'text': grundtext,
+         'cache_control': {'type': 'ephemeral'}},
+        {'type': 'text', 'text': _stadtwissen_block(city),
+         'cache_control': {'type': 'ephemeral'}},
+    ]
+
+
+def _template_prompt_teil(template, mit_id=False):
+    required_vars = template.get_required_vars()
     vars_str = ', '.join(required_vars) if required_vars else 'keine'
+    kopf = f"Template-ID {template.id}: {template.name}" if mit_id else f"Meme-Template: {template.name}"
+    return (f"{kopf}\n"
+            f"Beschreibung: {template.description or 'keine'}\n"
+            f"Beispiel-Text: {template.example_text or 'keiner'}\n"
+            f"Benötigte Variablen: {vars_str}")
 
-    prompt = f"""Du bist Meme-Experte für deutsche Stadtseiten auf Instagram.
 
-Stadt: {city.name} ({city.state}, ~{city.population or '?'} Einwohner)
+def _ki_antwort_zu_ergebnis(data, template, city):
+    """Ein JSON-Teilergebnis in das übliche Ergebnis-Dict übersetzen."""
+    required_vars = template.get_required_vars()
+    vars_dict = data.get('vars') if isinstance(data.get('vars'), dict) else {}
+    vars_dict = {str(k): str(v) for k, v in vars_dict.items() if v is not None}
+    if 'city_name' in required_vars and not vars_dict.get('city_name'):
+        vars_dict['city_name'] = city.name
+    try:
+        fit = max(0, min(100, int(data.get('fit_score'))))
+    except (TypeError, ValueError):
+        fit = None
+    return {
+        'fit_score': fit,
+        'reasoning': str(data.get('reasoning') or '')[:500],
+        'vars': vars_dict,
+        'brief': str(data.get('brief') or '')[:1000],
+    }
 
-Meme-Template: {template.name}
-Beschreibung: {template.description or 'keine'}
-Beispiel-Text: {template.example_text or 'keiner'}
-Benötigte Variablen: {vars_str}
 
-Stadt-Wissen ({city.name}):
-{knowledge_str}
+def _ki_ohne_schluessel(city, template):
+    return {
+        'fit_score': None,
+        'reasoning': 'Kein Anthropic-Key',
+        'vars': {v: city.name for v in template.get_required_vars() if v == 'city_name'},
+        'brief': '',
+        'warning': 'Kein Anthropic-Key: nur Stadtname eingesetzt',
+    }
 
-Bewerte:
-1. Wie gut passt dieses Template zu {city.name}? (fit_score: 0–100)
-   < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
-2. Welche konkreten Werte sollen für die Variablen eingesetzt werden?
-3. Schreibe einen kurzen "Manual Brief" für den Fall dass kein Canva-Template vorhanden ist
-   (was soll der Meme-Creator machen?)
 
-Antworte NUR mit JSON:
-{{
-  "fit_score": <Zahl 0-100>,
-  "reasoning": "<kurze Begründung, max 100 Zeichen>",
-  "vars": {{"variable_name": "konkreter Wert", ...}},
-  "brief": "<was soll der Creator machen, max 200 Zeichen>"
-}}"""
+def _ki_json_lesen(raw):
+    """JSON-Objekt aus einer Modellantwort holen. Rückgabe (daten, fehler)."""
+    match = re.search(r'\{.*\}', raw or '', re.DOTALL)
+    if not match:
+        return None, 'Antwort ohne JSON'
+    try:
+        daten = json.loads(match.group(0))
+    except Exception:
+        return None, 'Antwort ohne gültiges JSON'
+    if not isinstance(daten, dict):
+        return None, 'Antwort ohne JSON-Objekt'
+    return daten, None
+
+
+def _claude_fit_and_vars(city, template):
+    """Fit-Score + Variablenwerte für Stadt × Template.
+
+    Rückgabe immer ein Dict mit fit_score (int|None), reasoning, vars (dict), brief.
+    - Ohne API-Key: kein Fehler, aber nur city_name wird belegt; 'warning' erklärt das.
+    - Monatsbudget erschöpft: 'error' gesetzt, ohne dass ein Aufruf gemacht wird.
+    - KI nicht erreichbar / unbrauchbare Antwort (nach einem Retry): 'error' gesetzt,
+      fit_score None.
+
+    Der Prompt ist dreigeteilt, damit Prompt-Caching greift: unveränderlicher Teil und
+    Stadtwissen als system-Blöcke mit Cache-Marke, das Template als user-Nachricht.
+    """
+    if not _ai_key_vorhanden():
+        return _ki_ohne_schluessel(city, template)
+
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        return {'error': gesperrt, 'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
+
+    system_blocks = _ki_system_blocks(city, _KI_SYSTEM_EINZEL)
+    user_text = _template_prompt_teil(template)
 
     last_error = ''
     for attempt in range(2):                     # ein Retry nach 2 s
         if attempt:
             time.sleep(2)
-        try:
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
-            msg = client.messages.create(
-                model='claude-haiku-4-5-20251001',
-                max_tokens=500,
-                messages=[{'role': 'user', 'content': prompt}]
-            )
-            raw = msg.content[0].text.strip()
-            _log_ai_usage('fit_score', 'claude-haiku-4-5-20251001',
-                          msg.usage.input_tokens, msg.usage.output_tokens)
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if not match:
-                last_error = 'Antwort ohne JSON'
-                continue
-            data = json.loads(match.group(0))
-            vars_dict = data.get('vars') if isinstance(data.get('vars'), dict) else {}
-            vars_dict = {str(k): str(v) for k, v in vars_dict.items() if v is not None}
-            # city_name immer sicher belegen, falls verlangt
-            if 'city_name' in required_vars and not vars_dict.get('city_name'):
-                vars_dict['city_name'] = city.name
-            try:
-                fit = int(data.get('fit_score'))
-                fit = max(0, min(100, fit))
-            except Exception:
-                fit = None
-            return {
-                'fit_score': fit,
-                'reasoning': str(data.get('reasoning') or '')[:500],
-                'vars': vars_dict,
-                'brief': str(data.get('brief') or '')[:1000],
-            }
-        except Exception as ex:
-            last_error = f'{type(ex).__name__}: {str(ex)[:120]}'
-            log.error(f'Claude Fit-Score Error (Versuch {attempt + 1}): {ex}')
+        raw, fehler = _ai_complete(system_blocks, user_text, 500, 'fit_score')
+        if fehler:
+            last_error = fehler
+            log.error(f'KI Fit-Score Fehler (Versuch {attempt + 1}): {fehler}')
+            continue
+        daten, fehler = _ki_json_lesen(raw)
+        if fehler:
+            last_error = fehler
+            continue
+        return _ki_antwort_zu_ergebnis(daten, template, city)
 
     return {'error': f'KI nicht erreichbar: {last_error or "unbekannt"}',
             'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
+
+
+def _claude_fit_and_vars_multi(city, templates):
+    """Wie _claude_fit_and_vars, aber für MEHRERE Templates derselben Stadt in EINEM Aufruf.
+
+    Ein Karussell mit fünf Folien kostete bisher fünf Aufrufe mit fünfmal demselben
+    Stadtwissen. Hier steht das Stadtwissen einmal im Prompt, die Antwort ist ein
+    JSON-Objekt mit den Template-IDs als Schlüssel.
+
+    Rückgabe: {template_id (int): {'fit_score', 'reasoning', 'vars', 'brief'}}
+    Bei Problemen enthält der jeweilige Eintrag zusätzlich 'error' (bzw. 'warning' ohne
+    Schlüssel) — genau wie beim Einzelaufruf. Leere Template-Liste → leeres Dict.
+    """
+    templates = list(templates or [])
+    if not templates:
+        return {}
+
+    if not _ai_key_vorhanden():
+        return {t.id: _ki_ohne_schluessel(city, t) for t in templates}
+
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        return {t.id: {'error': gesperrt, 'fit_score': None, 'reasoning': '',
+                       'vars': {}, 'brief': ''} for t in templates}
+
+    system_blocks = _ki_system_blocks(city, _KI_SYSTEM_MULTI)
+    ids_str = ', '.join(str(t.id) for t in templates)
+    user_text = (f'Bewerte diese {len(templates)} Templates für {city.name}:\n\n'
+                 + '\n\n'.join(_template_prompt_teil(t, mit_id=True) for t in templates)
+                 + f'\n\nGib für JEDE dieser Template-IDs einen Eintrag zurück: {ids_str}')
+    # Reicht für ~350 Token je Template; zu klein bemessen liefern Reasoning-Modelle eine
+    # leere Antwort (siehe _deepseek_complete).
+    max_tokens = min(4000, 400 + 350 * len(templates))
+
+    last_error = ''
+    for attempt in range(2):
+        if attempt:
+            time.sleep(2)
+        raw, fehler = _ai_complete(system_blocks, user_text, max_tokens, 'fit_score_multi')
+        if fehler:
+            last_error = fehler
+            log.error(f'KI Fit-Score (Serie) Fehler (Versuch {attempt + 1}): {fehler}')
+            continue
+        daten, fehler = _ki_json_lesen(raw)
+        if fehler:
+            last_error = fehler
+            continue
+        ergebnis = {}
+        for t in templates:
+            teil = daten.get(str(t.id))
+            if teil is None:
+                teil = daten.get(t.id)
+            if isinstance(teil, dict):
+                ergebnis[t.id] = _ki_antwort_zu_ergebnis(teil, t, city)
+            else:
+                ergebnis[t.id] = {'error': 'KI hat für dieses Template nichts geliefert',
+                                  'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
+        return ergebnis
+
+    fehlertext = f'KI nicht erreichbar: {last_error or "unbekannt"}'
+    return {t.id: {'error': fehlertext, 'fit_score': None, 'reasoning': '',
+                   'vars': {}, 'brief': ''} for t in templates}
 
 
 def _mark_knowledge_used(city_id, vars_dict, template_id):
@@ -2567,6 +2908,19 @@ def api_settings_get():
         'canva_client_id':      bool(CANVA_CLIENT_ID),
         'ai_key_set':           bool(ANTHROPIC_API_KEY),
         'ai_cost_month':        _ai_cost_this_month(),
+        # KI-Anbieter: gewählt vs. tatsächlich benutzt. Ohne DeepSeek-Schlüssel fällt die
+        # Wahl still auf Anthropic zurück — 'ai_provider_hinweis' sagt das dem Dashboard.
+        'ai_provider':          _ai_provider_gewaehlt(),
+        'ai_provider_aktiv':    _ai_provider(),
+        'ai_provider_hinweis':  ('Kein DeepSeek-Schlüssel hinterlegt — es wird weiter Anthropic benutzt'
+                                 if _ai_provider_gewaehlt() == 'deepseek' and _ai_provider() != 'deepseek'
+                                 else ''),
+        'deepseek_key_set':     bool(_deepseek_key()),
+        'deepseek_model':       _deepseek_model(),
+        'ai_model_anthropic':   AI_MODEL_ANTHROPIC,
+        'ai_budget_month_eur':  _ai_budget_eur(),
+        'ai_budget_reached':    bool(_ai_budget_gesperrt()),
+        'ai_budget_hinweis':    _ai_budget_gesperrt() or '',
         # Token nie im Klartext ausgeben – nur ob gesetzt + die letzten 4 Zeichen
         'telegram_token_set':   bool(_tg_token),
         'telegram_token_hint':  _tg_token[-4:] if _tg_token else '',
@@ -2582,13 +2936,34 @@ def api_settings_save():
     for key in ('content_os_url', 'telegram_chat_id', 'alert_threshold_days'):
         if key in d:
             AppSettings.set(key, d[key])
+    # KI-Anbieter, DeepSeek-Modell und Monatsbudget
+    if 'ai_provider' in d:
+        gewaehlt = str(d.get('ai_provider') or 'anthropic').strip().lower()
+        AppSettings.set('ai_provider', gewaehlt if gewaehlt in ('anthropic', 'deepseek') else 'anthropic')
+    if d.get('deepseek_model'):
+        AppSettings.set('deepseek_model', str(d['deepseek_model']).strip()[:80])
+    if 'ai_budget_month_eur' in d:
+        roh = str(d.get('ai_budget_month_eur') or '0').strip().replace(',', '.')
+        try:
+            AppSettings.set('ai_budget_month_eur', f'{max(0.0, float(roh)):.2f}')
+        except ValueError:
+            return jsonify({'error': 'Budget muss eine Zahl sein (0 = aus)'}), 400
+    # Schlüssel wie beim Telegram-Token: leeres Feld heißt "unverändert lassen"
+    if d.get('deepseek_api_key_clear'):
+        AppSettings.set('deepseek_api_key', '')
+    elif d.get('deepseek_api_key'):
+        AppSettings.set('deepseek_api_key', str(d['deepseek_api_key']).strip())
     # Leeres Token-Feld heißt "unverändert lassen" (das Feld zeigt den Token ja nicht mehr an).
     # Zum Entfernen braucht es deshalb das ausdrückliche Flag telegram_token_clear.
     if d.get('telegram_token_clear'):
         AppSettings.set('telegram_token', '')
     elif d.get('telegram_token'):
         AppSettings.set('telegram_token', str(d['telegram_token']).strip())
-    return jsonify({'ok': True, 'telegram_token_set': bool((AppSettings.get('telegram_token', '') or '').strip())})
+    return jsonify({'ok': True,
+                    'telegram_token_set': bool((AppSettings.get('telegram_token', '') or '').strip()),
+                    'ai_provider': _ai_provider_gewaehlt(),
+                    'ai_provider_aktiv': _ai_provider(),
+                    'ai_budget_month_eur': _ai_budget_eur()})
 
 
 @app.route('/api/settings/telegram/test', methods=['POST'])
@@ -2724,14 +3099,92 @@ def _ai_cost_this_month():
                 .filter(AiUsageLog.created_at >= first_day).scalar()
     return round(result or 0, 4)
 
-def _log_ai_usage(feature, model, input_tokens, output_tokens):
-    # Claude Haiku pricing (rough EUR estimate)
-    cost = (input_tokens * 0.0008 + output_tokens * 0.004) / 1000 * 0.92
+def _log_ai_usage(feature, model, input_tokens, output_tokens,
+                  cache_creation_tokens=0, cache_read_tokens=0, provider='anthropic'):
+    """Einen KI-Aufruf mit seinen Kosten festhalten.
+
+    Gerechnet wird mit der Preistabelle MODEL_PRICES je Modell (vorher galt für jedes Modell
+    der Haiku-Preis). Cache-Schreiben und Cache-Lesen haben eigene Preise."""
+    cost = _ai_cost(model, input_tokens, output_tokens,
+                    cache_creation_tokens, cache_read_tokens)
     entry = AiUsageLog(feature=feature, model=model,
-                       input_tokens=input_tokens, output_tokens=output_tokens,
+                       input_tokens=int(input_tokens or 0),
+                       output_tokens=int(output_tokens or 0),
+                       cache_creation_input_tokens=int(cache_creation_tokens or 0),
+                       cache_read_input_tokens=int(cache_read_tokens or 0),
+                       provider=(provider or 'anthropic')[:20],
                        cost_eur=cost)
     db.session.add(entry)
     db.session.commit()
+
+
+def _monat_grenzen(month=None):
+    """(erster Tag, erster Tag des Folgemonats, 'YYYY-MM') für einen Monat 'YYYY-MM'.
+    Ohne Angabe oder bei unlesbarer Angabe: laufender Monat."""
+    heute = datetime.utcnow()
+    jahr, monat = heute.year, heute.month
+    if month:
+        try:
+            teile = str(month).split('-')
+            jahr, monat = int(teile[0]), int(teile[1])
+            if not 1 <= monat <= 12 or not 2000 <= jahr <= 2999:
+                jahr, monat = heute.year, heute.month
+        except (ValueError, IndexError):
+            jahr, monat = heute.year, heute.month
+    start = datetime(jahr, monat, 1)
+    ende = datetime(jahr + 1, 1, 1) if monat == 12 else datetime(jahr, monat + 1, 1)
+    return start, ende, f'{jahr:04d}-{monat:02d}'
+
+
+@app.route('/api/ai-usage')
+@login_required
+def api_ai_usage():
+    """KI-Kosten eines Monats, aufgeschlüsselt nach Funktion, Modell und Tag.
+    Aufruf: /api/ai-usage?month=YYYY-MM (ohne Angabe: laufender Monat)."""
+    start, ende, monat = _monat_grenzen(request.args.get('month'))
+    zeilen = AiUsageLog.query.filter(AiUsageLog.created_at >= start,
+                                     AiUsageLog.created_at < ende).all()
+
+    def _leer():
+        return {'calls': 0, 'input_tokens': 0, 'output_tokens': 0,
+                'cache_creation_tokens': 0, 'cache_read_tokens': 0, 'cost_eur': 0.0}
+
+    nach_feature, nach_modell, nach_tag = {}, {}, {}
+    gesamt = 0.0
+    for z in zeilen:
+        kosten = float(z.cost_eur or 0)
+        gesamt += kosten
+        for schluessel, topf in ((z.feature or 'unbekannt', nach_feature),
+                                 (z.model or 'unbekannt', nach_modell)):
+            eintrag = topf.setdefault(schluessel, _leer())
+            eintrag['calls'] += 1
+            eintrag['input_tokens']          += int(z.input_tokens or 0)
+            eintrag['output_tokens']         += int(z.output_tokens or 0)
+            eintrag['cache_creation_tokens'] += int(z.cache_creation_input_tokens or 0)
+            eintrag['cache_read_tokens']     += int(z.cache_read_input_tokens or 0)
+            eintrag['cost_eur'] += kosten
+        tag = (z.created_at or start).strftime('%Y-%m-%d')
+        nach_tag[tag] = nach_tag.get(tag, 0.0) + kosten
+
+    def _liste(topf, namensfeld):
+        raus = []
+        for name, werte in topf.items():
+            eintrag = {namensfeld: name}
+            eintrag.update(werte)
+            eintrag['cost_eur'] = round(werte['cost_eur'], 4)
+            raus.append(eintrag)
+        raus.sort(key=lambda e: e['cost_eur'], reverse=True)
+        return raus
+
+    return jsonify({
+        'month': monat,
+        'total_eur': round(gesamt, 4),
+        'by_feature': _liste(nach_feature, 'feature'),
+        'by_model':   _liste(nach_modell, 'model'),
+        'by_day':     [{'date': t, 'cost_eur': round(nach_tag[t], 4)} for t in sorted(nach_tag)],
+        'budget_eur': _ai_budget_eur(),
+        'provider':   _ai_provider(),
+    })
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # USERS
@@ -2859,6 +3312,7 @@ def _seed_recycle_settings():
         'recycle_min_stars':           '3',
         'recycle_max_per_month':       '4',
         'recycle_excluded_cats':       '["news"]',
+        'recycle_min_er':              '0',
     }
     for k, v in defaults.items():
         if not AppSettings.query.filter_by(key=k).first():
@@ -2970,6 +3424,10 @@ with app.app_context():
         'CREATE INDEX IF NOT EXISTS ix_memo_inspiration_source_city_id ON memo_inspiration_source (city_id)',
         'ALTER TABLE city ADD COLUMN lat FLOAT',   # B5 Wetter-Events (Open-Meteo); models.City.lat
         'ALTER TABLE city ADD COLUMN lon FLOAT',   # B5
+        # E1 KI-Kosten: Prompt-Caching wird getrennt abgerechnet, Anbieter mitgeschrieben
+        'ALTER TABLE ai_usage_log ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0',
+        'ALTER TABLE ai_usage_log ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0',
+        "ALTER TABLE ai_usage_log ADD COLUMN provider VARCHAR(20) DEFAULT 'anthropic'",
     ]:
         try:
             db.session.execute(db.text(_col_sql))
@@ -3272,6 +3730,7 @@ def api_recycle_settings_get():
         'min_follower_growth': int(get_setting('recycle_min_follower_growth') or 20),
         'min_stars':           int(get_setting('recycle_min_stars') or 3),
         'max_per_month':       int(get_setting('recycle_max_per_month') or 4),
+        'min_er':              int(get_setting('recycle_min_er') or 0),
         'excluded_cats':       json.loads(get_setting('recycle_excluded_cats') or '["news"]'),
     })
 
@@ -3284,6 +3743,7 @@ def api_recycle_settings_save():
         'min_follower_growth': 'recycle_min_follower_growth',
         'min_stars':           'recycle_min_stars',
         'max_per_month':       'recycle_max_per_month',
+        'min_er':              'recycle_min_er',
     }
     for k, sk in mapping.items():
         if k in d:
@@ -4666,6 +5126,9 @@ def _recycle_settings():
         'min_follower_growth': _int('recycle_min_follower_growth', 20),
         'min_stars':           _int('recycle_min_stars', 3),
         'max_per_month':       _int('recycle_max_per_month', 4),
+        # Engagement-Schwelle fuer Posts OHNE Template (Uploads): der Sternefilter greift
+        # dort nicht, weil es keine Template-Bewertung gibt. 0 = aus.
+        'min_er':              _int('recycle_min_er', 0),
         'excluded_cats':       [str(c) for c in excluded],
     }
 
@@ -4693,10 +5156,40 @@ def _follower_growth_since(city_id, since):
     return latest.count - baseline.count
 
 
-def _recycle_score(post, settings=None):
+_RECYCLE_UNSET = object()          # "Wert noch nicht berechnet" (None ist hier eine echte Angabe)
+
+# min_follower_growth ist KEIN Ausschluss, sondern ein Punktabzug. Damit das im Dashboard
+# nicht als Filter missverstanden wird, tragen alle Abzuege denselben, klar benannten Aufbau.
+RECYCLE_ABZUG_WACHSTUM = 15
+RECYCLE_ABZUG_JE_RECYCLING = 20
+RECYCLE_ABZUG_RECYCLING_MAX = 40
+
+
+def _recycle_abzuege(post, settings, growth=_RECYCLE_UNSET):
+    """Punktabzuege des Recycle-Scores, jeweils mit Klartext-Grund.
+    → [{'grund': …, 'abzug': int}] – im Dashboard als "Abzug" auszuweisen, nicht als Filter."""
+    out = []
+    reps = post.recycle_count or 0
+    if reps:
+        out.append({
+            'grund': f'bereits {reps}× recycelt',
+            'abzug': min(RECYCLE_ABZUG_RECYCLING_MAX, reps * RECYCLE_ABZUG_JE_RECYCLING),
+        })
+    if growth is _RECYCLE_UNSET:
+        growth = _follower_growth_since(post.city_id, post.published_at)
+    if growth is not None and growth < settings['min_follower_growth']:
+        out.append({
+            'grund': f'Follower-Wachstum seit Veröffentlichung {growth} '
+                     f'unter {settings["min_follower_growth"]}',
+            'abzug': RECYCLE_ABZUG_WACHSTUM,
+        })
+    return out
+
+
+def _recycle_score(post, settings=None, growth=_RECYCLE_UNSET):
     """Recycle-Score 0–100 basierend auf Performance + Zeit seit Veröffentlichung.
-    Zieht 15 Punkte ab, wenn das Follower-Wachstum seit published_at unter recycle_min_follower_growth
-    liegt (nur wenn Snapshots vorhanden sind)."""
+    Die Abzuege (mehrfaches Recycling, schwaches Follower-Wachstum) kommen aus
+    _recycle_abzuege(); min_follower_growth schliesst nie aus, es zieht nur Punkte ab."""
     if not post.published_at:
         return 0
     settings = settings or _recycle_settings()
@@ -4714,17 +5207,16 @@ def _recycle_score(post, settings=None):
         time_factor = 0.7
     er_score = min(100, er * 15)
     base = er_score * time_factor
-    penalty = min(40, (post.recycle_count or 0) * 20)
-    growth = _follower_growth_since(post.city_id, post.published_at)
-    if growth is not None and growth < settings['min_follower_growth']:
-        penalty += 15
+    penalty = sum(a['abzug'] for a in _recycle_abzuege(post, settings, growth))
     return max(0, min(100, int(base - penalty)))
 
 
-def _recycle_slots_left(city_id, settings):
-    """max_per_month minus in diesem Monat freigegebene RecycleJobs dieser Stadt."""
+def _recycle_slots_used(city_id, settings, exclude_job_id=None):
+    """In diesem Monat schon verbrauchte Recycling-Plaetze dieser Stadt.
+    exclude_job_id nimmt einen Job aus der Zaehlung – sonst wuerde eine erneute Freigabe
+    desselben Jobs an der eigenen Buchung scheitern."""
     first = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    approved = RecycleJob.query.filter(
+    q = RecycleJob.query.filter(
         RecycleJob.city_id == city_id,
         RecycleJob.status.in_(['geplant', 'veroeffentlicht']),
         db.or_(
@@ -4732,8 +5224,31 @@ def _recycle_slots_left(city_id, settings):
                     RecycleJob.scheduled_for < _first_of_next_month(first)),
             db.and_(RecycleJob.scheduled_for.is_(None), RecycleJob.updated_at >= first),
         ),
-    ).count()
-    return max(0, settings['max_per_month'] - approved)
+    )
+    if exclude_job_id:
+        q = q.filter(RecycleJob.id != exclude_job_id)
+    return q.count()
+
+
+def _recycle_slots_left(city_id, settings, exclude_job_id=None):
+    """max_per_month minus in diesem Monat freigegebene RecycleJobs dieser Stadt."""
+    return max(0, settings['max_per_month'] - _recycle_slots_used(city_id, settings, exclude_job_id))
+
+
+def _recycle_limit_response(city_id, settings, exclude_job_id=None):
+    """→ (fehler_json, 409) wenn die Monatsgrenze erreicht ist, sonst None."""
+    left = _recycle_slots_left(city_id, settings, exclude_job_id)
+    if left > 0:
+        return None
+    used = _recycle_slots_used(city_id, settings, exclude_job_id)
+    maxp = settings['max_per_month']
+    return jsonify({
+        'error': f'Monatsgrenze erreicht ({used} von {maxp}). In den Einstellungen anpassen.',
+        'monthly_slots_left': 0,
+        'monthly_slots_used': used,
+        'max_per_month': maxp,
+        'city_id': city_id,
+    }), 409
 
 
 def _recycle_candidates(city_id=None, min_days=None, limit=None):
@@ -4750,9 +5265,12 @@ def _recycle_candidates(city_id=None, min_days=None, limit=None):
         q = q.filter_by(city_id=city_id)
     posts = q.order_by(MemePost.published_at.desc()).all()
     excluded = set(settings['excluded_cats'])
+    min_er = settings['min_er']
     slots_cache: dict = {}
     result = []
     unrated_passed = 0      # Templates ohne Bewertung (rating 0/None) – Sternefilter greift nicht
+    no_template_passed = 0  # Posts ohne Template (Uploads) – statt Sternen zaehlt die Engagement-Rate
+    er_filtered = 0         # davon an der Engagement-Schwelle ausgesiebt
     for p in posts:
         tmpl = p.template
         if tmpl:
@@ -4765,8 +5283,16 @@ def _recycle_candidates(city_id=None, min_days=None, limit=None):
                     continue
             else:
                 unrated_passed += 1
+        else:
+            # Uploads haben kein Template und damit keine Sterne. Ersatzweise muss die
+            # Engagement-Rate reichen (recycle_min_er, 0 = Schwelle aus).
+            if min_er > 0 and (p.engagement_rate or 0) < min_er:
+                er_filtered += 1
+                continue
+            no_template_passed += 1
+        growth = _follower_growth_since(p.city_id, p.published_at)
         d = p.to_dict()
-        d['recycle_score'] = _recycle_score(p, settings)
+        d['recycle_score'] = _recycle_score(p, settings, growth)
         d['days_since_post'] = (datetime.utcnow() - p.published_at).days if p.published_at else None
         d['open_recycle_jobs'] = RecycleJob.query.filter(
             RecycleJob.source_post_id == p.id,
@@ -4775,12 +5301,17 @@ def _recycle_candidates(city_id=None, min_days=None, limit=None):
         if p.city_id not in slots_cache:
             slots_cache[p.city_id] = _recycle_slots_left(p.city_id, settings)
         d['monthly_slots_left'] = slots_cache[p.city_id]
-        d['follower_growth'] = _follower_growth_since(p.city_id, p.published_at)
+        d['follower_growth'] = growth
+        # Klar als Abzug ausgewiesen (kein Ausschlussgrund) – das Dashboard zeigt es so an.
+        d['abzuege'] = _recycle_abzuege(p, settings, growth)
+        d['abzug_summe'] = sum(a['abzug'] for a in d['abzuege'])
+        d['has_template'] = bool(tmpl)
         result.append(d)
     result.sort(key=lambda x: x['recycle_score'], reverse=True)
     if limit:
         result = result[:limit]
-    settings = {**settings, 'unrated_passed': unrated_passed}
+    settings = {**settings, 'unrated_passed': unrated_passed,
+                'no_template_passed': no_template_passed, 'er_filtered': er_filtered}
     return result, settings, eff_days
 
 
@@ -4984,12 +5515,17 @@ def api_recycle_jobs_create():
     if not source_id:
         return jsonify({'error': 'source_post_id fehlt'}), 400
     source = MemePost.query.get_or_404(source_id)
+    city_id  = d.get('city_id') or source.city_id
+    settings = _recycle_settings()
+    blocked  = _recycle_limit_response(city_id, settings)
+    if blocked:
+        return blocked
     job = RecycleJob(
         source_post_id=source_id,
-        city_id=d.get('city_id') or source.city_id,
+        city_id=city_id,
         new_caption=d.get('new_caption') or source.caption or '',
         scheduled_for=datetime.fromisoformat(d['scheduled_for']) if d.get('scheduled_for') else None,
-        recycle_score=_recycle_score(source),
+        recycle_score=_recycle_score(source, settings),
         notes=d.get('notes', ''),
         status='vorschlag'
     )
@@ -5003,6 +5539,12 @@ def api_recycle_jobs_create():
 def api_recycle_approve(jid):
     job = RecycleJob.query.get_or_404(jid)
     d   = request.json or {}
+    # Monatsgrenze zaehlt die schon freigegebenen Jobs der Stadt; dieser Job selbst wird
+    # ausgenommen, damit eine erneute Freigabe nicht an der eigenen Buchung scheitert.
+    settings = _recycle_settings()
+    blocked  = _recycle_limit_response(job.city_id, settings, exclude_job_id=job.id)
+    if blocked:
+        return blocked
     if d.get('scheduled_for'):
         job.scheduled_for = datetime.fromisoformat(d['scheduled_for'])
     if d.get('new_caption'):
@@ -5029,7 +5571,8 @@ def api_recycle_approve(jid):
     source.recycle_count = (source.recycle_count or 0) + 1
     source.last_recycled_at = datetime.utcnow()
     db.session.commit()
-    return jsonify({'job': job.to_dict(), 'new_post': new_post.to_dict()})
+    return jsonify({'job': job.to_dict(), 'new_post': new_post.to_dict(),
+                    'monthly_slots_left': _recycle_slots_left(job.city_id, settings)})
 
 
 @app.route('/api/recycle/jobs/<int:jid>/reject', methods=['POST'])
@@ -5200,7 +5743,8 @@ _EXTENSION_MODULES = (
     'inspiration_fetch_bp',   # B7 Inspiration-Abholung über RapidAPI
     'render_queue',           # B4 persistente Render-Queue → Vorrat
     'scheduler',              # B5 Automatik (RSS/Events/Wetter/Digest/Telegram-Poll)
-    'selftest_bp',            # B8 Selbsttest
+    'planer_bp',              # E3 Bundesland-Planer und Kampagnen
+    'selftest_bp',            # B8 Selbsttest (als letztes: sieht alle Routen)
 )
 _loaded_extensions = []
 

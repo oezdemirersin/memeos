@@ -14,7 +14,8 @@ Uhrzeit (Europe/Berlin) genau einmal pro Tag aus. Zustand liegt in AppSettings:
     telegram_token / telegram_chat_id   – kommen aus der Telegram-Card der Einstellungen
     alert_threshold_days                – Warnschwelle "ohne geplanten Post" (Einstellungen)
 
-Jobs: rss, trending, events, nopost, weather, digest (täglich) und poll (alle 30 s).
+Jobs: rss, trending, inspo, events, nopost, overdue, weather, digest (täglich)
+und poll (alle 30 s).
 
 Regeln:
 - app.py wird NIE auf Modulebene importiert (zirkulärer Import). Helfer aus app.py
@@ -58,6 +59,10 @@ HEARTBEAT_STALE_SECONDS = 120       # danach gilt der Scheduler als "nicht leben
 WATCHDOG_ALARM_SECONDS = 600        # Wächter meldet Stillstand einmal pro Vorfall
 WEATHER_EVENT_GAP_DAYS = 3          # pro Regel und Stadt höchstens ein Event alle 3 Tage
 FIRST_SNOW_GAP_DAYS = 60
+OVERDUE_HOURS = 24                  # ab wann ein geplanter Post als überfällig gilt
+OVERDUE_LIST_MAX = 20               # so viele Posts stehen einzeln in der Telegram-Meldung
+INSPO_SORT_DEFAULT = 20             # KI-Deckel je Lauf (AppSettings inspo_sort_limit)
+INSPO_SORT_MAX = 200
 EVENT_RENOTIFY_HOURS = 20
 TELEGRAM_CAPTION_MAX = 1000
 TRENDING_MODEL = 'claude-haiku-4-5-20251001'   # wie /api/trending/refresh in app.py
@@ -72,12 +77,18 @@ JOBS = [
     {'key': 'trending', 'label': 'Trending-Themen (KI)',
      'description': 'Analysiert die Schlagzeilen jeder Stadt mit Claude und legt Trending-Themen an. Kostet KI-Tokens, deshalb standardmäßig aus.',
      'default_enabled': False, 'default_time': '07:15', 'needs_telegram': False, 'costs_ai': True},
+    {'key': 'inspo',    'label': 'Inspiration abholen (KI)',
+     'description': 'Holt neue Beiträge aller Inspirationsquellen über RapidAPI und lässt Claude sie einordnen. Kostet RapidAPI-Aufrufe und KI-Tokens, deshalb standardmäßig aus.',
+     'default_enabled': False, 'default_time': '06:00', 'needs_telegram': False, 'costs_ai': True},
     {'key': 'events',   'label': 'Event-Erinnerung',
      'description': 'Eine Telegram-Sammelnachricht zu Events im Vorlauf oder laufend, mit den Städten, die noch keinen passenden Post im Vorrat haben.',
      'default_enabled': True,  'default_time': '08:00', 'needs_telegram': True,  'costs_ai': False},
     {'key': 'nopost',   'label': 'Warnung ohne geplanten Post',
      'description': 'Meldet Städte, die in den nächsten Tagen (Schwelle aus den Einstellungen) keinen geplanten Post haben.',
      'default_enabled': True,  'default_time': '09:00', 'needs_telegram': True,  'costs_ai': False},
+    {'key': 'overdue',  'label': 'Überfällige Posts melden',
+     'description': 'Meldet Posts, die noch auf „geplant" stehen, deren Termin aber über 24 Stunden zurückliegt. Nur eine Telegram-Sammelliste, es wird nichts automatisch geändert.',
+     'default_enabled': True,  'default_time': '09:15', 'needs_telegram': True,  'costs_ai': False},
     {'key': 'weather',  'label': 'Wetter-Events (Open-Meteo)',
      'description': 'Prüft die Vorhersage je Stadt und legt Wetter-Events an (Hitzewelle, Erster Schnee, Starkregen, Sturmwarnung). Telegram-Hinweis, falls konfiguriert.',
      'default_enabled': True,  'default_time': '06:30', 'needs_telegram': False, 'costs_ai': False},
@@ -91,17 +102,30 @@ JOBS = [
 JOB_BY_KEY = {j['key']: j for j in JOBS}
 DAILY_JOBS = [j['key'] for j in JOBS if j['default_time']]
 
-# Wetterregeln – Kategorien und Emoji entsprechen den Seed-Events in app.py
+# Wetterregeln – Kategorien und Emoji entsprechen den Seed-Events in app.py.
+# 'setting' nennt die AppSettings-Schlüssel, über die der Nutzer die Schwelle bzw. die
+# Sperrfrist verstellen kann; 'threshold'/'min_gap_days' sind nur noch die Standardwerte.
 WEATHER_RULES = [
     {'name': 'Hitzewelle',    'field': 'temperature_2m_max', 'op': '>=', 'threshold': 32, 'unit': '°C',
-     'relevance': 5, 'cats': ['hitze'],            'emoji': '🌡️'},
+     'relevance': 5, 'cats': ['hitze'],            'emoji': '🌡️',
+     'setting': 'weather_heat_c'},
     {'name': 'Erster Schnee', 'field': 'snowfall_sum',       'op': '>',  'threshold': 0,  'unit': 'cm',
-     'relevance': 5, 'cats': ['schnee', 'winter'], 'emoji': '☃️', 'min_gap_days': FIRST_SNOW_GAP_DAYS},
+     'relevance': 5, 'cats': ['schnee', 'winter'], 'emoji': '☃️', 'min_gap_days': FIRST_SNOW_GAP_DAYS,
+     'gap_setting': 'weather_snow_gap_days'},
     {'name': 'Starkregen',    'field': 'precipitation_sum',  'op': '>=', 'threshold': 25, 'unit': 'mm',
-     'relevance': 4, 'cats': ['regen', 'gewitter'], 'emoji': '⛈️'},
+     'relevance': 4, 'cats': ['regen', 'gewitter'], 'emoji': '⛈️',
+     'setting': 'weather_rain_mm'},
     {'name': 'Sturmwarnung',  'field': 'wind_gusts_10m_max', 'op': '>=', 'threshold': 75, 'unit': 'km/h',
-     'relevance': 4, 'cats': ['regen'],            'emoji': '🌪️'},
+     'relevance': 4, 'cats': ['regen'],            'emoji': '🌪️',
+     'setting': 'weather_wind_kmh'},
 ]
+# Einstellbare Wetter-Schwellen: Schlüssel → (Standard, Untergrenze, Obergrenze, Beschriftung)
+WEATHER_SETTINGS = {
+    'weather_heat_c':        (32, 20, 50,  'Hitzewelle ab (°C)'),
+    'weather_rain_mm':       (25, 1, 200,  'Starkregen ab (mm/Tag)'),
+    'weather_wind_kmh':      (75, 30, 250, 'Sturmwarnung ab (km/h Böen)'),
+    'weather_snow_gap_days': (FIRST_SNOW_GAP_DAYS, 1, 365, 'Erster Schnee: Sperrfrist (Tage)'),
+}
 GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 FORECAST_DAILY = 'temperature_2m_max,precipitation_sum,snowfall_sum,wind_gusts_10m_max'
@@ -537,6 +561,108 @@ def job_trending(manual=False):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Job 2b: Inspiration abholen + KI-Sortierung (Standard AUS – kostet RapidAPI und KI)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def inspo_sort_limit():
+    """Deckel für die KI-Sortierung je Lauf (AppSettings 'inspo_sort_limit')."""
+    return max(0, min(INSPO_SORT_MAX, _int_setting('inspo_sort_limit', INSPO_SORT_DEFAULT)))
+
+
+def _call_app_json(fn_name, payload):
+    """Eine Routenfunktion aus app.py direkt aufrufen – ohne HTTP, ohne CSRF, ohne Login.
+    → (daten_dict_oder_None, status, fehlertext_oder_None)."""
+    fn = getattr(_appmod(), fn_name, None)
+    if fn is None:
+        return None, 0, f'{fn_name} gibt es in app.py nicht mehr'
+    inner = getattr(fn, '__wrapped__', None)      # login_required nutzt functools.wraps
+    flask_app = _flask_app()
+    with flask_app.test_request_context(f'/intern/{fn_name}', method='POST', json=payload):
+        if inner is None:                         # kein Decorator zum Auspacken → Sitzung setzen
+            inner = fn
+            try:
+                session['logged_in'] = True
+            except Exception as ex:
+                return None, 0, f'{fn_name} nicht aufrufbar ({ex})'
+        rv = inner()
+    status = 200
+    if isinstance(rv, tuple):
+        rv, status = rv[0], (rv[1] if len(rv) > 1 else 200)
+    data = None
+    try:
+        data = rv.get_json(silent=True) if hasattr(rv, 'get_json') else rv
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        return None, status, f'{fn_name} lieferte keine verwertbare Antwort'
+    return data, status, None
+
+
+def job_inspo(manual=False):
+    if _offline():
+        return 'offline übersprungen'
+    try:
+        import inspiration_fetch_bp as insp
+        from models import MemoInspirationSource
+    except Exception as ex:
+        return f'Fehler: Inspiration-Modul nicht ladbar ({ex})'
+
+    key, _quelle = insp.get_rapidapi_key()
+    if not key:
+        return 'kein RapidAPI-Schlüssel hinterlegt (Einstellungen → Integrationen)'
+    sources = MemoInspirationSource.query.order_by(MemoInspirationSource.username).all()
+    if not sources:
+        return 'keine Inspirationsquellen angelegt'
+    if not insp._fetch_lock.acquire(blocking=False):
+        return 'ein Abruf läuft bereits, übersprungen'
+    limit = insp.get_fetch_limit()
+    neu = geholt = fehler = 0
+    fehlertexte = []
+    try:
+        for i, src in enumerate(sources):
+            if i and insp.FETCH_ALL_PAUSE:
+                time.sleep(insp.FETCH_ALL_PAUSE)
+            try:
+                r = insp.fetch_source(src, limit, None, key)
+                neu += r['new']
+                geholt += r['fetched']
+            except insp.FetchError as ex:
+                db.session.rollback()
+                fehler += 1
+                fehlertexte.append(f'@{src.username}: {ex}')
+            except Exception as ex:
+                db.session.rollback()
+                fehler += 1
+                fehlertexte.append(f'@{src.username}: {type(ex).__name__}')
+                log.warning('Inspiration-Abruf @%s: %s', src.username, ex)
+    finally:
+        insp._fetch_lock.release()
+
+    teile = [f'{neu} neue Beiträge aus {len(sources) - fehler} von {len(sources)} Quellen',
+             f'{geholt} geprüft']
+    if fehler:
+        teile.append(f'{fehler} Quelle(n) mit Fehler: ' + '; '.join(fehlertexte[:3]))
+
+    deckel = inspo_sort_limit()
+    if deckel <= 0:
+        teile.append('KI-Sortierung aus (inspo_sort_limit 0)')
+        return ', '.join(teile)
+    if not _anthropic_key():
+        teile.append('KI-Sortierung übersprungen (kein ANTHROPIC_API_KEY)')
+        return ', '.join(teile)
+    data, status, err = _call_app_json('api_inspo_ai_sort', {'count': deckel})
+    if err:
+        teile.append(f'KI-Sortierung: {err}')
+    elif status >= 400 or not data.get('ok'):
+        teile.append('KI-Sortierung: ' + str(data.get('error') or f'HTTP {status}'))
+    else:
+        teile.append(f'{data.get("processed", 0)} von höchstens {deckel} KI-sortiert')
+        if data.get('knowledge_added'):
+            teile.append(f'{data["knowledge_added"]} Wissenseinträge')
+    return ', '.join(teile)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Job 3: Events
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -667,6 +793,52 @@ def job_nopost(manual=False):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Job 4b: Überfällige Posts (nur melden, nichts ändern)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def overdue_posts(now=None, hours=OVERDUE_HOURS):
+    """Posts, die noch auf 'geplant' stehen, deren Termin aber länger als `hours` zurückliegt.
+    scheduled_at ist Berlin-naiv, deshalb wird auch die Grenze Berlin-naiv gebildet."""
+    jetzt = (now or now_berlin()).replace(tzinfo=None)
+    grenze = jetzt - timedelta(hours=hours)
+    return (MemePost.query
+            .filter(MemePost.status == 'geplant',
+                    MemePost.scheduled_at.isnot(None),
+                    MemePost.scheduled_at < grenze)
+            .order_by(MemePost.scheduled_at, MemePost.id).all())
+
+
+def _overdue_message(posts):
+    lines = [f'<b>Überfällig ({len(posts)})</b> – Termin über {OVERDUE_HOURS} Stunden her, '
+             f'Status weiterhin „geplant“']
+    for p in posts[:OVERDUE_LIST_MAX]:
+        stadt = p.city.name if p.city else '?'
+        wann = p.scheduled_at.strftime('%d.%m. %H:%M') if p.scheduled_at else '—'
+        titel = (p.title or p.caption or '').strip()
+        zeile = f'● {_h(stadt)} · {wann}'
+        if titel:
+            zeile += f' · {_h(titel[:60])}'
+        lines.append(zeile)
+    if len(posts) > OVERDUE_LIST_MAX:
+        lines.append(f'… und {len(posts) - OVERDUE_LIST_MAX} weitere')
+    lines.append('')
+    lines.append('Es wurde nichts geändert. Im Dashboard als veröffentlicht markieren '
+                 'oder neu terminieren.')
+    return '\n'.join(lines)
+
+
+def job_overdue(manual=False):
+    posts = overdue_posts()
+    if not telegram_configured():
+        return f'Telegram nicht konfiguriert ({len(posts)} überfällige Posts)'
+    if not posts:
+        return 'keine überfälligen Posts'
+    if not send_text(_overdue_message(posts)):
+        return f'Fehler: Telegram-Versand fehlgeschlagen ({len(posts)} überfällige Posts)'
+    return f'{len(posts)} überfällige Posts gemeldet'
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Job 5: Wetter (Open-Meteo)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -736,17 +908,37 @@ def _rule_hit(rule, value):
     return value >= rule['threshold'] if rule['op'] == '>=' else value > rule['threshold']
 
 
-def evaluate_weather_rules(days):
-    """→ Liste ausgelöster Regeln: {'rule', 'date', 'value', 'unit', 'cats', 'relevance', 'emoji'};
-    je Regel der erste Tag, an dem sie zutrifft."""
-    hits = []
+def weather_setting(key):
+    """Eine Wetter-Schwelle aus den Einstellungen, auf ihren erlaubten Bereich begrenzt."""
+    default, lo, hi, _label = WEATHER_SETTINGS[key]
+    return max(lo, min(hi, _int_setting(key, default)))
+
+
+def weather_rules():
+    """WEATHER_RULES mit den Schwellen aus den Einstellungen (Standard, falls nichts gesetzt)."""
+    out = []
     for rule in WEATHER_RULES:
+        r = dict(rule)
+        if r.get('setting') in WEATHER_SETTINGS:
+            r['threshold'] = weather_setting(r['setting'])
+        if r.get('gap_setting') in WEATHER_SETTINGS:
+            r['min_gap_days'] = weather_setting(r['gap_setting'])
+        out.append(r)
+    return out
+
+
+def evaluate_weather_rules(days, rules=None):
+    """→ Liste ausgelöster Regeln: {'rule', 'date', 'value', 'unit', 'cats', 'relevance', 'emoji'};
+    je Regel der erste Tag, an dem sie zutrifft. Ohne `rules` gelten die eingestellten Schwellen."""
+    hits = []
+    for rule in (rules if rules is not None else weather_rules()):
         for day in days:
             val = day.get(rule['field'])
             if _rule_hit(rule, val):
                 hits.append({'rule': rule['name'], 'date': day.get('date'), 'value': val,
                              'unit': rule['unit'], 'cats': rule['cats'],
                              'relevance': rule['relevance'], 'emoji': rule['emoji'],
+                             'threshold': rule['threshold'],
                              'min_gap_days': rule.get('min_gap_days', WEATHER_EVENT_GAP_DAYS)})
                 break
     return hits
@@ -918,8 +1110,15 @@ def _digest_caption(post, media=None):
     return text
 
 
+SKIP_DAYS = 1        # Knopf "Überspringen" → einen Tag später, gleiche Uhrzeit
+LATER_DAYS = 7       # Knopf "Später" → eine Woche später, gleiche Uhrzeit
+
+
 def _digest_buttons(post):
-    return [[('Gepostet ✓', f'posted:{post.id}'), ('Überspringen', f'skip:{post.id}')]]
+    return [
+        [('Gepostet ✓', f'posted:{post.id}'), ('Überspringen', f'skip:{post.id}')],
+        [('Später', f'later:{post.id}')],
+    ]
 
 
 def _digest_preview_item(post):
@@ -981,6 +1180,31 @@ def _clear_buttons(chat_id, message_id):
                                         'reply_markup': {'inline_keyboard': []}}, timeout=10)
 
 
+def _shift_post(raw_id, days, antwort, cb_id, chat_id, message_id):
+    """Geplanten Post um `days` Tage nach hinten schieben (gleiche Uhrzeit), Knöpfe der
+    Nachricht entfernen und den Grund in post.notes vermerken. → Kurztext für das Log."""
+    try:
+        pid = int(str(raw_id).strip())
+    except ValueError:
+        _answer_callback(cb_id, 'Ungültig')
+        return 'ungültige ID'
+    post = db.session.get(MemePost, pid)
+    if not post:
+        _answer_callback(cb_id, 'Post nicht gefunden')
+        return f'Post {pid} nicht gefunden'
+    # scheduled_at ist Berlin-naiv (siehe _digest_posts). Ohne Termin zählt ab jetzt.
+    basis = post.scheduled_at or now_berlin().replace(tzinfo=None, second=0, microsecond=0)
+    neu = basis + timedelta(days=days)
+    post.scheduled_at = neu
+    vermerk = (f'{now_berlin():%d.%m.%Y %H:%M} Telegram: um {days} Tag(e) verschoben '
+               f'auf {neu:%d.%m.%Y %H:%M}')
+    post.notes = f'{(post.notes or "").rstrip()}\n{vermerk}'.strip()
+    db.session.commit()
+    _answer_callback(cb_id, antwort)
+    _clear_buttons(chat_id, message_id)
+    return f'Post {pid} um {days} Tag(e) verschoben auf {neu:%d.%m. %H:%M}'
+
+
 def _handle_callback(cbq):
     """Verarbeitet eine callback_query. → Kurztext für das Log."""
     cb_id = cbq.get('id', '')
@@ -1009,9 +1233,10 @@ def _handle_callback(cbq):
         _answer_callback(cb_id, 'Als veröffentlicht markiert')
         _clear_buttons(chat_id, message_id)
         return f'Post {pid} veröffentlicht'
-    if data.startswith('skip:'):
-        _answer_callback(cb_id, 'Übersprungen')
-        return 'übersprungen'
+    for prefix, days, antwort in (('skip:', SKIP_DAYS, 'Auf morgen verschoben'),
+                                  ('later:', LATER_DAYS, 'Um sieben Tage verschoben')):
+        if data.startswith(prefix):
+            return _shift_post(data[len(prefix):], days, antwort, cb_id, chat_id, message_id)
     _answer_callback(cb_id, '')
     return 'unbekannt'
 
@@ -1066,8 +1291,9 @@ def job_poll(manual=False):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _JOB_FUNCS = {
-    'rss': job_rss, 'trending': job_trending, 'events': job_events, 'nopost': job_nopost,
-    'weather': job_weather, 'digest': job_digest, 'poll': job_poll,
+    'rss': job_rss, 'trending': job_trending, 'inspo': job_inspo, 'events': job_events,
+    'nopost': job_nopost, 'overdue': job_overdue, 'weather': job_weather,
+    'digest': job_digest, 'poll': job_poll,
 }
 
 
@@ -1237,6 +1463,15 @@ def init_app(flask_app):
 # Routen
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _weather_settings_payload():
+    """Wetter-Schwellen mit Wert, erlaubtem Bereich, Standard und Beschriftung."""
+    out = {}
+    for key, (default, lo, hi, label) in WEATHER_SETTINGS.items():
+        out[key] = {'value': weather_setting(key), 'default': default,
+                    'min': lo, 'max': hi, 'label': label}
+    return out
+
+
 def _status_payload():
     jobs = []
     for j in JOBS:
@@ -1263,6 +1498,10 @@ def _status_payload():
         'scheduler_started': _state['started'],
         'poll_suspended': time.time() < _state['poll_suspended_until'],
         'alert_threshold_days': _int_setting('alert_threshold_days', 3),
+        'overdue_hours': OVERDUE_HOURS,
+        'inspo_sort_limit': inspo_sort_limit(),
+        'inspo_sort_limit_max': INSPO_SORT_MAX,
+        'weather_settings': _weather_settings_payload(),
         'now_berlin': now_berlin().strftime('%Y-%m-%d %H:%M'),
     }
 
@@ -1290,6 +1529,34 @@ def api_automation_save():
             if not _TIME_RE.match(t):
                 return jsonify({'error': f'Ungültige Uhrzeit für {key}: "{t}" (HH:MM)'}), 400
             _set(f'{key}_time', t)
+    # Wetter-Schwellen: {'weather': {'weather_heat_c': 30, …}}
+    for key, raw in (d.get('weather') or {}).items():
+        if key not in WEATHER_SETTINGS:
+            return jsonify({'error': f'Unbekannte Wetter-Einstellung: {key}'}), 400
+        default, lo, hi, label = WEATHER_SETTINGS[key]
+        try:
+            val = int(str(raw).strip())
+        except (TypeError, ValueError):
+            return jsonify({'error': f'{label}: "{raw}" ist keine Zahl'}), 400
+        if not (lo <= val <= hi):
+            return jsonify({'error': f'{label}: erlaubt ist {lo} bis {hi}'}), 400
+        _set(key, str(val))
+    if 'inspo_sort_limit' in d:
+        try:
+            val = int(str(d['inspo_sort_limit']).strip())
+        except (TypeError, ValueError):
+            return jsonify({'error': 'KI-Deckel Inspiration: keine Zahl'}), 400
+        if not (0 <= val <= INSPO_SORT_MAX):
+            return jsonify({'error': f'KI-Deckel Inspiration: erlaubt ist 0 bis {INSPO_SORT_MAX}'}), 400
+        _set('inspo_sort_limit', str(val))
+    if 'alert_threshold_days' in d:
+        try:
+            val = int(str(d['alert_threshold_days']).strip())
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Warnschwelle: keine Zahl'}), 400
+        if not (1 <= val <= 30):
+            return jsonify({'error': 'Warnschwelle: erlaubt ist 1 bis 30 Tage'}), 400
+        _set('alert_threshold_days', str(val))
     payload = _status_payload()
     payload['ok'] = True
     return jsonify(payload)
@@ -1328,7 +1595,10 @@ def api_automation_weather_preview(city_id):
     return jsonify({'city': city.name, 'city_id': city.id, 'lat': lat, 'lon': lon,
                     'days': days, 'rules': rules,
                     'thresholds': [{'rule': r['name'], 'field': r['field'], 'op': r['op'],
-                                    'threshold': r['threshold'], 'unit': r['unit']} for r in WEATHER_RULES]})
+                                    'threshold': r['threshold'], 'unit': r['unit'],
+                                    'setting': r.get('setting') or r.get('gap_setting')}
+                                   for r in weather_rules()],
+                    'weather_settings': _weather_settings_payload()})
 
 
 @bp.route('/api/automation/digest/preview', methods=['POST'])

@@ -464,6 +464,12 @@ class AiUsageLog(db.Model):
     model         = db.Column(db.String(80), nullable=False)
     input_tokens  = db.Column(db.Integer, default=0)
     output_tokens = db.Column(db.Integer, default=0)
+    # Prompt-Caching: Schreiben in den Cache kostet mehr als normale Eingabe, Lesen deutlich
+    # weniger. Beide Mengen werden getrennt erfasst, damit die Ersparnis sichtbar bleibt.
+    # nullable + Standard 0, damit Bestandszeilen ohne diese Werte weiterlaufen.
+    cache_creation_input_tokens = db.Column(db.Integer, default=0, nullable=True)
+    cache_read_input_tokens     = db.Column(db.Integer, default=0, nullable=True)
+    provider      = db.Column(db.String(20), default='anthropic', nullable=True)
     cost_eur      = db.Column(db.Float, default=0.0)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 

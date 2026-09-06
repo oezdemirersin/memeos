@@ -10,3 +10,4 @@ static/renders/
 static/uploads/
 venv/
 .venv/
+.vorschau_tmp/

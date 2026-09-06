@@ -612,12 +612,16 @@ class _SlideParser:
               'line_height': 1.15, 'fit': 'shrink'}
         found = PLACEHOLDER_RE.findall(text)
         whole = PLACEHOLDER_RE.fullmatch(text)
+        # fallback = Originaltext der Folie. Liefert die KI für die Variable nichts, steht beim
+        # Rendern der Vorlagentext da statt einer leeren Fläche – im Vorrat sofort erkennbar.
         if whole:
             el['var'] = whole.group(1)
+            el['fallback'] = text
             self._add_var(whole.group(1))
         elif found:
             el['text'] = text
             el['vars'] = list(dict.fromkeys(found))
+            el['fallback'] = text
             for v in found:
                 self._add_var(v)
         else:
@@ -679,7 +683,8 @@ def _element_summary(el):
          'box': [el.get('x'), el.get('y'), el.get('width'), el.get('height')]}
     if el.get('type') == 'text':
         s.update({'var': el.get('var'), 'text': el.get('text'), 'font': el.get('font'),
-                  'max_size': el.get('max_size'), 'color': el.get('color')})
+                  'max_size': el.get('max_size'), 'color': el.get('color'),
+                  'fallback': el.get('fallback') or ''})
     elif el.get('type') == 'rect':
         s['fill'] = el.get('fill')
     return s

@@ -418,7 +418,9 @@ def build_config_from_analysis(analysis, w, h):
             'valign': 'middle',
             'uppercase': bool(style.get('uppercase', False)),
             'fit': 'shrink',
-            'fallback': blk.get('text') or '',
+            # fallback = erkannte Originalzeile. Liefert die KI für die Variable nichts, steht sie
+            # beim Rendern wieder da statt einer leeren Fläche – im Vorrat sofort erkennbar.
+            'fallback': str(blk.get('text') or '').strip(),
         }
         if photo:
             text_el['stroke'] = '#000000'

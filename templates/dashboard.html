@@ -917,6 +917,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
       <button class="btn btn-primary" style="width:100%;" onclick="rqStartBatch()">▶ In die Render-Queue stellen</button>
 
+      <div id="rq-pause-hint" hidden style="font-size:12px;color:var(--warning);margin-top:10px;">
+        Master-Pause aktiv – die Warteschlange wartet.
+        <a href="#" onclick="showPage('settings');setTimeout(()=>document.getElementById('automation-card')?.scrollIntoView({behavior:'smooth'}),120);return false;">Zur Pause →</a>
+      </div>
+      <div id="rq-queue-incomplete" style="display:none;font-size:12px;color:var(--warning);margin-top:6px;cursor:pointer;"
+           title="Entwürfe im Vorrat öffnen" onclick="rqOpenVorrat(null)"></div>
+
       <div id="rq-progress" hidden style="margin-top:16px;">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
           <span id="rq-progress-text"></span>
@@ -924,6 +931,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </div>
         <div class="progress-bar"><div class="progress-fill" id="rq-progress-fill" style="width:0%"></div></div>
         <div id="rq-poll-hint" hidden style="font-size:12px;color:var(--warning);margin-top:6px;"></div>
+        <div id="rq-campaign-row" style="display:none;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="openKampagneModal('batch')">Als Kampagne einplanen</button>
+          <span id="rq-campaign-hint" style="font-size:12px;color:var(--muted);"></span>
+        </div>
       </div>
     </div>
 
@@ -932,8 +943,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <div style="font-size:14px;font-weight:600;">Batch</div>
         <div id="rq-batch-label" style="font-size:12px;color:var(--muted);text-align:right;"></div>
       </div>
+      <div id="rq-incomplete-hint" style="display:none;font-size:12px;color:var(--warning);margin-bottom:8px;"></div>
       <div id="rq-task-table"><div class="empty" style="padding:30px 20px;"><p>Noch kein Batch gestartet</p></div></div>
       <div id="rq-skipped" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+      <div id="rq-warnings" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid var(--warning);border-radius:10px;background:rgba(245,158,11,.07);"></div>
       <div id="rq-recent" style="margin-top:14px;"></div>
     </div>
   </div>
@@ -1168,6 +1181,29 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <tbody id="auto-jobs-body"><tr><td colspan="5" style="padding:8px 4px;color:var(--muted);">Wird geladen …</td></tr></tbody>
       </table>
       </div>
+
+      <!-- ── Schwellen und Deckel (E4) ── -->
+      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Schwellen und Deckel</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Ab wann das Wetter ein Event wert ist. Gilt für alle Städte.</div>
+        <div id="auto-weather-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div>
+        <div class="form-row" style="margin-top:12px;">
+          <div class="form-group">
+            <label>KI-Deckel Inspiration</label>
+            <input type="number" id="auto-inspo-limit" min="0" step="1" value="20" style="width:100px;">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">So viele Beiträge lässt der Job „Inspiration abholen“ je Lauf von der KI einordnen. 0 holt nur ab und spart die KI-Kosten.</div>
+          </div>
+          <div class="form-group">
+            <label>Warnschwelle ohne geplanten Post (Tage)</label>
+            <input type="number" id="auto-alert-days" min="1" max="30" step="1" value="3" style="width:100px;">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">Erscheint als Warnung auf der Stadtkarte.</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="saveAutomationThresholds(this)">Übernehmen</button>
+          <span style="font-size:11px;color:var(--muted);" id="auto-overdue-hint"></span>
+        </div>
+      </div>
     </div>
 
     <!-- ── Integrationen (B7) ── -->
@@ -1193,18 +1229,6 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <button class="btn btn-primary btn-sm" onclick="saveIntegrationSettings()">Speichern</button>
         <button class="btn btn-ghost btn-sm" onclick="clearRapidApiKey()" title="Gespeicherten RapidAPI-Key löschen">Key löschen</button>
         <span id="settings-rapidapi-status" style="font-size:12px;color:var(--muted);"></span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Warnungen</div>
-      <div class="form-group">
-        <label>Warnung wenn Stadt X Tage ohne geplanten Post</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="number" id="settings-alert-days" min="1" max="30" value="3" style="width:80px;">
-          <span style="font-size:12px;color:var(--muted);">Tage (erscheint als ⚠ auf Karte)</span>
-          <button class="btn btn-ghost btn-sm" onclick="saveAlertDays()">Speichern</button>
-        </div>
       </div>
     </div>
 
@@ -1238,6 +1262,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <div style="flex:1;"></div>
         <button class="btn btn-primary btn-sm" onclick="saveCategoryMix()">Speichern</button>
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+        Warnschwelle: Liegt eine Kategorie mehr als 15 Prozentpunkte über ihrem Ziel, warnt der Bulk-Generator beim Anlegen eines Batches – die Stadt wird trotzdem gerendert.
+        Der Schwellwert steht in der Einstellung <code>category_overhang_tolerance</code> (Standard 15) und wird bisher nicht über das Dashboard gesetzt.
+      </div>
     </div>
 
     <!-- ── Recycle Settings ── -->
@@ -1256,8 +1284,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
           <label>Mindest-Follower-Wachstum (%)</label>
           <div style="display:flex;align-items:center;gap:6px;">
             <input type="number" id="rc-min-growth" min="0" max="200" value="20" style="width:80px;">
-            <span style="font-size:11px;color:var(--muted);">neues Publikum nötig</span>
           </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Kein Ausschluss, sondern ein Abzug: Posts aus Zeiten mit schwachem Wachstum verlieren 15 Punkte im Recycle-Score.</div>
         </div>
       </div>
       <div class="form-row">
@@ -1277,6 +1305,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </div>
       </div>
       <div class="form-group">
+        <label>Mindest-Engagement für Uploads (%)</label>
+        <input type="number" id="rc-min-er" min="0" step="1" value="0" style="width:80px;">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Gilt nur für Posts ohne Vorlage (eigene Uploads). Die haben keine Sterne-Bewertung, deshalb entscheidet hier die Engagement-Rate. 0 schaltet die Prüfung aus.</div>
+      </div>
+      <div class="form-group">
         <label>Ausgeschlossene Kategorien <span style="font-weight:400;color:var(--muted);">(kommagetrennt)</span></label>
         <input type="text" id="rc-excluded-cats" placeholder="news, breaking" value="news">
         <div style="font-size:11px;color:var(--muted);margin-top:4px;">Diese Kategorien werden nie automatisch als Recycle-Kandidaten vorgeschlagen (z.B. News sind veraltet)</div>
@@ -1284,10 +1317,128 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <button class="btn btn-primary btn-sm" onclick="saveRecycleSettings()">Speichern</button>
     </div>
 
-    <div class="card">
-      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">KI-Kosten (Monat)</div>
-      <div style="font-size:28px;font-family:var(--font-display);">€{{ "%.4f"|format(ai_cost_month) }}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px;">Claude Haiku API-Verbrauch diesen Monat</div>
+    <!-- ── Planung / Bundesland-Strategie (E3) ── -->
+    <div class="card" id="planer-settings-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Planung (Bundesland-Strategie)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Sorgt dafür, dass benachbarte Stadtseiten nicht dieselben Memes zur selben Zeit posten.</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nachbarschaft in km</label>
+          <input type="number" id="pl-radius" min="1" max="2000" step="1" value="60" style="width:100px;">
+        </div>
+        <div class="form-group">
+          <label>Gleiches Template beim Nachbarn – Tage</label>
+          <input type="number" id="pl-gap-template" min="0" max="365" step="1" value="14" style="width:100px;">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Gleiche Kategorie beim Nachbarn – Tage</label>
+          <input type="number" id="pl-gap-category" min="0" max="365" step="1" value="3" style="width:100px;">
+        </div>
+        <div class="form-group">
+          <label>Gleiches Template im Bundesland – Tage</label>
+          <input type="number" id="pl-gap-state" min="0" max="365" step="1" value="2" style="width:100px;">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">0 = Regel aus. <span id="pl-neutral-hint"></span></div>
+      <button class="btn btn-primary btn-sm" onclick="savePlanerSettings()">Speichern</button>
+
+      <div id="pl-coords-row" style="display:none;margin-top:14px;padding:10px 12px;border:1px solid var(--warning);border-radius:10px;background:rgba(245,158,11,.07);">
+        <div style="font-size:12px;display:flex;align-items:flex-start;gap:8px;">
+          <span style="color:var(--warning);line-height:1.4;">●</span>
+          <span id="pl-coords-text" style="flex:1;"></span>
+        </div>
+        <button class="btn btn-primary btn-sm" style="margin-top:8px;" id="pl-geocode-btn" onclick="planerGeocode(this)">Koordinaten holen</button>
+      </div>
+
+      <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--muted);">Stadt ansehen:</span>
+        <select id="pl-neighbor-city" onchange="loadPlanerNeighbors()" style="max-width:200px;">
+          <option value="">— Stadt wählen —</option>
+          {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+        <span id="pl-neighbor-result" style="font-size:12px;color:var(--muted);flex:1;min-width:180px;"></span>
+      </div>
+    </div>
+
+    <!-- ── KI-Kosten (E1) ── -->
+    <div class="card" id="ai-cost-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:600;">KI-Kosten</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn btn-ghost btn-xs" onclick="aiUsageNav(-1)" title="Monat zurück">←</button>
+          <span id="ai-usage-month-label" style="font-size:12px;font-weight:600;min-width:120px;text-align:center;">—</span>
+          <button class="btn btn-ghost btn-xs" onclick="aiUsageNav(1)" title="Monat vor">→</button>
+        </div>
+      </div>
+      <div style="font-size:28px;font-family:var(--font-display);" id="ai-usage-total">€0,0000</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="ai-usage-provider">Anbieter: —</div>
+      <div style="font-size:12px;color:var(--warning);margin-top:4px;display:none;" id="ai-usage-provider-hint"></div>
+      <div style="font-size:12px;color:var(--danger);margin-top:6px;display:none;" id="ai-usage-budget-hint"></div>
+
+      <div style="overflow-x:auto;margin-top:14px;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
+            <th style="text-align:left;padding:4px;">Funktion</th>
+            <th style="text-align:right;padding:4px;">Aufrufe</th>
+            <th style="text-align:right;padding:4px;">Eingabe</th>
+            <th style="text-align:right;padding:4px;">Ausgabe</th>
+            <th style="text-align:right;padding:4px;">aus Cache</th>
+            <th style="text-align:right;padding:4px;">Kosten</th>
+          </tr></thead>
+          <tbody id="ai-usage-feature-body"></tbody>
+        </table>
+      </div>
+      <div style="overflow-x:auto;margin-top:12px;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
+            <th style="text-align:left;padding:4px;">Modell</th>
+            <th style="text-align:right;padding:4px;">Aufrufe</th>
+            <th style="text-align:right;padding:4px;">Eingabe</th>
+            <th style="text-align:right;padding:4px;">Ausgabe</th>
+            <th style="text-align:right;padding:4px;">aus Cache</th>
+            <th style="text-align:right;padding:4px;">Kosten</th>
+          </tr></thead>
+          <tbody id="ai-usage-model-body"></tbody>
+        </table>
+      </div>
+      <div id="ai-usage-days" style="margin-top:12px;"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+        Spalte „aus Cache“: je höher, desto günstiger. Sehr kurze Prompts erreichen die Mindestlänge des Anbieters nicht und bleiben bei 0.
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Anbieter</label>
+            <select id="ai-provider-select" onchange="aiProviderChanged()">
+              <option value="anthropic">Anthropic (Claude Haiku)</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Monatsbudget (EUR)</label>
+            <input type="text" id="ai-budget-input" placeholder="0" style="width:110px;">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">0 = keine Grenze. Ist die Grenze erreicht, werden keine neuen Beiträge mehr erzeugt.</div>
+          </div>
+        </div>
+        <div id="ai-deepseek-fields" style="display:none;">
+          <div class="form-group">
+            <label>DeepSeek-Modell</label>
+            <input type="text" id="ai-deepseek-model" placeholder="deepseek-chat">
+          </div>
+          <div class="form-group">
+            <label>DeepSeek-Schlüssel</label>
+            <input type="password" id="ai-deepseek-key" placeholder="sk-…" autocomplete="off">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="ai-deepseek-key-hint">Leer lassen, um den gespeicherten Schlüssel zu behalten.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="saveAiSettings()">Speichern</button>
+          <button class="btn btn-ghost btn-sm" id="ai-deepseek-clear-btn" style="display:none;" onclick="clearDeepseekKey()">Schlüssel entfernen</button>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -1442,6 +1593,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div id="hl-auto-preview-list" style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:3px;"></div>
     </div>
 
+    <div id="hl-planer-warn" style="display:none;margin-bottom:16px;"></div>
+
     <div style="display:flex;gap:10px;">
       <button onclick="hlSubmitSchedule()" class="btn btn-primary" id="hl-schedule-btn" style="padding:13px 28px;font-size:14px;">Einplanen</button>
       <button onclick="hlPreviewAuto()" class="btn btn-ghost" style="font-size:13px;">Vorschau Auto-Verteilung</button>
@@ -1533,6 +1686,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <span id="kalender-title" style="font-size:13px;font-weight:600;min-width:160px;text-align:center;"></span>
       <button class="btn btn-ghost btn-sm" onclick="kalenderNav(1)">Weiter →</button>
       <button class="btn btn-ghost btn-sm" onclick="kalenderGoToday()">Heute</button>
+      <button class="btn btn-ghost btn-sm" id="kal-conflict-btn" onclick="toggleKalConflictsOnly()" title="Nur Posts mit Terminkonflikt zeigen">Nur Konflikte</button>
     </div>
   </div>
 
@@ -1546,6 +1700,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="kal-day-header">Sa</div>
     <div class="kal-day-header">So</div>
   </div>
+  <div id="kal-conflict-summary" style="font-size:12px;color:var(--muted);margin-top:12px;"></div>
 </div>
 
 <!-- ─── PERFORMANCE ─── -->
@@ -2176,6 +2331,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <button class="chip" data-days="90" onclick="setRcDays(this,90)">3 Monate</button>
   </div>
 
+  <div id="rc-limit-hint" style="display:none;font-size:12px;color:var(--danger);margin-bottom:10px;"></div>
   <div id="rc-content">
     <div class="empty"><p>Lade…</p></div>
   </div>
@@ -2199,9 +2355,45 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <option value="archiviert">Archiviert</option>
   </select>
   <button class="btn btn-ghost btn-sm" onclick="bulkSetStatus()">✓ Setzen</button>
+  <button class="btn btn-ghost btn-sm" onclick="openKampagneModal('auswahl')" title="Ausgewählte Posts konfliktfrei über die Nachbarstädte verteilen">Auswahl als Kampagne planen</button>
   <button class="btn btn-ghost btn-sm" onclick="bulkExportZip()" title="Ausgewählte als ZIP exportieren">↓ ZIP</button>
   <button class="btn btn-ghost btn-sm" onclick="bulkArchive()" style="color:var(--muted);">Archivieren</button>
   <button class="btn btn-ghost btn-sm" onclick="bulkDelete()" style="color:var(--danger);">Löschen</button>
+</div>
+
+<!-- ── Kampagne planen Modal (E3) ── -->
+<div class="modal-overlay" id="modal-kampagne">
+  <div class="modal" style="width:640px;">
+    <div class="modal-header">
+      <div class="modal-title">KAMPAGNE PLANEN</div>
+      <button class="modal-close" onclick="closeModal('modal-kampagne')">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;" id="kmp-source-hint"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Start</label>
+        <input type="date" id="kmp-start">
+      </div>
+      <div class="form-group">
+        <label>Uhrzeit</label>
+        <input type="time" id="kmp-time" value="10:00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Verteilung</label>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="kmp-spread" value="auto" style="width:auto;"> Automatisch – so dicht wie möglich</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="kmp-spread" value="daily" checked style="width:auto;"> Ein Post pro Tag</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="kmp-spread" value="weekly" style="width:auto;"> Ein Post pro Woche</label>
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="kampagneVorschau()">Vorschau berechnen</button>
+    <div id="kmp-preview" style="margin-top:14px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-kampagne')">Abbrechen</button>
+      <button class="btn btn-primary" id="kmp-apply-btn" onclick="kampagneUebernehmen()" disabled>Termine übernehmen</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── Post duplizieren Modal ── -->
@@ -2384,7 +2576,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="form-row">
       <div class="form-group">
         <label>Stadt *</label>
-        <select id="vorrat-city">
+        <select id="vorrat-city" onchange="vorratPlanerCheck()">
           {% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
         </select>
       </div>
@@ -2427,9 +2619,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </div>
       <div class="form-group">
         <label>Planen für</label>
-        <input type="datetime-local" id="vorrat-scheduled-at">
+        <input type="datetime-local" id="vorrat-scheduled-at" onchange="vorratPlanerCheck()">
       </div>
     </div>
+    <div id="vorrat-planer-warn" style="display:none;margin-bottom:14px;"></div>
     <div class="form-group">
       <label>Notizen</label>
       <textarea id="vorrat-notes" rows="2"></textarea>
@@ -3012,11 +3205,16 @@ function _esc(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+// Datum als YYYY-MM-DD in Ortszeit. Termine sind Berlin-naiv gespeichert –
+// toISOString() rechnet nach UTC um und kippt an Tagesgrenzen den Tag.
+function _ymdLokal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 let _selectedCityId = null;
 let _selectedSurveyId = null;
 let _allTemplates = [];
 let _rqBatchId = null, _rqPoll = null;
-let _rqStallTicks = 0, _rqLastCounts = '', _rqWorkersDead = false;
+let _rqStallTicks = 0, _rqLastCounts = '', _rqWorkersDead = false, _rqPaused = false;
 
 // ── CSRF META ──
 document.head.insertAdjacentHTML('beforeend','<meta name="csrf-token" content="{{ csrf_token }}">');
@@ -3035,7 +3233,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); loadIntegrationSettings(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); loadIntegrationSettings(); loadPlanerSettings(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') { rqLoadSeries(); rqRefreshQueueTile(); rqLoadRecent(); }
   if(name==='hochladen') hlGoToPhase1();
@@ -4066,12 +4264,13 @@ async function rqStartBatch(preset) {
   toast(`${r.created} Aufträge in der Queue` + (skipped.length ? `, ${skipped.length} übersprungen` : ''), r.created ? 'success' : 'info');
   if(!r.created) {
     if(body.city_ids === 'with_wiki' && !skipped.length) toast('Keine Stadt mit aktivem Wiki-Eintrag gefunden','info');
-    showPage('bulk'); rqShowSkipped(skipped); return;
+    showPage('bulk'); rqShowSkipped(skipped); rqShowWarnings(r.warnings, r.batch_id); return;
   }
   _rqBatchId = r.batch_id;
   showPage('bulk');
   document.getElementById('rq-progress').hidden = false;
   rqShowSkipped(skipped);
+  rqShowWarnings(r.warnings, r.batch_id);
   rqResetPollState();
   rqPoll();
   if(_rqPoll) clearInterval(_rqPoll);
@@ -4081,6 +4280,37 @@ function rqShowSkipped(skipped) {
   const el = document.getElementById('rq-skipped'); if(!el) return;
   el.textContent = skipped && skipped.length
     ? 'Übersprungen: ' + skipped.map(s=>`${s.city} (${s.reason})`).join(', ') : '';
+}
+// Hinweise aus dem Kategorie-Überhang (E2): diese Städte wurden angelegt und werden gerendert
+let _rqWarnBatchId = null;
+function rqShowWarnings(warnings, batchId) {
+  const el = document.getElementById('rq-warnings'); if(!el) return;
+  const rows = Array.isArray(warnings) ? warnings : [];
+  _rqWarnBatchId = batchId || null;
+  if(!rows.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:var(--warning);margin-bottom:6px;">Hinweise (werden trotzdem gerendert)</div>
+    <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;">
+      ${rows.map(w=>`<div>${_esc(w.city)} – ${_esc(w.reason)}</div>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-xs" onclick="rqDismissWarnings()">Trotzdem rendern</button>
+      <button class="btn btn-ghost btn-xs" style="color:var(--danger);" onclick="rqCancelBatchFromWarning()">Batch abbrechen</button>
+    </div>`;
+}
+function rqDismissWarnings() {
+  const el = document.getElementById('rq-warnings');
+  if(el) { el.style.display = 'none'; el.innerHTML = ''; }
+}
+// Batch-Id nie in ein onclick-Attribut schreiben – sie kommt aus _rqWarnBatchId
+async function rqCancelBatchFromWarning() {
+  const id = _rqWarnBatchId || _rqBatchId;
+  if(!id) { rqDismissWarnings(); return; }
+  const r = await api('POST', `/api/render/batch/${id}/cancel`).catch(() => ({}));
+  toast(`${r.cancelled||0} wartende Aufträge abgebrochen`, 'info');
+  rqDismissWarnings();
+  rqPoll();
 }
 function rqStopPoll(hinweis) {
   if(_rqPoll) clearInterval(_rqPoll);
@@ -4101,18 +4331,52 @@ async function rqPoll() {
   document.getElementById('rq-progress-fill').style.width = (g.total ? Math.round(finished / g.total * 100) : 0) + '%';
   document.getElementById('rq-batch-label').textContent = g.label || '';
   rqRenderTasks(g.tasks || []);
-  rqRefreshQueueTile();
+  rqShowIncomplete(g.incomplete, g.total);
+  // Warten: _rqPaused/_rqWorkersDead werden hier gesetzt und gleich darunter ausgewertet
+  await rqRefreshQueueTile();
   if(g.done) {
     if(_rqPoll) { rqStopPoll(); toast('Batch abgeschlossen – Ergebnisse liegen im Vorrat','success'); }
+    rqShowCampaignRow(g);
     rqLoadRecent();
     return;
   }
+  rqShowCampaignRow(null);
   if(!_rqPoll) return;
+  // Master-Pause: die Worker leben, sie claimen nur nichts mehr – das ist keine Panne
+  if(_rqPaused) { rqStopPoll('Master-Pause aktiv – Batch wartet'); return; }
   // Ohne laufenden Worker wird der Batch nie fertig – dann nicht endlos weiterfragen
   if(_rqWorkersDead) { rqStopPoll('Keine Worker aktiv, Fortschritt angehalten'); return; }
   const sig = JSON.stringify(c);
   if(sig === _rqLastCounts) _rqStallTicks++; else { _rqStallTicks = 0; _rqLastCounts = sig; }
-  if(_rqStallTicks >= 10) rqStopPoll('Keine Worker aktiv, Fortschritt angehalten');
+  if(_rqStallTicks >= 10) rqStopPoll(_rqPaused ? 'Master-Pause aktiv – Batch wartet' : 'Keine Worker aktiv, Fortschritt angehalten');
+}
+// Zeile über der Task-Tabelle: wie viele Beiträge leere Variablen haben
+function rqShowIncomplete(incomplete, total) {
+  const el = document.getElementById('rq-incomplete-hint'); if(!el) return;
+  const n = parseInt(incomplete) || 0;
+  if(!n) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.textContent = `${n} von ${total || n} Beiträgen haben leere Variablen – bitte durchsehen`;
+}
+// Knopf „Als Kampagne einplanen“ erscheint erst, wenn der Batch durch ist
+function rqShowCampaignRow(g) {
+  const row = document.getElementById('rq-campaign-row'); if(!row) return;
+  if(!g || !g.done) { row.style.display = 'none'; return; }
+  const fertig = (g.tasks || []).filter(t => t.post_id).length;
+  if(!fertig) { row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  const hint = document.getElementById('rq-campaign-hint');
+  if(hint) hint.textContent = `${fertig} Post${fertig===1?'':'s'} im Vorrat`;
+}
+// Qualitäts-Zelle: leer solange der Task nicht fertig ist (oder aus der Zeit vor E2 stammt)
+function rqQualityCell(t) {
+  const q = t.quality || '';
+  if(q === 'ok') return '<span style="color:var(--muted);" title="Alle Variablen gefüllt">✓</span>';
+  if(q === 'unvollstaendig') {
+    const namen = Array.isArray(t.missing_vars) ? t.missing_vars.join(', ') : '';
+    return `<span class="badge badge-yellow" style="font-size:10px;" title="Ohne Wert: ${_esc(namen)}">Variablen fehlen</span>`;
+  }
+  return '';
 }
 function rqRenderTasks(tasks) {
   const badge = s => ({done:'badge-green',failed:'badge-red',running:'badge-blue',cancelled:'badge-gray',pending:'badge-yellow'})[s] || 'badge-gray';
@@ -4121,13 +4385,14 @@ function rqRenderTasks(tasks) {
   document.getElementById('rq-task-table').innerHTML = `
     <div style="overflow-x:auto;">
     <table style="width:100%;font-size:12px;border-collapse:collapse;">
-      <thead><tr style="color:var(--muted);text-align:left;"><th style="padding:4px 6px;">Stadt</th><th>Status</th><th>Fit</th><th>Hinweis</th><th></th></tr></thead>
+      <thead><tr style="color:var(--muted);text-align:left;"><th style="padding:4px 6px;">Stadt</th><th>Status</th><th>Qualität</th><th>Fit</th><th>Hinweis</th><th></th></tr></thead>
       <tbody>${tasks.map(t=>`
         <tr style="border-top:1px solid var(--border);">
           <td style="padding:6px;font-weight:600;white-space:nowrap;">${_esc(t.city_name)}</td>
           <td><span class="badge ${badge(t.status)}" style="font-size:10px;">${_esc(t.status_label)}${t.retry_pending ? ' · Wiederholung folgt' : ''}</span></td>
+          <td style="white-space:nowrap;">${rqQualityCell(t)}</td>
           <td style="font-weight:700;color:${fitColor(t.fit_score)};">${t.fit_score ?? '–'}</td>
-          <td style="color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(t.error||'')}">${_esc(t.error||'')}</td>
+          <td style="color:${t.status==='done' ? 'var(--muted)' : 'var(--danger)'};max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(t.error||'')}">${_esc(t.error||'')}</td>
           <td style="text-align:right;white-space:nowrap;">
             ${t.post_id ? `<a href="/?tab=vorrat" class="btn btn-ghost btn-xs" style="text-decoration:none;" onclick="rqOpenVorrat(${t.city_id});return false;">Im Vorrat</a>` : ''}
             ${t.status==='failed' || t.status==='cancelled' ? `<button class="btn btn-ghost btn-xs" onclick="rqRetry(${t.id})">Erneut</button>` : ''}
@@ -4181,12 +4446,24 @@ async function rqRefreshQueueTile() {
   const q = await api('GET','/api/render/queue').catch(() => ({error: true}));
   if(q.error) return;
   const c = q.counts || {}, open = (c.pending||0) + (c.running||0);
-  const dead = !!((q.workers || q.configured_workers) && !q.alive);
+  const paused = !!q.paused;
+  const dead = !paused && !!((q.workers || q.configured_workers) && !q.alive);
   _rqWorkersDead = dead;
+  _rqPaused = paused;
   document.getElementById('stat-queue').textContent = String(open || 0);
-  document.getElementById('stat-queue-label').textContent =
-    `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + (dead ? ' · Worker tot' : '');
-  card.className = 'stat-card' + (dead ? ' danger' : open ? ' accent' : '');
+  document.getElementById('stat-queue-label').textContent = paused
+    ? `Queue: ${c.pending||0} wartend · Master-Pause aktiv`
+    : `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + (dead ? ' · Worker tot' : '');
+  // Bei Pause leben die Worker – dann kein Alarmzustand, nur der neutrale/aktive Rahmen
+  card.className = 'stat-card' + (dead ? ' danger' : (open || paused) ? ' accent' : '');
+  const ph = document.getElementById('rq-pause-hint');
+  if(ph) ph.hidden = !paused;
+  const inc = parseInt(q.incomplete) || 0;
+  const box = document.getElementById('rq-queue-incomplete');
+  if(box) {
+    box.style.display = inc ? '' : 'none';
+    box.textContent = inc ? `${inc} Beiträge mit leeren Variablen` : '';
+  }
 }
 
 // ── TEMPLATE-IMPORT (B3 Canva/PPTX + B6 Bild) ──
@@ -5019,7 +5296,7 @@ function hlPreviewAuto() {
 
   const slots = [];
   while (slots.length < autoCount) {
-    const dateStr = candidate.toISOString().slice(0, 10);
+    const dateStr = _ymdLokal(candidate);
     if (!fixedDates.has(dateStr)) slots.push(new Date(candidate));
     candidate.setDate(candidate.getDate() + 1);
   }
@@ -5053,7 +5330,7 @@ function hlPickCaption(rowIdx, el) {
   document.getElementById(`hl-capsugg-${rowIdx}`).style.display = 'none';
 }
 
-async function hlSubmitSchedule() {
+async function hlSubmitSchedule(trotzdem) {
   const cityId   = document.getElementById('hl-city').value;
   const postType = document.getElementById('hl-post-type').value;
   const btn = document.getElementById('hl-schedule-btn');
@@ -5076,9 +5353,10 @@ async function hlSubmitSchedule() {
     if (hasFixed) {
       scheduledAt = `${dateIn.value}T${hlGetTime()}`;
     } else {
-      while (fixedDates.has(candidate.toISOString().slice(0,10))) candidate.setDate(candidate.getDate() + 1);
-      scheduledAt = candidate.toISOString().slice(0,16);
-      fixedDates.add(candidate.toISOString().slice(0,10));
+      // Termine sind Berlin-naiv: toISOString() würde um zwei Stunden verschieben und den Tag kippen
+      while (fixedDates.has(_ymdLokal(candidate))) candidate.setDate(candidate.getDate() + 1);
+      scheduledAt = `${_ymdLokal(candidate)}T${hlGetTime()}`;
+      fixedDates.add(_ymdLokal(candidate));
       candidate.setDate(candidate.getDate() + 1);
     }
     return {
@@ -5090,6 +5368,19 @@ async function hlSubmitSchedule() {
       scheduled_at: scheduledAt,
     };
   });
+
+  // Vor dem Speichern einmal gegen den Planer prüfen (Uploads ohne Template melden nichts)
+  if (!trotzdem) {
+    const frei = await hlPlanerPruefen(items.map((it, i) => ({
+      index: i,
+      city_id: it.city_id,
+      template_id: _hlUploaded[i] && _hlUploaded[i].template_id,
+      scheduled_at: it.scheduled_at,
+      label: `Bild ${i+1} (${document.getElementById('hl-city')?.selectedOptions[0]?.text || ''}, ${String(it.scheduled_at).substring(8,10)}.${String(it.scheduled_at).substring(5,7)}.)`,
+    })));
+    if (!frei) { btn.disabled = false; btn.textContent = 'Einplanen'; return; }
+  }
+  hlPlanerHide();
 
   const res = await api('POST', '/api/upload/schedule', { items });
   btn.disabled = false; btn.textContent = 'Einplanen';
@@ -5223,6 +5514,23 @@ function setVorratFilter(status) {
   loadVorrat();
 }
 
+// notes ist ein JSON-Text der Render-Queue – kann alt, leer oder gar kein JSON sein
+function postQualitaet(item) {
+  try {
+    const n = JSON.parse(item.notes || '{}');
+    if (n && typeof n === 'object' && Array.isArray(n.missing_vars) && n.missing_vars.length)
+      return n.missing_vars;
+  } catch (e) {}
+  return [];
+}
+function _vorratMissingBadge(p) {
+  const fehlend = postQualitaet(p);
+  if (!fehlend.length) return '';
+  return `<span class="badge badge-yellow" style="font-size:9px;cursor:pointer;"
+    title="Ohne Wert: ${_esc(fehlend.join(', '))} – dort steht noch der Vorlagentext"
+    onclick="event.stopPropagation();openVorratEdit(${p.id})">● Variablen fehlen</span>`;
+}
+
 function renderVorratGrid(data) {
   const grid = document.getElementById('vorrat-grid');
   if (!data.length) {
@@ -5266,6 +5574,7 @@ function renderVorratGrid(data) {
         ${p.engagement_rate ? `<div style="font-size:11px;color:#4ade80;">❤ ${p.perf_likes||0} · 💾 ${p.perf_saves||0} · ${p.engagement_rate}% ER</div>` : ''}
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           ${dot}<span style="font-size:11px;color:${_esc(st.color)};">${_esc(st.label)}</span>
+          ${_vorratMissingBadge(p)}
           <div style="flex:1;"></div>
           ${slideCount > 1 ? `<button class="btn btn-xs btn-ghost" id="vslides-btn-${p.id}" onclick="toggleVorratSlides(${p.id})" title="Alle Slides anzeigen">Slides ${slidesOpen?'▼':'▶'}</button>` : ''}
           <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})" title="Bearbeiten">✏</button>
@@ -5305,12 +5614,16 @@ function openVorratCreateModal() {
   document.getElementById('vorrat-scheduled-at').value = '';
   document.getElementById('vorrat-notes').value = '';
   document.getElementById('vorrat-caption-btn').style.display = 'none';
+  const warn = document.getElementById('vorrat-planer-warn');
+  if (warn) { warn.style.display = 'none'; warn.innerHTML = ''; }
+  _vorratPlanerRes = null; _vorratTrotzdem = false; _vorratEditPost = null;
   openModal('modal-vorrat-create');
 }
 
 async function openVorratEdit(id) {
   const p = _vorratData.find(x => x.id === id) || await api('GET', `/api/vorrat/${id}`);
   if (!p || p.error) { toast('Post nicht gefunden – vermutlich schon gelöscht', 'error'); loadVorrat(); return; }
+  _vorratEditPost = p;   // trägt template_id für die Planer-Prüfung
   document.getElementById('vorrat-modal-title').textContent = 'POST BEARBEITEN';
   document.getElementById('vorrat-edit-id').value = id;
   document.getElementById('vorrat-city').value   = p.city_id;
@@ -5325,12 +5638,33 @@ async function openVorratEdit(id) {
     document.getElementById('vorrat-scheduled-at').value = p.scheduled_at.substring(0,16);
   }
   document.getElementById('vorrat-caption-btn').style.display = 'inline-flex';
+  const warn = document.getElementById('vorrat-planer-warn');
+  if (warn) { warn.style.display = 'none'; warn.innerHTML = ''; }
+  _vorratPlanerRes = null; _vorratTrotzdem = false;
   openModal('modal-vorrat-create');
+  vorratPlanerCheck();
+}
+
+// „Trotzdem einplanen“ setzt dieses Flag – der nächste Speichern-Klick geht ohne Prüfung durch
+let _vorratTrotzdem = false;
+function vorratPlanerTrotzdem() {
+  _vorratTrotzdem = true;
+  saveVorratPost();
 }
 
 async function saveVorratPost() {
   const editId = document.getElementById('vorrat-edit-id').value;
   const scheduled = document.getElementById('vorrat-scheduled-at').value;
+  // Der Planer blockiert nie – er warnt einmal, danach speichert der zweite Klick
+  if (scheduled && !_vorratTrotzdem) {
+    const res = await vorratPlanerCheck();
+    if (res && (res.conflicts || []).length) {
+      const box = document.getElementById('vorrat-planer-warn');
+      if (box) box.innerHTML = planerWarnBox(res, 'vorratPlanerUebernehmen()', 'vorratPlanerTrotzdem()', 'Trotzdem einplanen');
+      return;
+    }
+  }
+  _vorratTrotzdem = false;
   const data = {
     city_id:      parseInt(document.getElementById('vorrat-city').value),
     title:        document.getElementById('vorrat-title').value,
@@ -5420,6 +5754,75 @@ async function loadKalender() {
     from.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   const posts = await api('GET', `/api/kalender?from=${fromStr}&to=${toStr}`);
   renderKalender(posts, from);
+  // Konflikte erst danach nachziehen, damit ein langsamer Aufruf die Ansicht nicht blockiert
+  const tage = Math.round((to - from) / 86400000);
+  loadKalenderKonflikte(`${fromStr}T00:00`, tage);
+}
+
+// ── Terminkonflikte im Kalender (E3) ──
+let _kalConflicts = {};        // post_id -> {severity, reasons:[]}
+let _kalConflictsOnly = false;
+
+async function loadKalenderKonflikte(fromIso, days) {
+  const box = document.getElementById('kal-conflict-summary');
+  const d = await api('GET', `/api/planer/calendar-conflicts?days=${days}&from=${encodeURIComponent(fromIso)}`).catch(() => ({error: true}));
+  _kalConflicts = {};
+  const proTag = {};   // 'YYYY-MM-DD' -> {severity, zeilen: []}
+  if (!d || d.error) { if (box) box.textContent = ''; _kalWarnzeichen({}); _applyKalConflictFilter(); return; }
+  const rang = {hoch: 3, mittel: 2, niedrig: 1};
+  Object.keys(d.by_date || {}).forEach(tag => (d.by_date[tag] || []).forEach(p => {
+    if (!p.severity) return;
+    const gruende = (p.conflicts || []).map(c => c.reason).filter(Boolean);
+    _kalConflicts[p.post_id] = {severity: p.severity, reasons: gruende};
+    const t = proTag[tag] || (proTag[tag] = {severity: p.severity, zeilen: []});
+    if ((rang[p.severity] || 0) > (rang[t.severity] || 0)) t.severity = p.severity;
+    gruende.forEach(g => t.zeilen.push(`${p.city}: ${g}`));
+  }));
+  _kalWarnzeichen(proTag);
+  // Chips einfärben: linker Rand nach Schweregrad, Tooltip mit den Gründen
+  const farbe = {hoch: 'var(--danger)', mittel: 'var(--warning)', niedrig: 'var(--muted)'};
+  document.querySelectorAll('.kal-post-chip[data-post-id]').forEach(chip => {
+    const info = _kalConflicts[parseInt(chip.dataset.postId)];
+    chip.dataset.severity = info ? info.severity : '';
+    if (!info) { chip.style.borderLeft = ''; chip.style.paddingLeft = ''; return; }
+    chip.style.borderLeft = `3px solid ${farbe[info.severity] || 'var(--muted)'}`;
+    chip.style.paddingLeft = '4px';
+    chip.title = (chip.title ? chip.title + '\n' : '') + info.reasons.join('\n');
+  });
+  const s = d.summary || {};
+  if (box) {
+    box.textContent = s.with_conflicts
+      ? `${s.posts||0} geplante Posts · ${s.with_conflicts} mit Terminkonflikt (${s.hoch||0} hoch, ${s.mittel||0} mittel, ${s.niedrig||0} niedrig)`
+      : `${s.posts||0} geplante Posts · keine Terminkonflikte`;
+  }
+  _applyKalConflictFilter();
+}
+
+// Kleines Warnzeichen am Tag: Farbe nach dem schwersten Konflikt, Tooltip nennt die Gründe
+function _kalWarnzeichen(proTag) {
+  const farbe = {hoch: 'var(--danger)', mittel: 'var(--warning)', niedrig: 'var(--muted)'};
+  document.querySelectorAll('.kal-warn[data-warn]').forEach(z => {
+    const info = proTag[z.dataset.warn];
+    z.hidden = !info;
+    if (!info) { z.title = ''; return; }
+    z.style.color = farbe[info.severity] || 'var(--muted)';
+    const zeigen = info.zeilen.slice(0, 6);
+    z.title = 'Terminkonflikt\n' + zeigen.join('\n')
+            + (info.zeilen.length > zeigen.length ? `\n… und ${info.zeilen.length - zeigen.length} weitere` : '');
+  });
+}
+
+function toggleKalConflictsOnly() {
+  _kalConflictsOnly = !_kalConflictsOnly;
+  const btn = document.getElementById('kal-conflict-btn');
+  if (btn) btn.textContent = _kalConflictsOnly ? '✕ Nur Konflikte' : 'Nur Konflikte';
+  _applyKalConflictFilter();
+}
+
+function _applyKalConflictFilter() {
+  document.querySelectorAll('.kal-post-chip[data-post-id]').forEach(chip => {
+    chip.style.display = (_kalConflictsOnly && !chip.dataset.severity) ? 'none' : '';
+  });
 }
 
 function kalenderNav(dir) { _kalMonth += dir; if(_kalMonth>11){_kalMonth=0;_kalYear++;}if(_kalMonth<0){_kalMonth=11;_kalYear--;} loadKalender(); }
@@ -5451,12 +5854,15 @@ function renderKalender(posts, monthStart) {
     const isToday = dt.getTime() === today.getTime();
     const dayPosts = postsByDay[d] || [];
     const chips = dayPosts.map(p =>
-      `<div class="kal-post-chip" style="background:${_esc(p.city_color||'#6366f1')}" onclick="openVorratEdit(${p.id})" title="${_esc(p.city_name)}: ${_esc(p.title||'Meme')}">${_esc(p.city_name)}</div>`
+      `<div class="kal-post-chip" data-post-id="${p.id}" style="background:${_esc(p.city_color||'#6366f1')}" onclick="openVorratEdit(${p.id})" title="${_esc(p.city_name)}: ${_esc(p.title||'Meme')}">${_esc(p.city_name)}</div>`
     ).join('');
-    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}T10:00`;
-    cells += `<div class="kal-cell${isToday?' today':''}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+    const tag = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dateStr = `${tag}T10:00`;
+    cells += `<div class="kal-cell${isToday?' today':''}" data-day="${tag}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:4px;">
         <span class="kal-date" style="${isToday?'color:var(--accent);':''}">${d}</span>
+        <span class="kal-warn" data-warn="${tag}" hidden style="font-size:11px;line-height:1;cursor:help;">●</span>
+        <div style="flex:1;"></div>
         <button class="btn btn-xs" style="background:none;color:var(--muted);padding:0 3px;font-size:14px;" onclick="quickAddKalender('${dateStr}')">+</button>
       </div>
       ${chips}
@@ -5470,6 +5876,259 @@ function quickAddKalender(dateStr) {
   openVorratCreateModal();
   document.getElementById('vorrat-scheduled-at').value = dateStr;
   document.getElementById('vorrat-status').value = 'geplant';
+}
+
+// ══════════════════════════════════════════
+// PLANER (E3) – Terminkonflikte und Kampagnen
+// ══════════════════════════════════════════
+// scheduled_at ist Berlin-naiv: nie toISOString() benutzen, sonst kippt der Tag.
+const PLANER_SEV_FARBE = {hoch: 'var(--danger)', mittel: 'var(--warning)', niedrig: 'var(--muted)'};
+
+function planerFmt(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return String(iso);
+  const d = new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5]);
+  return d.toLocaleString('de-DE', {weekday:'short', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+// Ein Aufruf von GET /api/planer/check. Gibt immer ein Objekt zurück, wirft nie.
+async function planerCheck({city_id, template_id, category, when, post_id}) {
+  if (!city_id || !when) return {ok: true, conflicts: []};
+  const p = new URLSearchParams({city_id: String(city_id), when: String(when)});
+  if (template_id) p.set('template_id', String(template_id));
+  if (category) p.set('category', String(category));
+  if (post_id) p.set('post_id', String(post_id));
+  const r = await api('GET', `/api/planer/check?${p}`).catch(() => ({error: true}));
+  if (!r || r.error) return {ok: true, conflicts: [], _fehler: true};
+  return r;
+}
+
+// Der gelbe Kasten – einmal gebaut, an drei Stellen benutzt.
+// uebernehmen/trotzdem sind Namen globaler Funktionen (als String), damit onclick sie findet.
+function planerWarnBox(res, uebernehmenFn, trotzdemFn, trotzdemLabel) {
+  const konflikte = res.conflicts || [];
+  const zeigen = konflikte.slice(0, 4);
+  const rest = konflikte.length - zeigen.length;
+  const zeilen = zeigen.map(c => `
+    <div style="display:flex;align-items:flex-start;gap:7px;font-size:12px;padding:1px 0;">
+      <span style="color:${PLANER_SEV_FARBE[c.severity] || 'var(--muted)'};line-height:1.5;">●</span>
+      <span style="flex:1;">${_esc(c.reason)}</span>
+    </div>`).join('') + (rest > 0 ? `<div style="font-size:12px;color:var(--muted);padding-left:14px;">… und ${rest} weitere</div>` : '');
+  const frei = res.suggestion
+    ? `<div style="font-size:12px;margin-top:8px;">Frei ab: <strong>${_esc(planerFmt(res.suggestion))}</strong></div>` : '';
+  const knopfUebernehmen = (res.suggestion && uebernehmenFn)
+    ? `<button class="btn btn-primary btn-xs" onclick="${uebernehmenFn}">Vorschlag übernehmen</button>` : '';
+  const knopfTrotzdem = trotzdemFn
+    ? `<button class="btn btn-ghost btn-xs" onclick="${trotzdemFn}">${_esc(trotzdemLabel || 'Trotzdem einplanen')}</button>` : '';
+  const tag = res.city_day
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:8px;">Diese Stadt hat an dem Tag schon einen Post: „${_esc(res.city_day.title || 'ohne Titel')}“</div>` : '';
+  return `
+    <div style="border:1px solid var(--warning);background:rgba(245,158,11,.07);border-radius:10px;padding:12px 14px;">
+      <div style="font-size:12px;font-weight:600;color:var(--warning);margin-bottom:6px;">Terminkonflikt</div>
+      ${zeilen}
+      ${frei}
+      ${(knopfUebernehmen || knopfTrotzdem) ? `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">${knopfUebernehmen}${knopfTrotzdem}</div>` : ''}
+      ${tag}
+    </div>`;
+}
+
+// ── Stelle 1: Vorrat-Modal ──
+let _vorratPlanerRes = null;
+let _vorratEditPost = null;   // der offene Post – auch wenn er nicht in _vorratData steht
+
+async function vorratPlanerCheck() {
+  const box = document.getElementById('vorrat-planer-warn'); if (!box) return null;
+  const when = document.getElementById('vorrat-scheduled-at')?.value || '';
+  const cityId = parseInt(document.getElementById('vorrat-city')?.value) || 0;
+  if (!when || !cityId) { box.style.display = 'none'; box.innerHTML = ''; _vorratPlanerRes = null; return null; }
+  const editId = parseInt(document.getElementById('vorrat-edit-id')?.value) || 0;
+  const post = editId
+    ? ((_vorratEditPost && _vorratEditPost.id === editId) ? _vorratEditPost
+       : (_vorratData.find(x => x.id === editId) || null))
+    : null;
+  const res = await planerCheck({
+    city_id: cityId,
+    template_id: post && post.template_id,
+    when,
+    post_id: editId || undefined,
+  });
+  _vorratPlanerRes = res;
+  if (!res.conflicts || !res.conflicts.length) { box.style.display = 'none'; box.innerHTML = ''; return res; }
+  box.style.display = '';
+  box.innerHTML = planerWarnBox(res, 'vorratPlanerUebernehmen()', null, null);
+  return res;
+}
+
+async function vorratPlanerUebernehmen() {
+  if (!_vorratPlanerRes || !_vorratPlanerRes.suggestion) return;
+  document.getElementById('vorrat-scheduled-at').value = String(_vorratPlanerRes.suggestion).substring(0, 16);
+  await vorratPlanerCheck();
+}
+
+// ── Stelle 2: Hochladen und Einplanen ──
+let _hlPlanerVorschlaege = [];   // [{index, suggestion}]
+
+function hlPlanerHide() {
+  const box = document.getElementById('hl-planer-warn');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  _hlPlanerVorschlaege = [];
+}
+
+// items: [{index, city_id, template_id, scheduled_at, label}] – gibt true, wenn nichts im Weg ist
+async function hlPlanerPruefen(items) {
+  const box = document.getElementById('hl-planer-warn'); if (!box) return true;
+  const treffer = await Promise.all(items.map(it => planerCheck({
+    city_id: it.city_id, template_id: it.template_id, when: it.scheduled_at,
+  }).then(r => ({it, r}))));
+  const betroffen = treffer.filter(t => (t.r.conflicts || []).length);
+  if (!betroffen.length) { hlPlanerHide(); return true; }
+  _hlPlanerVorschlaege = betroffen
+    .filter(t => t.r.suggestion)
+    .map(t => ({index: t.it.index, suggestion: t.r.suggestion}));
+  const zeilen = betroffen.map(t => `
+    <div style="display:flex;align-items:flex-start;gap:7px;font-size:12px;padding:1px 0;">
+      <span style="color:${PLANER_SEV_FARBE[(t.r.conflicts[0]||{}).severity] || 'var(--muted)'};line-height:1.5;">●</span>
+      <span style="flex:1;">${_esc(t.it.label)} → ${_esc(t.r.conflicts[0].reason)}</span>
+    </div>`).join('');
+  box.style.display = '';
+  box.innerHTML = `
+    <div style="border:1px solid var(--warning);background:rgba(245,158,11,.07);border-radius:10px;padding:12px 14px;">
+      <div style="font-size:12px;font-weight:600;color:var(--warning);margin-bottom:6px;">Terminkonflikt</div>
+      ${zeilen}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        ${_hlPlanerVorschlaege.length ? '<button class="btn btn-primary btn-xs" onclick="hlPlanerVerschieben()">Termine automatisch verschieben</button>' : ''}
+        <button class="btn btn-ghost btn-xs" onclick="hlSubmitSchedule(true)">Trotzdem einplanen</button>
+      </div>
+    </div>`;
+  return false;
+}
+
+async function hlPlanerVerschieben() {
+  let gesetzt = 0;
+  _hlPlanerVorschlaege.forEach(v => {
+    const inp = document.getElementById(`hl-date-${v.index}`);
+    if (!inp) return;
+    hlToggleFixed(v.index, true);     // Zeile auf „fester Termin“ stellen, sonst wird das Datum ignoriert
+    inp.value = String(v.suggestion).substring(0, 10);
+    gesetzt++;
+  });
+  hlUpdateCounters();
+  toast(`${gesetzt} Termin${gesetzt===1?'':'e'} verschoben – wird erneut geprüft`, 'info');
+  hlPlanerHide();
+  hlSubmitSchedule();
+}
+
+// ── Stelle 3: Recycle-Freigabe ──
+let _rcPlanerRes = {};    // jobId -> Antwort
+let _rcQuellPosts = {};   // post_id -> Post (oder null) – einmal geholt, dann gemerkt
+
+// RecycleJob.to_dict() kennt weder template_id noch Kategorie des Ursprungs-Posts.
+// Ohne beides greifen die Template-Regeln des Planers nicht – deshalb einmal nachladen.
+async function _rcQuellPost(postId) {
+  if (!postId) return null;
+  if (postId in _rcQuellPosts) return _rcQuellPosts[postId];
+  const ausListe = _rcCandidates.find(x => x.id === postId);
+  if (ausListe) { _rcQuellPosts[postId] = ausListe; return ausListe; }
+  const p = await api('GET', `/api/vorrat/${postId}`).catch(() => null);
+  _rcQuellPosts[postId] = (p && !p.error) ? p : null;
+  return _rcQuellPosts[postId];
+}
+
+async function rcPlanerUebernehmen(jobId) {
+  const res = _rcPlanerRes[jobId];
+  const job = _rcJobs.find(j => j.id === jobId);
+  if (!res || !res.suggestion || !job) return;
+  job.scheduled_for = res.suggestion;
+  await approveRcJob(jobId, true);
+}
+
+// ══════════════════════════════════════════
+// KAMPAGNE PLANEN (E3)
+// ══════════════════════════════════════════
+let _kmpQuelle = null;     // {batch_id} | {post_ids: [...]}
+let _kmpVorschau = null;
+
+function openKampagneModal(modus) {
+  if (modus === 'batch') {
+    if (!_rqBatchId) { toast('Kein fertiger Batch ausgewählt', 'error'); return; }
+    _kmpQuelle = {batch_id: _rqBatchId};
+  } else {
+    if (!_vorratSelected.size) { toast('Erst Posts auswählen', 'error'); return; }
+    _kmpQuelle = {post_ids: [..._vorratSelected]};
+  }
+  const hint = document.getElementById('kmp-source-hint');
+  if (hint) hint.textContent = _kmpQuelle.batch_id
+    ? 'Alle Beiträge dieses Batches werden konfliktfrei über die Nachbarstädte verteilt.'
+    : `${_kmpQuelle.post_ids.length} ausgewählte Posts werden konfliktfrei verteilt.`;
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  const start = document.getElementById('kmp-start');
+  if (start) start.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  _kmpVorschau = null;
+  const prev = document.getElementById('kmp-preview'); if (prev) prev.innerHTML = '';
+  const apply = document.getElementById('kmp-apply-btn'); if (apply) apply.disabled = true;
+  openModal('modal-kampagne');
+}
+
+function _kmpBody(dryRun) {
+  return Object.assign({}, _kmpQuelle, {
+    start_date: document.getElementById('kmp-start')?.value || '',
+    time: document.getElementById('kmp-time')?.value || '10:00',
+    spread: document.querySelector('input[name="kmp-spread"]:checked')?.value || 'auto',
+    dry_run: !!dryRun,
+  });
+}
+
+async function kampagneVorschau() {
+  if (!_kmpQuelle) return;
+  const body = _kmpBody(true);
+  if (!body.start_date) { toast('Startdatum wählen', 'error'); return; }
+  const box = document.getElementById('kmp-preview');
+  box.innerHTML = '<div style="font-size:12px;color:var(--muted);">Wird berechnet …</div>';
+  const r = await api('POST', '/api/planer/kampagne', body).catch(() => ({error: 'Planer nicht erreichbar'}));
+  if (r.error) { box.innerHTML = `<div style="font-size:12px;color:var(--danger);">${_esc(r.error)}</div>`; return; }
+  _kmpVorschau = r;
+  const rest = {};
+  (r.conflicts_remaining || []).forEach(c => { rest[c.post_id] = (c.conflicts || [])[0]; });
+  const geplant = (r.planned || []).slice().sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at)));
+  const zeilen = geplant.map(p => {
+    const konflikt = rest[p.post_id];
+    return `<tr style="border-top:1px solid var(--border);${konflikt ? 'background:rgba(245,158,11,.07);' : ''}">
+      <td style="padding:4px 6px;white-space:nowrap;color:${konflikt ? 'var(--warning)' : 'var(--text)'};">${_esc(planerFmt(p.scheduled_at))}</td>
+      <td style="padding:4px 6px;font-weight:600;">${_esc(p.city)}</td>
+      <td style="padding:4px 6px;color:var(--muted);">${_esc(p.title || '—')}</td>
+      <td style="padding:4px 6px;font-size:11px;color:var(--warning);">${konflikt ? _esc(konflikt.reason) : ''}</td>
+    </tr>`;
+  }).join('');
+  const uebersprungen = (r.skipped || []).map(s =>
+    `<div style="font-size:11px;color:var(--muted);">Post ${_esc(s.post_id)} übersprungen – ${_esc(s.grund)}</div>`).join('');
+  const restZahl = (r.conflicts_remaining || []).length;
+  box.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:var(--muted2);letter-spacing:.5px;margin-bottom:6px;">VORSCHAU</div>
+    <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">${zeilen || '<tr><td style="padding:8px;color:var(--muted);">Nichts zu planen</td></tr>'}</table>
+    </div>
+    ${uebersprungen ? `<div style="margin-top:8px;">${uebersprungen}</div>` : ''}
+    <div style="font-size:12px;margin-top:8px;color:${restZahl ? 'var(--warning)' : 'var(--success)'};">
+      ${restZahl ? `${restZahl} Termine mit Restkonflikt` : 'Keine Konflikte ✓'}
+    </div>`;
+  const apply = document.getElementById('kmp-apply-btn');
+  if (apply) apply.disabled = !geplant.length;
+}
+
+async function kampagneUebernehmen() {
+  if (!_kmpQuelle || !_kmpVorschau) { toast('Erst Vorschau berechnen', 'error'); return; }
+  const btn = document.getElementById('kmp-apply-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird übernommen …'; }
+  const r = await api('POST', '/api/planer/kampagne', _kmpBody(false)).catch(() => ({error: 'Planer nicht erreichbar'}));
+  if (btn) { btn.disabled = false; btn.textContent = 'Termine übernehmen'; }
+  if (r.error) { toast(r.error, 'error'); return; }
+  const n = (r.planned || []).length;
+  toast(`${n} Post${n===1?'':'s'} eingeplant`, 'success');
+  closeModal('modal-kampagne');
+  if (typeof clearVorratSelection === 'function') clearVorratSelection();
+  loadVorrat();
+  loadKalender();
 }
 
 // ══════════════════════════════════════════
@@ -6219,6 +6878,7 @@ let _rcTab = 'candidates';
 let _rcMinDays = 14;
 let _rcCandidates = [];
 let _rcJobs = [];
+let _rcSettings = {};   // aus dem Header X-Recycle-Settings
 let _rcCurrentJobId = null;
 
 async function loadRcCityFilter() {
@@ -6262,8 +6922,14 @@ async function loadRcView() {
   if (_rcTab === 'candidates') {
     const params = new URLSearchParams({ min_days: _rcMinDays });
     if (cityId) params.set('city_id', cityId);
-    const posts = await fetch(`/api/recycle/candidates?${params}`).then(r => r.json()).catch(() => []);
+    // Die wirksamen Einstellungen stehen im Header X-Recycle-Settings (JSON)
+    let kopf = {};
+    const posts = await fetch(`/api/recycle/candidates?${params}`).then(r => {
+      try { kopf = JSON.parse(r.headers.get('X-Recycle-Settings') || '{}') || {}; } catch(e) { kopf = {}; }
+      return r.json();
+    }).catch(() => []);
     _rcCandidates = posts;
+    _rcSettings = kopf;
     _renderRcCandidates(posts, box);
   } else if (_rcTab === 'vorschlaege') {
     const params = new URLSearchParams({ status: 'vorschlag' });
@@ -6286,11 +6952,14 @@ function _rcScoreClass(score) {
 }
 
 function _renderRcCandidates(posts, box) {
+  const erGefiltert = parseInt(_rcSettings && _rcSettings.er_filtered) || 0;
+  const erHinweis = erGefiltert
+    ? `<div style="font-size:12px;color:var(--warning);margin-bottom:8px;">${erGefiltert} Upload${erGefiltert===1?'':'s'} unter der Engagement-Schwelle ausgeblendet.</div>` : '';
   if (!posts.length) {
-    box.innerHTML = '<div class="empty"><p>Keine veröffentlichten Posts im gewählten Zeitraum mit Performance-Daten.<br>Trage zuerst Performance-Werte im Vorrat-Tab ein.</p></div>';
+    box.innerHTML = erHinweis + '<div class="empty"><p>Keine veröffentlichten Posts im gewählten Zeitraum mit Performance-Daten.<br>Trage zuerst Performance-Werte im Vorrat-Tab ein.</p></div>';
     return;
   }
-  box.innerHTML = `
+  box.innerHTML = erHinweis + `
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
       ${posts.length} Posts — sortiert nach Recycle-Score
     </div>
@@ -6321,6 +6990,8 @@ function _rcCandidateCard(p) {
               ${p.open_recycle_jobs > 0 ? `<span style="background:rgba(59,130,246,.15);color:#3b82f6;border-radius:8px;padding:1px 7px;font-size:11px;">${p.open_recycle_jobs} Vorschlag offen</span>` : ''}
             </div>
             <div class="rc-title">${_esc(p.title || p.caption?.slice(0, 60) || '—')}</div>
+            ${(p.abzuege || []).map(a => `<div style="font-size:11px;color:var(--muted);margin-top:2px;">− ${_esc(a.abzug)}&nbsp; ${_esc(a.grund)}</div>`).join('')}
+            ${p.has_template === false ? '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Eigener Upload – statt Sternen zählt die Engagement-Rate</div>' : ''}
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <div style="font-size:12px;color:var(--muted);">vor ${p.days_since_post} Tagen</div>
@@ -6381,6 +7052,7 @@ function _rcJobCard(j) {
           <label style="font-size:11px;color:var(--muted);">Neue Caption:</label>
         </div>
         <textarea class="rj-caption-input" id="rjcap-${j.id}" onblur="updateRjCaption(${j.id})">${_esc(j.new_caption)}</textarea>
+        <div id="rj-planer-${j.id}" style="display:none;margin:6px 0;"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
           <div style="font-size:12px;color:var(--muted);">📅 ${schedDate}</div>
           <div style="display:flex;gap:6px;">
@@ -6447,7 +7119,8 @@ async function openRecycleModal(postId) {
   // Suggest date: 2 weeks from now
   const suggest = new Date(); suggest.setDate(suggest.getDate() + 14);
   suggest.setHours(18, 0, 0, 0);
-  document.getElementById('rc-schedule-date').value = suggest.toISOString().slice(0,16);
+  // Termine sind Berlin-naiv – toISOString() würde hier 16:00 statt 18:00 eintragen
+  document.getElementById('rc-schedule-date').value = `${_ymdLokal(suggest)}T18:00`;
 
   // Preview
   document.getElementById('modal-rc-img').innerHTML = post.image_url
@@ -6471,18 +7144,22 @@ async function saveRecycleJob() {
   const notes    = document.getElementById('rc-notes').value.trim();
   if (!sourceId) { toast('Kein Post ausgewählt', 'error'); return; }
 
-  const r = await fetch('/api/recycle/jobs', {
+  const resp = await fetch('/api/recycle/jobs', {
     method: 'POST',
     headers: CSRF_JSON_H,
     body: JSON.stringify({
       source_post_id: sourceId,
       new_caption: caption,
-      scheduled_for: schedRaw ? new Date(schedRaw).toISOString() : null,
+      // unverändert weitergeben: der Server rechnet Berlin-naiv, wie scheduler.py und der Planer
+      scheduled_for: schedRaw || null,
       notes
     })
-  }).then(r => r.json());
+  });
+  const r = await resp.json().catch(() => ({error: 'Unerwartete Antwort vom Server'}));
 
-  if (r.error) { toast(r.error, 'error'); return; }
+  if (r.error) { rcZeigeGrenzeFehler(resp.status, r); return; }
+  const hint = document.getElementById('rc-limit-hint');
+  if (hint) { hint.style.display = 'none'; hint.innerHTML = ''; }
   closeModal('modal-recycle-create');
   toast('Recycling-Vorschlag gespeichert', 'success');
   _rcCurrentJobId = r.id;
@@ -6532,17 +7209,47 @@ async function updateRjCaption(jobId) {
   });
 }
 
-async function approveRcJob(jobId) {
+async function approveRcJob(jobId, trotzdem) {
   const job = _rcJobs.find(j => j.id === jobId);
   const schedFor = job?.scheduled_for;
-  const r = await fetch(`/api/recycle/jobs/${jobId}/approve`, {
+  const warnBox = document.getElementById(`rj-planer-${jobId}`);
+  // Terminkonflikt zuerst melden – im Kärtchen, nicht als Toast
+  if (!trotzdem && job && schedFor) {
+    const quelle = await _rcQuellPost(job.source_post_id);
+    const res = await planerCheck({
+      city_id: job.city_id || (quelle && quelle.city_id),
+      template_id: quelle && quelle.template_id,
+      when: String(schedFor).substring(0, 16),
+      post_id: job.source_post_id,
+    });
+    _rcPlanerRes[jobId] = res;
+    if ((res.conflicts || []).length && warnBox) {
+      warnBox.style.display = '';
+      warnBox.innerHTML = planerWarnBox(res, `rcPlanerUebernehmen(${jobId})`, `approveRcJob(${jobId}, true)`, 'Trotzdem freigeben');
+      return;
+    }
+  }
+  if (warnBox) { warnBox.style.display = 'none'; warnBox.innerHTML = ''; }
+  const resp = await fetch(`/api/recycle/jobs/${jobId}/approve`, {
     method: 'POST',
     headers: CSRF_JSON_H,
     body: JSON.stringify({ scheduled_for: schedFor })
-  }).then(r => r.json());
-  if (r.error) { toast(r.error, 'error'); return; }
-  toast('Einplant! Post wurde in Vorrat → Geplant gesetzt.', 'success');
+  });
+  const r = await resp.json().catch(() => ({error: 'Unerwartete Antwort vom Server'}));
+  if (r.error) { rcZeigeGrenzeFehler(resp.status, r); return; }
+  toast('Eingeplant! Post wurde in Vorrat → Geplant gesetzt.'
+        + (r.monthly_slots_left !== undefined ? ` Noch ${r.monthly_slots_left} Plätze diesen Monat.` : ''), 'success');
   loadRcView(); loadRcBadge();
+}
+
+// 409 = Monatsgrenze erreicht: Text unverändert zeigen, dazu der Weg in die Einstellungen
+function rcZeigeGrenzeFehler(status, r) {
+  const box = document.getElementById('rc-limit-hint');
+  if (status === 409 && box) {
+    box.style.display = '';
+    box.innerHTML = `<span>${_esc(r.error)}</span> <a href="#" onclick="showPage('settings');setTimeout(()=>document.getElementById('recycle-settings-card')?.scrollIntoView({behavior:'smooth'}),120);return false;">Einstellungen → Recycling</a>`;
+  }
+  toast(r.error, 'error');
 }
 
 async function rejectRcJob(jobId) {
@@ -7146,9 +7853,9 @@ async function loadPerformance() {
 // ══════════════════════════════════════════
 async function loadSettingsPage() {
   const d = await api('GET', '/api/settings');
+  _aiSettings = d || {};
   const tToken = document.getElementById('settings-telegram-token');
   const tChat  = document.getElementById('settings-telegram-chat');
-  const aDay   = document.getElementById('settings-alert-days');
   // Token wird nie im Klartext geliefert: Feld bleibt leer, Platzhalter zeigt nur die letzten Zeichen
   if (tToken) {
     tToken.value = '';
@@ -7157,10 +7864,181 @@ async function loadSettingsPage() {
   const clrBtn = document.getElementById('btn-telegram-token-clear');
   if (clrBtn) clrBtn.style.display = d.telegram_token_set ? '' : 'none';
   if (tChat  && d.telegram_chat_id) tChat.value = d.telegram_chat_id;
-  if (aDay   && d.alert_threshold_days) aDay.value = d.alert_threshold_days;
   const cosUrl = document.getElementById('settings-content-os-url');
   if (cosUrl && d.content_os_url) cosUrl.value = d.content_os_url;
+  renderAiSettings(d);
+  loadAiUsage();
   loadAutomation();
+}
+
+// ══════════════════════════════════════════
+// KI-KOSTEN (E1)
+// ══════════════════════════════════════════
+let _aiSettings = {};
+let _aiUsageMonth = null;   // 'YYYY-MM'
+
+function _aiZahl(n) { return (parseInt(n) || 0).toLocaleString('de-DE'); }
+function _aiEur(n)  { return '€' + (Number(n) || 0).toLocaleString('de-DE', {minimumFractionDigits: 4, maximumFractionDigits: 4}); }
+
+function renderAiSettings(d) {
+  const sel = document.getElementById('ai-provider-select');
+  if (sel) sel.value = d.ai_provider === 'deepseek' ? 'deepseek' : 'anthropic';
+  const model = document.getElementById('ai-deepseek-model');
+  if (model) model.value = d.deepseek_model || 'deepseek-chat';
+  const key = document.getElementById('ai-deepseek-key');
+  if (key) { key.value = ''; key.placeholder = d.deepseek_key_set ? 'gesetzt — leer lassen zum Beibehalten' : 'sk-…'; }
+  const clr = document.getElementById('ai-deepseek-clear-btn');
+  if (clr) clr.style.display = d.deepseek_key_set ? '' : 'none';
+  const budget = document.getElementById('ai-budget-input');
+  if (budget) budget.value = (Number(d.ai_budget_month_eur) || 0).toString().replace('.', ',');
+  const hint = document.getElementById('ai-usage-provider-hint');
+  if (hint) { hint.textContent = d.ai_provider_hinweis || ''; hint.style.display = d.ai_provider_hinweis ? '' : 'none'; }
+  const bh = document.getElementById('ai-usage-budget-hint');
+  if (bh) { bh.textContent = d.ai_budget_hinweis || ''; bh.style.display = d.ai_budget_reached ? '' : 'none'; }
+  const prov = document.getElementById('ai-usage-provider');
+  if (prov) prov.textContent = 'Anbieter: ' + (d.ai_provider_aktiv === 'deepseek'
+    ? `DeepSeek (${d.deepseek_model || 'deepseek-chat'})`
+    : `Anthropic (${d.ai_model_anthropic || 'Claude Haiku'})`);
+  aiProviderChanged();
+}
+
+function aiProviderChanged() {
+  const sel = document.getElementById('ai-provider-select');
+  const box = document.getElementById('ai-deepseek-fields');
+  if (box) box.style.display = (sel && sel.value === 'deepseek') ? '' : 'none';
+}
+
+async function aiUsageNav(dir) {
+  const basis = _aiUsageMonth || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+  const [j, m] = basis.split('-').map(Number);
+  const d = new Date(j, m - 1 + dir, 1);
+  _aiUsageMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  await loadAiUsage();
+}
+
+async function loadAiUsage() {
+  const url = '/api/ai-usage' + (_aiUsageMonth ? `?month=${_aiUsageMonth}` : '');
+  const d = await api('GET', url).catch(() => ({error: true}));
+  const tot = document.getElementById('ai-usage-total');
+  if (!d || d.error) { if (tot) tot.textContent = '—'; return; }
+  _aiUsageMonth = d.month;
+  if (tot) tot.textContent = _aiEur(d.total_eur);
+  const label = document.getElementById('ai-usage-month-label');
+  if (label) {
+    const [j, m] = String(d.month).split('-').map(Number);
+    label.textContent = new Date(j, m - 1, 1).toLocaleDateString('de-DE', {month: 'long', year: 'numeric'});
+  }
+  const zeile = (name, e) => `<tr style="border-top:1px solid var(--border);">
+    <td style="padding:4px;">${_esc(name)}</td>
+    <td style="padding:4px;text-align:right;">${_aiZahl(e.calls)}</td>
+    <td style="padding:4px;text-align:right;">${_aiZahl(e.input_tokens)}</td>
+    <td style="padding:4px;text-align:right;">${_aiZahl(e.output_tokens)}</td>
+    <td style="padding:4px;text-align:right;">${_aiZahl(e.cache_read_tokens)}</td>
+    <td style="padding:4px;text-align:right;font-weight:600;">${_aiEur(e.cost_eur)}</td>
+  </tr>`;
+  const leer = '<tr><td colspan="6" style="padding:6px 4px;color:var(--muted);">Keine Aufrufe in diesem Monat</td></tr>';
+  const fb = document.getElementById('ai-usage-feature-body');
+  if (fb) fb.innerHTML = (d.by_feature || []).map(e => zeile(e.feature, e)).join('') || leer;
+  const mb = document.getElementById('ai-usage-model-body');
+  if (mb) mb.innerHTML = (d.by_model || []).map(e => zeile(e.model, e)).join('') || leer;
+  // Schlichte Balkenreihe: Kosten pro Tag
+  const days = document.getElementById('ai-usage-days');
+  if (days) {
+    const rows = d.by_day || [];
+    const max = rows.reduce((a, r) => Math.max(a, Number(r.cost_eur) || 0), 0);
+    days.innerHTML = rows.length ? `
+      <div style="display:flex;align-items:flex-end;gap:2px;height:44px;">
+        ${rows.map(r => `<div title="${_esc(r.date)}: ${_esc(_aiEur(r.cost_eur))}"
+            style="flex:1;min-width:3px;background:var(--accent);opacity:.7;border-radius:2px 2px 0 0;height:${max ? Math.max(2, Math.round((Number(r.cost_eur)||0)/max*44)) : 2}px;"></div>`).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px;">Kosten pro Tag</div>` : '';
+  }
+}
+
+async function saveAiSettings() {
+  const body = {
+    ai_provider: document.getElementById('ai-provider-select')?.value || 'anthropic',
+    ai_budget_month_eur: (document.getElementById('ai-budget-input')?.value || '0').trim(),
+  };
+  const model = (document.getElementById('ai-deepseek-model')?.value || '').trim();
+  if (model) body.deepseek_model = model;
+  const key = (document.getElementById('ai-deepseek-key')?.value || '').trim();
+  if (key) body.deepseek_api_key = key;      // leer = gespeicherten behalten
+  const r = await api('POST', '/api/settings', body);
+  if (!r || r.error) { toast((r && r.error) || 'Fehler beim Speichern', 'error'); return; }
+  toast('KI-Einstellungen gespeichert', 'success');
+  loadSettingsPage();
+}
+
+async function clearDeepseekKey() {
+  if (!confirm('Gespeicherten DeepSeek-Schlüssel entfernen?\n\nDanach läuft die KI wieder über Anthropic.')) return;
+  const r = await api('POST', '/api/settings', {deepseek_api_key_clear: true});
+  if (!r || r.error) { toast((r && r.error) || 'Entfernen fehlgeschlagen', 'error'); return; }
+  toast('Schlüssel entfernt', 'success');
+  loadSettingsPage();
+}
+
+// ══════════════════════════════════════════
+// PLANUNG – Einstellungen (E3)
+// ══════════════════════════════════════════
+async function loadPlanerSettings() {
+  const d = await api('GET', '/api/planer/settings').catch(() => ({error: true}));
+  const card = document.getElementById('planer-settings-card');
+  if (!card) return;
+  if (!d || d.error) { card.style.opacity = '.6'; return; }
+  card.style.opacity = '';
+  const f = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
+  f('pl-radius',       d.radius_km);
+  f('pl-gap-template', d.gap_template_days);
+  f('pl-gap-category', d.gap_category_days);
+  f('pl-gap-state',    d.same_state_gap_days);
+  const neutral = document.getElementById('pl-neutral-hint');
+  if (neutral) neutral.textContent = (d.neutral_categories || []).length
+    ? `Die Kategorien ${(d.neutral_categories || []).map(c => `„${c}“`).join(' und ')} sind von der Kategorie-Regel ausgenommen.` : '';
+  const ohne = parseInt(d.cities_without_coords) || 0;
+  const row = document.getElementById('pl-coords-row');
+  const txt = document.getElementById('pl-coords-text');
+  if (row) row.style.display = ohne ? '' : 'none';
+  if (txt) txt.textContent = `${ohne} Städte ohne Koordinaten – ohne sie zählt nur „gleiches Bundesland“. Nachbarn über Ländergrenzen bleiben unentdeckt.`;
+}
+
+async function savePlanerSettings() {
+  const z = id => parseInt(document.getElementById(id)?.value);
+  const body = {
+    radius_km:           isNaN(z('pl-radius')) ? 60 : z('pl-radius'),
+    gap_template_days:   isNaN(z('pl-gap-template')) ? 14 : z('pl-gap-template'),
+    gap_category_days:   isNaN(z('pl-gap-category')) ? 3 : z('pl-gap-category'),
+    same_state_gap_days: isNaN(z('pl-gap-state')) ? 2 : z('pl-gap-state'),
+  };
+  const r = await api('POST', '/api/planer/settings', body).catch(() => ({error: 'Planer nicht erreichbar'}));
+  if (!r || r.error) { toast((r && r.error) || 'Fehler beim Speichern', 'error'); return; }
+  toast('Planung gespeichert', 'success');
+  loadPlanerSettings();
+}
+
+async function planerGeocode(btn) {
+  const alt = btn.textContent; btn.disabled = true; btn.textContent = 'Wird geholt …';
+  const resp = await fetch('/api/planer/geocode', {method: 'POST', headers: CSRF_JSON_H, body: '{}'});
+  const r = await resp.json().catch(() => ({error: 'Unerwartete Antwort vom Server'}));
+  btn.disabled = false; btn.textContent = alt;
+  if (resp.status === 503) { toast('Geocoding ist abgeschaltet (MEMEOS_OFFLINE)', 'error'); return; }
+  if (r.error) { toast(r.error, 'error'); return; }
+  const n = (r.updated || []).length;
+  toast(`${n} Städte ergänzt, ${r.remaining || 0} offen`, n ? 'success' : 'info');
+  loadPlanerSettings();
+}
+
+async function loadPlanerNeighbors() {
+  const sel = document.getElementById('pl-neighbor-city');
+  const out = document.getElementById('pl-neighbor-result');
+  if (!sel || !out) return;
+  if (!sel.value) { out.textContent = ''; return; }
+  const radius = parseInt(document.getElementById('pl-radius')?.value) || 60;
+  const d = await api('GET', `/api/planer/neighbors?city_id=${sel.value}&radius_km=${radius}`).catch(() => ({error: true}));
+  if (!d || d.error) { out.textContent = 'Nachbarn nicht ermittelbar'; return; }
+  if (!d.count) { out.textContent = `→ keine Nachbarn im Radius von ${d.radius_km} km`; return; }
+  out.textContent = `→ ${d.count} Nachbarn: ` + (d.neighbors || [])
+    .map(n => n.distance_km != null ? `${n.city} (${n.distance_km} km)` : `${n.city} (${n.grund})`).join(', ');
 }
 
 async function saveTelegramSettings() {
@@ -7229,6 +8107,56 @@ async function loadAutomation() {
           <button class="btn btn-ghost btn-xs" onclick="runAutomationJob('${_esc(j.key)}', this)">▶ Jetzt ausführen</button></td>
     </tr>`;
   }).join('');
+  renderAutomationThresholds(d);
+}
+
+// ── Schwellen und Deckel (E4): Beschriftung, min/max und Standard kommen aus der Antwort ──
+function renderAutomationThresholds(d) {
+  const box = document.getElementById('auto-weather-fields');
+  if (box) {
+    const ws = d.weather_settings || {};
+    const zusatz = {weather_snow_gap_days: 'Nach einem Erster-Schnee-Event bleibt die Regel so lange gesperrt.'};
+    box.innerHTML = Object.keys(ws).map(k => {
+      const s = ws[k] || {};
+      return `<div style="flex:1 1 200px;min-width:200px;">
+        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;">${_esc(s.label || k)}</label>
+        <input type="number" class="auto-weather-input" data-key="${_esc(k)}"
+               min="${_esc(s.min)}" max="${_esc(s.max)}" step="1" value="${_esc(s.value)}" style="width:100%;">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Standard ${_esc(s.default)} · erlaubt ${_esc(s.min)} bis ${_esc(s.max)}${zusatz[k] ? ' · ' + zusatz[k] : ''}</div>
+      </div>`;
+    }).join('');
+  }
+  const lim = document.getElementById('auto-inspo-limit');
+  if (lim) {
+    if (d.inspo_sort_limit_max !== undefined) lim.max = d.inspo_sort_limit_max;
+    if (d.inspo_sort_limit !== undefined) lim.value = d.inspo_sort_limit;
+  }
+  const alert = document.getElementById('auto-alert-days');
+  if (alert && d.alert_threshold_days !== undefined) alert.value = d.alert_threshold_days;
+  const oh = document.getElementById('auto-overdue-hint');
+  if (oh && d.overdue_hours !== undefined)
+    oh.textContent = `Als überfällig gilt ein geplanter Post, dessen Termin über ${d.overdue_hours} Stunden zurückliegt.`;
+}
+
+async function saveAutomationThresholds(btn) {
+  const weather = {};
+  document.querySelectorAll('.auto-weather-input').forEach(inp => {
+    const v = parseInt(inp.value);
+    if (!isNaN(v)) weather[inp.dataset.key] = v;
+  });
+  const body = {};
+  if (Object.keys(weather).length) body.weather = weather;
+  const lim = parseInt(document.getElementById('auto-inspo-limit')?.value);
+  if (!isNaN(lim)) body.inspo_sort_limit = lim;
+  const days = parseInt(document.getElementById('auto-alert-days')?.value);
+  if (!isNaN(days)) body.alert_threshold_days = days;
+  if (btn) btn.disabled = true;
+  const r = await api('POST', '/api/automation', body).catch(() => ({error: 'Nicht erreichbar'}));
+  if (btn) btn.disabled = false;
+  // Fehlertexte kommen fertig formuliert vom Server – unverändert zeigen
+  if (!r || r.error) { toast((r && r.error) || 'Fehler beim Speichern', 'error'); return; }
+  toast('Schwellen gespeichert', 'success');
+  loadAutomation();
 }
 async function saveAutomationJob(key, cfg) {
   const r = await api('POST', '/api/automation', {jobs: {[key]: cfg}}).catch(() => ({error: 'Nicht erreichbar'}));
@@ -7337,12 +8265,8 @@ async function saveCategoryMix() {
   else toast((r && r.error) || 'Fehler beim Speichern', 'error');
 }
 
-async function saveAlertDays() {
-  const days = parseInt(document.getElementById('settings-alert-days')?.value);
-  if (!days || days < 1) return;
-  const r = await api('POST', '/api/settings', { alert_threshold_days: days });
-  toast(r.ok ? `Schwellwert: ${days} Tage gespeichert` : 'Fehler', r.ok ? 'success' : 'error');
-}
+// Die Warnschwelle „ohne geplanten Post“ steht seit E4 in der Karte „Schwellen und Deckel“
+// (saveAutomationThresholds); die alte eigene Karte ist entfallen.
 
 async function testTelegram(btn) {
   const result = document.getElementById('telegram-test-result');
@@ -7548,6 +8472,7 @@ async function loadRecycleSettings() {
     f('rc-min-growth', d.min_follower_growth);
     f('rc-min-stars',  d.min_stars);
     f('rc-max-month',  d.max_per_month);
+    f('rc-min-er',     d.min_er);
     const catEl = document.getElementById('rc-excluded-cats');
     if (catEl && d.excluded_cats) catEl.value = d.excluded_cats.join(', ');
   } catch(e) {}
@@ -7809,6 +8734,7 @@ async function saveRecycleSettings() {
     min_follower_growth: parseInt(document.getElementById('rc-min-growth')?.value) || 20,
     min_stars:           parseInt(document.getElementById('rc-min-stars')?.value)  || 3,
     max_per_month:       parseInt(document.getElementById('rc-max-month')?.value)  || 4,
+    min_er:              parseInt(document.getElementById('rc-min-er')?.value)     || 0,
     excluded_cats:       cats,
   };
   const r = await api('POST', '/api/settings/recycle', body);
