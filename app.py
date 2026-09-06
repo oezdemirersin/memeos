@@ -9,6 +9,17 @@ import threading
 import urllib.parse
 import uuid
 import shutil
+import socket
+import ipaddress
+
+# .env MUSS vor dem Import von memeos_render gelesen werden: das Modul liest MEMEOS_DATA_ROOT
+# beim Import. Andernfalls schreiben App und Renderer in verschiedene Ordner.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import requests
 import feedparser
 try:
@@ -16,11 +27,6 @@ try:
 except ImportError:   # pragma: no cover – Fallback auf die alte Pillow-Implementierung
     memeos_render = None
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime, timedelta
 from functools import wraps
@@ -64,11 +70,43 @@ _UPLOAD_DIR = os.path.join(_DATA_ROOT, 'uploads')
 _RENDER_DIR = os.path.join(_DATA_ROOT, 'renders')
 _EXPORT_DIR = os.path.join(_DATA_ROOT, 'exports')
 _FONTS_DATA_DIR = os.path.join(_DATA_ROOT, 'fonts')
-_DB_PATH    = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
+# Die Datenbank gehört zum Datenpfad (auf Render die gemountete Disk), nicht fest nach
+# <projekt>/instance. Bestandsschutz siehe _adopt_legacy_db().
+_DB_PATH    = os.path.join(_DATA_ROOT, 'memeos.db')
+_LEGACY_DB_PATH = os.path.join(_BASE_DIR, 'instance', 'memeos.db')
 for _d in (os.path.join(_BASE_DIR, 'instance'), _DATA_ROOT,
            _UPLOAD_DIR, _RENDER_DIR, _EXPORT_DIR, _FONTS_DATA_DIR):
     os.makedirs(_d, exist_ok=True)
 _models.UPLOAD_DIR = _UPLOAD_DIR   # für slide_url() in MemePost.to_dict
+
+
+def _adopt_legacy_db():
+    """Bestandsschutz beim Umzug der DB in den Datenpfad: liegt noch eine Datenbank unter
+    <projekt>/instance/memeos.db und im Datenpfad noch keine, wird sie einmalig KOPIERT
+    (nichts wird verschoben oder gelöscht)."""
+    try:
+        if os.path.realpath(_LEGACY_DB_PATH) == os.path.realpath(_DB_PATH):
+            return
+        if not os.path.exists(_LEGACY_DB_PATH) or os.path.exists(_DB_PATH):
+            return
+        shutil.copy2(_LEGACY_DB_PATH, _DB_PATH)
+        for _suffix in ('-wal', '-shm'):
+            if os.path.exists(_LEGACY_DB_PATH + _suffix):
+                shutil.copy2(_LEGACY_DB_PATH + _suffix, _DB_PATH + _suffix)
+        log.info(f'Datenbank aus {_LEGACY_DB_PATH} in den Datenpfad kopiert: {_DB_PATH} '
+                 f'(die alte Datei bleibt unverändert liegen)')
+    except Exception as ex:
+        log.warning(f'Übernahme der Alt-Datenbank fehlgeschlagen: {ex}')
+
+
+def _disk_report():
+    """Belegung der Platte, auf der der Datenpfad liegt. Für Selbsttest und Dashboard."""
+    try:
+        total, used, free = shutil.disk_usage(_DATA_ROOT)
+        return {'total': total, 'used': used, 'free': free,
+                'percent': round(used * 100.0 / total, 1) if total else 0.0}
+    except Exception as ex:
+        return {'total': 0, 'used': 0, 'free': 0, 'percent': 0.0, 'error': str(ex)}
 
 
 def _migrate_static_files():
@@ -92,6 +130,7 @@ def _migrate_static_files():
         log.info(f'{copied} Datei(en) aus static/ in den Datenpfad übernommen')
 
 _migrate_static_files()
+_adopt_legacy_db()
 
 
 # Platzhalter, die nie als SECRET_KEY gelten dürfen (Beispielwerte aus .env.example u. ä.)
@@ -137,6 +176,20 @@ def _load_secret_key():
 app = Flask(__name__)
 app.secret_key = _load_secret_key()
 
+# Auf Render steht genau EIN Proxy vor der App. ProxyFix nimmt daher genau einen Eintrag aus
+# X-Forwarded-For/-Proto/-Host; alles, was ein Client selbst davorschreibt, wird ignoriert.
+try:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+except ImportError:   # pragma: no cover
+    log.warning('ProxyFix nicht verfügbar – Client-IP kommt ungefiltert aus remote_addr')
+
+# Session-Cookie: nicht per JavaScript lesbar, kein Cross-Site-Versand, HTTPS-only sobald
+# die App unter https läuft (BASE_URL).
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE']   = os.getenv('BASE_URL', '').strip().lower().startswith('https')
+
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{_DB_PATH}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -149,8 +202,11 @@ def _upload_cloudinary(source, folder='memeos', resource_type='auto'):
     try:
         import cloudinary
         import cloudinary.uploader
-        cloudinary.config(url=cloud_env)
-        result = cloudinary.uploader.upload(source, folder=folder, resource_type=resource_type)
+        # Ohne Timeout kann ein hängender Upload einen Worker dauerhaft blockieren
+        cloudinary.config(url=cloud_env, timeout=60)
+        # upload() nimmt beliebige Optionen entgegen und reicht timeout an den HTTP-Aufruf durch
+        result = cloudinary.uploader.upload(source, folder=folder,
+                                            resource_type=resource_type, timeout=60)
         return result.get('secure_url')
     except ImportError:
         log.warning('cloudinary not installed — run: pip install cloudinary')
@@ -173,6 +229,76 @@ def _local_media_path(name):
         if os.path.exists(candidate):
             return candidate
     return None
+
+
+class UnsafeUrlError(Exception):
+    """Ziel-URL zeigt nicht ins offene Netz (oder ist zu groß)."""
+
+
+def _assert_public_host(url):
+    """Hostnamen auflösen und jede Adresse prüfen. Wirft UnsafeUrlError bei internen Zielen."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ('http', 'https'):
+        raise UnsafeUrlError(f'Nur http/https erlaubt (war: {parts.scheme or "leer"})')
+    host = parts.hostname
+    if not host:
+        raise UnsafeUrlError('URL ohne Hostnamen')
+    port = parts.port or (443 if parts.scheme == 'https' else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except Exception as ex:
+        raise UnsafeUrlError(f'Host {host} nicht auflösbar: {ex}')
+    if not infos:
+        raise UnsafeUrlError(f'Host {host} nicht auflösbar')
+    for info in infos:
+        raw = info[4][0]
+        try:
+            ip = ipaddress.ip_address(raw.split('%')[0])
+        except ValueError:
+            raise UnsafeUrlError(f'Unbrauchbare Adresse für {host}: {raw}')
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise UnsafeUrlError(f'Interne Adresse abgelehnt: {host} → {ip}')
+    return True
+
+
+def _safe_fetch_url(url, timeout=20, max_bytes=25_000_000):
+    """Lädt eine externe URL mit Schutz gegen SSRF.
+
+    - nur http/https
+    - jede aufgelöste Adresse muss öffentlich sein (kein localhost, kein privates Netz,
+      keine Metadaten-Adresse 169.254.169.254)
+    - Weiterleitungen werden selbst verfolgt (höchstens 3) und jedes Ziel erneut geprüft
+    - der Körper wird bei max_bytes abgeschnitten bzw. abgelehnt
+
+    Rückgabe: (bytes, finale_url, content_type). Wirft UnsafeUrlError oder requests-Fehler.
+    """
+    current = (url or '').strip()
+    for _hop in range(4):                       # 1 Aufruf + höchstens 3 Weiterleitungen
+        _assert_public_host(current)
+        resp = requests.get(current, timeout=timeout, allow_redirects=False, stream=True)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get('Location', '')
+            resp.close()
+            if not location:
+                raise UnsafeUrlError('Weiterleitung ohne Ziel')
+            current = urllib.parse.urljoin(current, location)
+            continue
+        try:
+            if not resp.ok:
+                raise UnsafeUrlError(f'HTTP {resp.status_code} von {current}')
+            declared = resp.headers.get('Content-Length')
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise UnsafeUrlError(f'Datei zu groß ({declared} Bytes, erlaubt {max_bytes})')
+            buf = bytearray()
+            for chunk in resp.iter_content(64 * 1024):
+                buf.extend(chunk)
+                if len(buf) > max_bytes:
+                    raise UnsafeUrlError(f'Datei zu groß (über {max_bytes} Bytes)')
+            return bytes(buf), current, (resp.headers.get('Content-Type') or '')
+        finally:
+            resp.close()
+    raise UnsafeUrlError('Zu viele Weiterleitungen')
 
 
 def _export_job_update(job_id, **fields):
@@ -218,12 +344,14 @@ def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_fi
                     img_bytes = None
                     if p.image_url and p.image_url.startswith('http'):
                         try:
-                            resp = requests.get(p.image_url, timeout=15)
-                            if resp.ok:
-                                img_bytes = resp.content
-                                raw_ext = p.image_url.split('?')[0].rsplit('.', 1)[-1].lower()
+                            data, final_url, _ctype = _safe_fetch_url(p.image_url, timeout=15)
+                            if data:
+                                img_bytes = data
+                                raw_ext = final_url.split('?')[0].rsplit('.', 1)[-1].lower()
                                 ext = raw_ext if raw_ext in ('jpg', 'jpeg', 'png', 'webp', 'gif') else 'jpg'
                                 img_filename = f'post_{p.id}_{city_slug}.{ext}'
+                        except UnsafeUrlError as ex:
+                            log.warning(f'Export Post {p.id}: Bild-URL abgelehnt ({ex})')
                         except Exception:
                             pass
                     else:
@@ -260,6 +388,32 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 db.init_app(app)
 
+
+# ── SQLite: gleichzeitige Zugriffe (Web-Requests + Render-Worker + Automatik-Thread) ──────────
+# Ohne WAL sperrt jeder Schreibvorgang die ganze Datei; ohne busy_timeout bricht der zweite
+# Schreiber sofort mit 'database is locked' ab, statt kurz zu warten.
+def _sqlite_pragmas(dbapi_connection, connection_record):   # pragma: no cover – DB-Ereignis
+    # Nur echte SQLite-Verbindungen (der Listener hängt an der Engine-Klasse, nicht an einer
+    # bestimmten Engine); bei Postgres o. ä. passiert nichts.
+    if 'sqlite' not in type(dbapi_connection).__module__.lower():
+        return
+    try:
+        cur = dbapi_connection.cursor()
+        cur.execute('PRAGMA journal_mode=WAL')
+        cur.execute('PRAGMA busy_timeout=15000')
+        cur.execute('PRAGMA synchronous=NORMAL')
+        cur.close()
+    except Exception as ex:
+        log.warning(f'SQLite-PRAGMAs nicht gesetzt: {ex}')
+
+
+try:
+    from sqlalchemy import event as _sa_event
+    from sqlalchemy.engine import Engine as _SaEngine
+    _sa_event.listens_for(_SaEngine, 'connect')(_sqlite_pragmas)
+except Exception as ex:   # pragma: no cover
+    log.warning(f'SQLite-PRAGMA-Listener nicht registriert: {ex}')
+
 # ── Env ────────────────────────────────────────────────────────────────────────
 ADMIN_USERNAME    = os.getenv('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD    = os.getenv('ADMIN_PASSWORD', '')   # leer → Env-Login deaktiviert (kein Standardwert mehr)
@@ -273,15 +427,21 @@ CANVA_REDIRECT_URI = BASE_URL + '/canva/callback'
 
 # ── CSRF ───────────────────────────────────────────────────────────────────────
 _CSRF_EXEMPT = {'/login', '/logout', '/canva/callback', '/ping', '/survey/submit'}
+# Von außen aufgerufene Schnittstellen (eigene Authentifizierung per Schlüssel, keine Session)
+_CSRF_EXEMPT_PREFIXES = ('/api/memeos/',)
 
 @app.before_request
 def csrf_protect():
-    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
-        if request.path in _CSRF_EXEMPT or request.path.startswith('/api/'):
-            return
-        token = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token')
-        if not token or token != session.get('csrf_token'):
-            abort(403)
+    if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        return
+    if request.path in _CSRF_EXEMPT or request.path.startswith(_CSRF_EXEMPT_PREFIXES):
+        return
+    token = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token')
+    if not token or token != session.get('csrf_token'):
+        # Für /api/ eine lesbare JSON-Antwort statt einer HTML-Fehlerseite
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'CSRF-Token fehlt oder ungültig'}), 403
+        abort(403)
 
 @app.context_processor
 def inject_csrf():
@@ -303,27 +463,27 @@ _rate_lock = threading.Lock()
 _rate_buckets: dict = {}   # (scope, ip) -> [timestamps]
 
 def _client_ip():
-    xff = request.headers.get('X-Forwarded-For', '')
-    if xff:
-        return xff.split(',')[0].strip()
+    """Client-Adresse. X-Forwarded-For wird NICHT selbst gelesen – der Header ist frei
+    setzbar und hebelte die Bremsen aus. ProxyFix (oben) setzt remote_addr aus genau einem
+    Proxy-Eintrag; ohne Proxy ist es die echte Verbindungsadresse."""
     return request.remote_addr or 'unbekannt'
 
-def _rate_hits(scope, window_sec):
+def _rate_hits(scope, window_sec, subject=None):
     """Anzahl der Treffer im Fenster (ohne neuen Treffer zu zählen)."""
-    key = (scope, _client_ip())
+    key = (scope, subject if subject is not None else _client_ip())
     now = time.time()
     with _rate_lock:
         hits = [t for t in _rate_buckets.get(key, []) if now - t < window_sec]
         _rate_buckets[key] = hits
         return len(hits)
 
-def _rate_record(scope):
-    key = (scope, _client_ip())
+def _rate_record(scope, subject=None):
+    key = (scope, subject if subject is not None else _client_ip())
     with _rate_lock:
         _rate_buckets.setdefault(key, []).append(time.time())
 
-def _rate_clear(scope):
-    key = (scope, _client_ip())
+def _rate_clear(scope, subject=None):
+    key = (scope, subject if subject is not None else _client_ip())
     with _rate_lock:
         _rate_buckets.pop(key, None)
 
@@ -339,11 +499,15 @@ def login():
         return redirect(url_for('dashboard'))
     error = None
     if request.method == 'POST':
-        if _rate_hits('login', _LOGIN_WINDOW_SEC) >= _LOGIN_MAX_FAILS:
-            error = 'Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen.'
-            return render_template('login.html', error=error), 429
         u = request.form.get('username', '').strip()
         p = request.form.get('password', '')
+        # Zwei Zähler mit derselben Grenze: pro Adresse UND pro Benutzername. Sonst fängt ein
+        # verteilter Angriff auf denselben Namen bei jeder neuen Adresse wieder bei null an.
+        _login_subject = 'benutzer:' + u.lower()
+        if (_rate_hits('login', _LOGIN_WINDOW_SEC) >= _LOGIN_MAX_FAILS
+                or (u and _rate_hits('login', _LOGIN_WINDOW_SEC, _login_subject) >= _LOGIN_MAX_FAILS)):
+            error = 'Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen.'
+            return render_template('login.html', error=error), 429
         # DB-User
         user = User.query.filter_by(username=u, active=True).first()
         if user and user.check_password(p):
@@ -352,15 +516,19 @@ def login():
             user.last_login = datetime.utcnow()
             db.session.commit()
             _rate_clear('login')
+            _rate_clear('login', _login_subject)
             return redirect(url_for('dashboard'))
         # Env-Fallback – nur wenn ein Passwort gesetzt ist
         elif ADMIN_PASSWORD and u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
             session['logged_in'] = True
             session['username']  = u
             _rate_clear('login')
+            _rate_clear('login', _login_subject)
             return redirect(url_for('dashboard'))
         else:
             _rate_record('login')
+            if u:
+                _rate_record('login', _login_subject)
             if not ADMIN_PASSWORD and User.query.filter_by(active=True).count() == 0:
                 error = 'Kein Admin-Passwort gesetzt (ADMIN_PASSWORD)'
             else:
@@ -724,7 +892,7 @@ def api_knowledge_ai_generate(city_id):
     if not ANTHROPIC_API_KEY:
         return jsonify({'error': 'Kein Anthropic API Key'}), 400
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         categories_str = ', '.join([f"{k} ({label})" for k, label, _ in KNOWLEDGE_CATEGORIES])
         prompt = f"""Du bist ein Experte für deutsche Städte und lokale Meme-Kultur.
 Generiere City-Wiki-Einträge für {city.name} ({city.state}, ~{city.population or '?'} Einwohner).
@@ -787,6 +955,28 @@ Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
 # TEMPLATE API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _pil_config_leer(cfg):
+    """True, wenn die Konfiguration nichts enthält (None, '', '{}', {}, {'elements': []}).
+    Solche Werte sind keine ungültige Konfiguration, sondern gar keine – sie dürfen nicht
+    in die Prüfung laufen (der Modell-Default '{}' ist truthy und wurde sonst abgewiesen)."""
+    if cfg is None:
+        return True
+    if isinstance(cfg, str):
+        text = cfg.strip()
+        if not text:
+            return True
+        try:
+            cfg = json.loads(text)
+        except Exception:
+            return False        # kaputtes JSON ist nicht 'leer' – das soll die Prüfung melden
+    if isinstance(cfg, dict):
+        if not cfg:
+            return True
+        if set(cfg.keys()) <= {'elements'} and not cfg.get('elements'):
+            return True
+    return False
+
+
 def _validate_pil_config(cfg):
     """Prüft eine pil_config (dict oder JSON-Text) über memeos_render.validate_config.
     Liefert eine Liste deutscher Fehlertexte; leer = ok. Ohne memeos_render nur JSON-Syntaxprüfung."""
@@ -847,7 +1037,7 @@ def api_template_create():
     render_type = d.get('render_type') or 'pil'
     if render_type not in ('pil', 'manual'):
         return jsonify({'error': "render_type muss 'pil' oder 'manual' sein"}), 400
-    if d.get('pil_config'):
+    if d.get('pil_config') and not _pil_config_leer(d['pil_config']):
         errors = _validate_pil_config(d['pil_config'])
         if errors:
             return jsonify({'error': 'pil_config ungültig', 'details': errors}), 400
@@ -892,9 +1082,10 @@ def api_template_update(tmpl_id):
     if 'tags' in d:
         t.tags = json.dumps(d['tags'])
     if 'pil_config' in d:
-        errors = _validate_pil_config(d['pil_config'])
-        if errors:
-            return jsonify({'error': 'pil_config ungültig', 'details': errors}), 400
+        if not _pil_config_leer(d['pil_config']):
+            errors = _validate_pil_config(d['pil_config'])
+            if errors:
+                return jsonify({'error': 'pil_config ungültig', 'details': errors}), 400
         t.pil_config = json.dumps(d['pil_config']) if isinstance(d['pil_config'], dict) else d['pil_config']
     db.session.commit()
     return jsonify({'ok': True, 'template': _tmpl_dict(t)})
@@ -984,13 +1175,20 @@ def api_template_upload_preview(tmpl_id):
     local_path = os.path.join(_UPLOAD_DIR, filename)
     f.save(local_path)
     t.preview_image = filename
-    # Zusätzlich nach Cloudinary, damit der Hintergrund einen Deploy überlebt
+    # Zusätzlich nach Cloudinary, damit der Hintergrund einen Deploy überlebt.
+    # WICHTIG: preview_url immer neu setzen – sonst zeigt sie nach einem fehlgeschlagenen Upload
+    # weiter auf das ALTE Bild und der Renderer lädt nach einem Deploy den falschen Hintergrund.
     cloud_url = _upload_cloudinary(local_path, folder='memeos/templates', resource_type='image')
-    if cloud_url:
-        t.preview_url = cloud_url
+    t.preview_url = cloud_url or None
     db.session.commit()
-    return jsonify({'filename': filename, 'preview_url': t.preview_url or f'/uploads/{filename}',
-                    'cloud': bool(cloud_url)})
+    resp = {'filename': filename, 'preview_url': t.preview_url or f'/uploads/{filename}',
+            'cloud': bool(cloud_url)}
+    if not cloud_url:
+        resp['warning'] = ('Ohne Cloudinary liegt das Bild nur auf der Disk – nach einem Deploy '
+                           'ohne gemountete Disk ist der Hintergrund weg.'
+                           if not _cloudinary_connected() else
+                           'Cloudinary-Upload fehlgeschlagen – das Bild liegt nur auf der Disk.')
+    return jsonify(resp)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERATOR API
@@ -1092,14 +1290,24 @@ def api_job_resend(job_id):
 @login_required
 def api_job_delete(job_id):
     job = RenderJob.query.get_or_404(job_id)
-    if job.image_filename:
+    # Seit Phase B legt jeder erfolgreiche Render zusätzlich einen Vorrat-Post an, der auf
+    # dieselbe Bilddatei zeigt. Solange so ein Post existiert, bleibt die Datei liegen.
+    linked = MemePost.query.filter(db.or_(
+        MemePost.render_job_id == job.id,
+        db.and_(MemePost.image_path.isnot(None),
+                MemePost.image_path == job.image_filename),
+    )).all() if job.image_filename else MemePost.query.filter_by(render_job_id=job.id).all()
+    if job.image_filename and not linked:
         try:
             os.remove(os.path.join(_RENDER_DIR, job.image_filename))
         except Exception:
             pass
+    for post in linked:
+        if post.render_job_id == job.id:
+            post.render_job_id = None
     db.session.delete(job)
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'image_kept': bool(linked), 'linked_posts': [p.id for p in linked]})
 
 def _job_to_dict(j):
     post = MemePost.query.filter_by(render_job_id=j.id).first()
@@ -1374,6 +1582,38 @@ def api_template_series():
 def api_carousel_get(post_id):
     post = MemePost.query.get_or_404(post_id)
     slides = post.get_slides() if post.post_type == 'carousel' else []
+    # notes ist ein JSON-Text (Renderer/Queue schreiben ihn); daraus den Fehlertext und die
+    # Slide-Einzelheiten herausziehen, damit die Oberfläche bei status 'failed' etwas zeigen kann.
+    try:
+        parsed = json.loads(post.notes or '{}')
+        if not isinstance(parsed, dict):
+            parsed = {}
+    except Exception:
+        parsed = {}
+    raw_slides = parsed.get('slides') if isinstance(parsed.get('slides'), list) else []
+    slides_detail = []
+    for entry in raw_slides:
+        if not isinstance(entry, dict):
+            continue
+        slides_detail.append({
+            'template_id': entry.get('template_id'),
+            'template':    entry.get('template') or '',
+            'fit_score':   entry.get('fit_score'),
+            'reasoning':   entry.get('reasoning') or '',
+            'vars':        entry.get('vars') if isinstance(entry.get('vars'), dict) else {},
+            'error':       entry.get('error') or '',
+            'warning':     entry.get('warning') or '',
+            'file':        entry.get('file') or '',
+        })
+    error = str(parsed.get('error') or '').strip()
+    if not error:
+        reasons = []
+        for s in slides_detail:
+            if s['error'] and s['error'] not in reasons:
+                reasons.append(s['error'])
+        if reasons:
+            failed = sum(1 for s in slides_detail if s['error'])
+            error = f'{failed} von {len(slides_detail)} Slides ohne Bild: ' + '; '.join(reasons)
     return jsonify({
         'id': post.id,
         'city_name': post.city.name if post.city else '',
@@ -1383,6 +1623,8 @@ def api_carousel_get(post_id):
         'slides': slides,
         'slide_count': len(slides),
         'notes': post.notes or '',
+        'error': error,
+        'slides_detail': slides_detail,
     })
 
 
@@ -1507,7 +1749,7 @@ Antworte NUR mit JSON:
         if attempt:
             time.sleep(2)
         try:
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
             msg = client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=500,
@@ -1711,12 +1953,12 @@ def _template_bg_path(template):
         name = f'template_{template.id}_bg.{ext}'
     local = os.path.join(_UPLOAD_DIR, name)
     try:
-        resp = requests.get(url, timeout=20)
-        if not resp.ok or not resp.content:
-            log.warning(f'Template {template.id}: Hintergrund von {url} nicht ladbar ({resp.status_code})')
+        data, _final_url, _ctype = _safe_fetch_url(url, timeout=20)
+        if not data:
+            log.warning(f'Template {template.id}: Hintergrund von {url} war leer')
             return None
         with open(local, 'wb') as fh:
-            fh.write(resp.content)
+            fh.write(data)
         if template.preview_image != name:
             template.preview_image = name
             db.session.commit()
@@ -1825,8 +2067,8 @@ def _pil_render_legacy(template, vars_dict):
             height = int(el.get('height', 100))
             try:
                 if str(value).startswith('http'):
-                    resp = requests.get(value, timeout=10)
-                    overlay = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+                    daten, _u, _ct = _safe_fetch_url(str(value), timeout=10)
+                    overlay = Image.open(io.BytesIO(daten)).convert('RGBA')
                 else:
                     overlay = Image.open(value).convert('RGBA')
                 overlay = overlay.resize((width, height))
@@ -1963,7 +2205,7 @@ def _score_news_items(flask_app):
         unscoredItems = NewsItem.query.filter_by(status='new').limit(20).all()
         if not unscoredItems:
             return
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         templates = MemeTemplate.query.filter_by(active=True).all()
         templates_str = '\n'.join([f"- ID:{t.id} {t.name}: {t.description or ''}" for t in templates])
 
@@ -2340,10 +2582,13 @@ def api_settings_save():
     for key in ('content_os_url', 'telegram_chat_id', 'alert_threshold_days'):
         if key in d:
             AppSettings.set(key, d[key])
-    # Leeres Token-Feld heißt "unverändert lassen" (das Feld zeigt den Token ja nicht mehr an)
-    if d.get('telegram_token'):
+    # Leeres Token-Feld heißt "unverändert lassen" (das Feld zeigt den Token ja nicht mehr an).
+    # Zum Entfernen braucht es deshalb das ausdrückliche Flag telegram_token_clear.
+    if d.get('telegram_token_clear'):
+        AppSettings.set('telegram_token', '')
+    elif d.get('telegram_token'):
         AppSettings.set('telegram_token', str(d['telegram_token']).strip())
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'telegram_token_set': bool((AppSettings.get('telegram_token', '') or '').strip())})
 
 
 @app.route('/api/settings/telegram/test', methods=['POST'])
@@ -2620,6 +2865,75 @@ def _seed_recycle_settings():
             db.session.add(AppSettings(key=k, value=v))
     db.session.commit()
 
+def _migrate_inspo_unique():
+    """Start-Migration: der alte Unique-Index lag auf username ALLEIN, dadurch konnte derselbe
+    Handle nicht auf Instagram und TikTok stehen. SQLite kann einen Unique-Index nicht per ALTER
+    ändern – die Tabelle wird deshalb einmalig neu gebaut (Kopie, dann Umbenennen).
+    Schlägt der Umbau fehl, bleibt das alte Schema unverändert bestehen."""
+    if not str(app.config.get('SQLALCHEMY_DATABASE_URI', '')).startswith('sqlite'):
+        return False
+    try:
+        indexes = db.session.execute(
+            db.text("PRAGMA index_list('memo_inspiration_source')")).fetchall()
+    except Exception:
+        db.session.rollback()
+        return False
+    alter_index = None
+    for row in indexes:
+        name, is_unique = row[1], row[2]
+        if not is_unique:
+            continue
+        try:
+            cols = [c[2] for c in db.session.execute(
+                db.text(f"PRAGMA index_info('{name}')")).fetchall()]
+        except Exception:
+            db.session.rollback()
+            continue
+        if cols == ['username']:
+            alter_index = name
+            break
+    if not alter_index:
+        return False
+    try:
+        db.session.execute(db.text('DROP TABLE IF EXISTS memo_inspiration_source_neu'))
+        db.session.execute(db.text("""
+            CREATE TABLE memo_inspiration_source_neu (
+                id INTEGER NOT NULL PRIMARY KEY,
+                username VARCHAR(100) NOT NULL,
+                city_id INTEGER,
+                platform VARCHAR(20),
+                notes TEXT,
+                last_fetch DATETIME,
+                created_at DATETIME,
+                CONSTRAINT uq_inspo_source_user_platform UNIQUE (username, platform),
+                FOREIGN KEY(city_id) REFERENCES city (id)
+            )"""))
+        db.session.execute(db.text("""
+            INSERT INTO memo_inspiration_source_neu
+                (id, username, city_id, platform, notes, last_fetch, created_at)
+            SELECT id, username, city_id, platform, notes, last_fetch, created_at
+            FROM memo_inspiration_source"""))
+        db.session.execute(db.text('DROP TABLE memo_inspiration_source'))
+        db.session.execute(db.text(
+            'ALTER TABLE memo_inspiration_source_neu RENAME TO memo_inspiration_source'))
+        db.session.execute(db.text(
+            'CREATE INDEX IF NOT EXISTS ix_memo_inspiration_source_city_id '
+            'ON memo_inspiration_source (city_id)'))
+        db.session.commit()
+        log.info('Inspiration-Quellen: Unique-Regel auf (username, platform) umgestellt')
+        return True
+    except Exception as ex:
+        db.session.rollback()
+        log.warning(f'Umbau der Inspiration-Quellen nicht möglich ({ex}) – altes Schema bleibt; '
+                    f'derselbe Handle bleibt dort auf eine Plattform beschränkt')
+        try:
+            db.session.execute(db.text('DROP TABLE IF EXISTS memo_inspiration_source_neu'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return False
+
+
 def _migrate_legacy_data():
     """Datenmigrationen, die bei jedem Start idempotent laufen."""
     # 1) Alte Stadtwissen-Kategorien auf die Registry abbilden
@@ -2662,6 +2976,7 @@ with app.app_context():
             db.session.commit()
         except Exception:
             db.session.rollback()
+    _migrate_inspo_unique()
     _migrate_legacy_data()
     _seed_todos()
     _seed_cities()
@@ -2702,12 +3017,47 @@ def api_events_upcoming():
     upcoming.sort(key=lambda x: (0 if x['active_now'] else 1, x['days_until']))
     return jsonify(upcoming)
 
+def _validate_event_date(value, feld):
+    """'' | 'MM-DD' | 'YYYY-MM-DD'. Rückgabe: Fehlertext oder None.
+    Ungültige Angaben werden abgewiesen statt still gespeichert (das Event wäre sonst
+    dauerhaft unsichtbar, weil _window() den Fehler nur abfängt)."""
+    from datetime import date as _date
+    text = str(value or '').strip()
+    if not text:
+        return None
+    if len(text) == 5 and text[2] == '-':
+        try:
+            month, day = int(text[:2]), int(text[3:])
+            _date(2024, month, day)      # Schaltjahr, damit 02-29 erlaubt bleibt
+            return None
+        except Exception:
+            return f'{feld} ungültig (erwartet MM-TT, z. B. 12-24)'
+    try:
+        _date.fromisoformat(text)
+        return None
+    except Exception:
+        return f'{feld} ungültig (erwartet JJJJ-MM-TT oder MM-TT)'
+
+
+def _event_date_errors(d):
+    """Beide Datumsfelder eines Event-Requests prüfen; Rückgabe: Fehlertext oder None."""
+    for feld in ('date_from', 'date_to'):
+        if feld in d:
+            err = _validate_event_date(d.get(feld), feld)
+            if err:
+                return err
+    return None
+
+
 @app.route('/api/events', methods=['POST'])
 @login_required
 def api_event_create():
     d = request.json or {}
     if not d.get('name'):
         return jsonify({'error': 'Name fehlt'}), 400
+    date_error = _event_date_errors(d)
+    if date_error:
+        return jsonify({'error': date_error}), 400
     e = MemeEvent(
         name=d['name'].strip(),
         description=d.get('description', ''),
@@ -2731,6 +3081,9 @@ def api_event_create():
 def api_event_update(ev_id):
     e = MemeEvent.query.get_or_404(ev_id)
     d = request.json or {}
+    date_error = _event_date_errors(d)
+    if date_error:
+        return jsonify({'error': date_error}), 400
     for f in ['name','description','event_type','date_from','date_to','recurring',
               'lead_days','meme_relevance','emoji','notes','active']:
         if f in d:
@@ -3034,13 +3387,23 @@ def api_market_page_delete(page_id):
 _INSPO_PLATFORMS = ('instagram', 'tiktok', 'facebook', 'x', 'reddit', 'sonstige')
 
 def _inspo_city_id(value):
-    """city_id aus dem Request prüfen: None/leer → None, sonst muss die Stadt existieren."""
+    """city_id aus dem Request prüfen: None/leer → None, sonst muss die Stadt existieren.
+    Fehlerhafte Eingaben ergeben eine verständliche Meldung, keinen rohen Python-Fehlertext."""
     if value in (None, '', 0, '0'):
         return None
-    cid = int(value)
+    try:
+        cid = int(value)
+    except (ValueError, TypeError):
+        raise ValueError('city_id ungültig')
     if not City.query.get(cid):
         raise ValueError('Stadt nicht gefunden')
     return cid
+
+
+def _inspo_platform(value):
+    """Plattform normalisieren; nicht-Strings (Zahlen, Listen) laufen nicht in einen Fehler."""
+    platform = str(value if value not in (None, '') else 'instagram').strip().lower()
+    return platform if platform in _INSPO_PLATFORMS else 'sonstige'
 
 @app.route('/api/inspiration/sources', methods=['GET'])
 @login_required
@@ -3052,22 +3415,29 @@ def api_inspo_sources():
 @login_required
 def api_inspo_source_add():
     d = request.json or {}
-    username = d.get('username', '').strip().lstrip('@')
+    username = str(d.get('username') or '').strip().lstrip('@')
     if not username:
         return jsonify({'error': 'Username fehlt'}), 400
-    if MemoInspirationSource.query.filter_by(username=username).first():
+    platform = _inspo_platform(d.get('platform'))
+    # Derselbe Handle darf auf mehreren Plattformen liegen – doppelt ist erst Name + Plattform
+    if MemoInspirationSource.query.filter_by(username=username, platform=platform).first():
         return jsonify({'error': 'Quelle bereits vorhanden'}), 409
     try:
         city_id = _inspo_city_id(d.get('city_id'))
     except (ValueError, TypeError) as ex:
         return jsonify({'error': str(ex) or 'city_id ungültig'}), 400
-    platform = (d.get('platform') or 'instagram').strip().lower()
-    if platform not in _INSPO_PLATFORMS:
-        platform = 'sonstige'
     s = MemoInspirationSource(username=username, notes=d.get('notes', ''),
                               city_id=city_id, platform=platform)
     db.session.add(s)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as ex:
+        # Falls in einer Alt-Datenbank noch der Unique-Index auf username allein liegt
+        # (Umbau beim Start fehlgeschlagen): verständliche Meldung statt Serverfehler.
+        db.session.rollback()
+        log.warning(f'Inspiration-Quelle {username}/{platform} nicht speicherbar: {ex}')
+        return jsonify({'error': 'Quelle bereits vorhanden (Handle in dieser Datenbank nur '
+                                 'einmal möglich)'}), 409
     return jsonify(s.to_dict()), 201
 
 @app.route('/api/inspiration/sources/<int:src_id>', methods=['PUT'])
@@ -3082,8 +3452,15 @@ def api_inspo_source_update(src_id):
         except (ValueError, TypeError) as ex:
             return jsonify({'error': str(ex) or 'city_id ungültig'}), 400
     if 'platform' in d:
-        platform = (d.get('platform') or 'instagram').strip().lower()
-        s.platform = platform if platform in _INSPO_PLATFORMS else 'sonstige'
+        platform = _inspo_platform(d.get('platform'))
+        if platform != (s.platform or 'instagram'):
+            clash = MemoInspirationSource.query.filter(
+                MemoInspirationSource.username == s.username,
+                MemoInspirationSource.platform == platform,
+                MemoInspirationSource.id != s.id).first()
+            if clash:
+                return jsonify({'error': 'Quelle bereits vorhanden'}), 409
+        s.platform = platform
     if 'notes' in d:
         s.notes = d['notes'] or ''
     db.session.commit()
@@ -3176,7 +3553,7 @@ def api_inspo_post_generate(post_id):
     if not ANTHROPIC_API_KEY:
         return jsonify({'error': 'Kein API Key'}), 400
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         templates = MemeTemplate.query.filter_by(active=True).all()
         tmpl_str = '\n'.join([f"- ID:{t.id} {t.name}" for t in templates])
         msg = client.messages.create(
@@ -3228,7 +3605,7 @@ def api_inspo_ai_sort():
     if not posts:
         return jsonify({'ok': True, 'processed': 0, 'message': 'Alle Posts bereits sortiert'})
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
     processed = 0
     knowledge_added = 0
     import re
@@ -3711,7 +4088,7 @@ def api_upload_caption(post_id):
         return jsonify({'error': 'Kein API Key'}), 400
     city = p.city or (City.query.get(p.city_id) if p.city_id else None)
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         prompt = f"""Du bist Social-Media-Manager einer deutschen Stadt-Meme-Seite.
 Stadt: {city.name if city else 'Unbekannt'}
 Dateiname: {p.title}
@@ -3892,7 +4269,7 @@ def api_vorrat_caption(post_id):
     city = p.city
     tmpl = p.template
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         prompt = f"""Du bist Social-Media-Manager für eine deutsche Stadt-Meme-Seite.
 Stadt: {city.name} ({city.state or ''})
 Template: {tmpl.name if tmpl else 'Stadtmeme'}
@@ -3974,10 +4351,62 @@ def api_vorrat_duplicate(post_id):
     return jsonify(new_post.to_dict()), 201
 
 
+def _export_housekeeping(max_age_hours=24):
+    """Alte Export-Aufträge samt ZIP entfernen und verwaiste ZIPs im Export-Ordner löschen.
+    Läuft beim Start eines neuen Exports – bisher räumte nur die Download-Route auf, sodass
+    nie abgeholte Exporte für immer liegen blieben. Rückgabe: (Zeilen, verwaiste Dateien)."""
+    rows_deleted, files_deleted = 0, 0
+    cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+    keep_files = set()
+    try:
+        for job in ExportJob.query.all():
+            created = job.created_at or datetime.utcnow()
+            if created < cutoff:
+                if job.path:
+                    try:
+                        if os.path.exists(job.path):
+                            os.remove(job.path)
+                    except Exception as ex:
+                        log.warning(f'Export-ZIP {job.path} nicht löschbar: {ex}')
+                db.session.delete(job)
+                rows_deleted += 1
+            elif job.path:
+                keep_files.add(os.path.basename(job.path))
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning(f'Export-Aufräumen (Tabelle) fehlgeschlagen: {ex}')
+    file_cutoff = time.time() - max_age_hours * 3600
+    try:
+        for name in os.listdir(_EXPORT_DIR):
+            if not name.lower().endswith('.zip') or name in keep_files:
+                continue
+            full = os.path.join(_EXPORT_DIR, name)
+            try:
+                if not os.path.isfile(full):
+                    continue
+                # Junge Dateien in Ruhe lassen: ein laufender Bau trägt seinen Pfad erst am
+                # Ende in die Tabelle ein und sähe hier sonst wie eine verwaiste Datei aus.
+                if os.path.getmtime(full) > file_cutoff:
+                    continue
+                os.remove(full)
+                files_deleted += 1
+            except Exception as ex:
+                log.warning(f'Verwaiste Export-Datei {name} nicht löschbar: {ex}')
+    except FileNotFoundError:
+        pass
+    except Exception as ex:
+        log.warning(f'Export-Aufräumen (Ordner) fehlgeschlagen: {ex}')
+    if rows_deleted or files_deleted:
+        log.info(f'Export-Aufräumen: {rows_deleted} Auftrag/Aufträge, {files_deleted} verwaiste Datei(en) entfernt')
+    return rows_deleted, files_deleted
+
+
 @app.route('/api/vorrat/export-zip/start', methods=['POST'])
 @login_required
 def api_vorrat_export_zip_start():
     d = request.json or {}
+    _export_housekeeping()
     job_id = str(uuid.uuid4())
     db.session.add(ExportJob(id=job_id, status='pending'))
     db.session.commit()
@@ -4323,13 +4752,19 @@ def _recycle_candidates(city_id=None, min_days=None, limit=None):
     excluded = set(settings['excluded_cats'])
     slots_cache: dict = {}
     result = []
+    unrated_passed = 0      # Templates ohne Bewertung (rating 0/None) – Sternefilter greift nicht
     for p in posts:
         tmpl = p.template
         if tmpl:
             if tmpl.category in excluded:
                 continue
-            if (tmpl.rating or 0) < settings['min_stars']:
-                continue
+            # rating 0 heißt „noch nicht bewertet“, nicht „null Sterne“. Sonst wäre die Liste
+            # leer, solange niemand Templates bewertet hat.
+            if tmpl.rating and tmpl.rating > 0:
+                if tmpl.rating < settings['min_stars']:
+                    continue
+            else:
+                unrated_passed += 1
         d = p.to_dict()
         d['recycle_score'] = _recycle_score(p, settings)
         d['days_since_post'] = (datetime.utcnow() - p.published_at).days if p.published_at else None
@@ -4345,6 +4780,7 @@ def _recycle_candidates(city_id=None, min_days=None, limit=None):
     result.sort(key=lambda x: x['recycle_score'], reverse=True)
     if limit:
         result = result[:limit]
+    settings = {**settings, 'unrated_passed': unrated_passed}
     return result, settings, eff_days
 
 
@@ -4374,7 +4810,7 @@ def api_trending_refresh(city_id):
         if not headlines:
             return jsonify({'error': 'Keine Artikel im RSS-Feed gefunden'}), 400
 
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Du analysierst aktuelle Schlagzeilen aus {city.name} auf ihr Meme-Potenzial für Instagram-Stadtmemes.
 
 Schlagzeilen:
@@ -4459,7 +4895,7 @@ def api_trending_idea(tid):
     topic = TrendingTopic.query.get_or_404(tid)
     city_name = topic.city.name if topic.city else 'der Stadt'
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Generiere 3 kreative Meme-Ideen für das Thema "{topic.keyword}" aus {city_name}.
 
 Kontext: {topic.description or 'Lokales Trending-Thema'}
@@ -4657,7 +5093,7 @@ def api_recycle_caption(jid):
     source = job.source_post
     city_name = job.city.name if job.city else 'der Stadt'
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Generiere 3 neue Instagram-Captions für einen recycelten Meme-Post aus {city_name}.
 
 Original-Caption: "{source.caption or ''}"

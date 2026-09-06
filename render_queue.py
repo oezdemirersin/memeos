@@ -14,6 +14,7 @@ Regeln:
 - Dateien landen unter <MEMEOS_DATA_ROOT>/renders, niemals unter static/.
 """
 import os
+import sys
 import json
 import time
 import uuid
@@ -21,6 +22,7 @@ import socket
 import inspect
 import logging
 import secrets
+import importlib
 import threading
 from datetime import datetime, timedelta
 from functools import wraps
@@ -28,7 +30,8 @@ from functools import wraps
 from flask import Blueprint, request, jsonify, session, redirect, current_app
 from sqlalchemy import func, select, update
 
-from models import db, City, CityKnowledge, MemeTemplate, MemePost, slide_url
+from models import (db, City, CityKnowledge, MemeTemplate, MemePost, RenderJob,
+                    AppSettings, slide_url)
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +47,18 @@ MAX_AUTO_ATTEMPTS = 2           # automatische Versuche insgesamt
 IDLE_SLEEP = 2.0                # Pause der Worker ohne Arbeit
 BETWEEN_TASKS_SLEEP = 0.5       # Pause je Worker zwischen zwei Tasks
 RUN_ONCE_LIMIT = 5              # Tasks pro /api/render/run-once
+STALE_CHECK_SECONDS = 60        # höchstens einmal pro Minute nach verwaisten Tasks sehen
+CLEANUP_INTERVAL_SECONDS = 24 * 3600    # Rotation verwaister Render-Dateien: einmal täglich
+ORPHAN_MAX_AGE_DAYS = 14        # so alt muss eine unreferenzierte Datei sein, bevor sie geht
+
+KEEP_LOCAL_SETTING = 'render_keep_local'   # '1' (Standard) = PNG bleibt auch nach Cloudinary liegen
 
 _worker_threads = []
 _worker_count = 0
 _stop_event = threading.Event()
+_maintenance_lock = threading.Lock()
+_last_stale_check = 0.0
+_last_cleanup = 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -137,8 +148,17 @@ def _login_required(f):
 
 
 def _appmod():
-    import app as appmod   # erst zur Laufzeit – app.py importiert dieses Modul
-    return appmod
+    """app.py als Modul – erst zur Laufzeit, app.py importiert dieses Modul.
+    Läuft app.py als __main__ (python3 app.py), ist das Modul unter '__main__' registriert;
+    ein 'import app' würde die Datei ein zweites Mal ausführen (zweite Flask-App, Seeds,
+    Migrationen). Darum zuerst __main__ und sys.modules prüfen."""
+    main = sys.modules.get('__main__')
+    if main is not None and hasattr(main, '_DATA_ROOT'):
+        return main
+    mod = sys.modules.get('app')
+    if mod is not None:
+        return mod
+    return importlib.import_module('app')
 
 
 def _render_dir():
@@ -205,6 +225,25 @@ def _mark_failed(task, error):
     task.finished_at = datetime.utcnow()
 
 
+def _keep_local():
+    """Bleiben die PNG-Dateien nach einem erfolgreichen Cloudinary-Upload liegen?
+    Standard '1' (ja). Auf '0' gesetzt spart ein Groß-Batch mehrere hundert MB Plattenplatz."""
+    try:
+        return (AppSettings.get(KEEP_LOCAL_SETTING, '1') or '1').strip() != '0'
+    except Exception:
+        return True
+
+
+def _drop_local_copies(filenames):
+    """Nach erfolgreichem Cloudinary-Upload und erst nach dem Commit: lokale PNGs löschen."""
+    folder = _render_dir()
+    for name in filenames:
+        try:
+            os.remove(os.path.join(folder, os.path.basename(name)))
+        except OSError as ex:
+            log.warning(f'RenderQueue: {name} nicht löschbar: {ex}')
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # VERARBEITUNG
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -267,6 +306,10 @@ def _process_single(appmod, task, city, written):
     task.finished_at = datetime.utcnow()
     appmod._mark_knowledge_used(city.id, vars_dict, template.id)   # commitet die Session
     db.session.commit()
+    # Erst nach dem Commit: liegt das Bild in der Cloud, darf die lokale Kopie weg.
+    if cloud_url and not _keep_local():
+        _drop_local_copies([filename])
+        written.remove(path)
 
 
 def _process_series(appmod, task, city, written):
@@ -276,6 +319,7 @@ def _process_series(appmod, task, city, written):
         return
 
     paths, slide_results, fit_scores = [], [], []
+    used_knowledge = []          # (vars, template_id) – erst nach dem Flush des Posts vormerken
     ki_errors, last_ki_error = 0, ''
     ts = int(time.time())
     for idx, template in enumerate(templates, start=1):
@@ -302,14 +346,18 @@ def _process_series(appmod, task, city, written):
             entry['error'] = 'Kein Hintergrundbild / PIL-Rendering fehlgeschlagen'
             slide_results.append(entry)
             continue
-        filename = f'task_{task.id}_s{template.series_position or idx}_{ts}.png'
+        # Dateiname aus dem Schleifenindex + Template-ID: series_position kann in einer Serie
+        # doppelt vorkommen (Einzelfolien-Import) und würde sonst ein Motiv überschreiben.
+        filename = f'task_{task.id}_s{idx:02d}_t{template.id}_{ts}.png'
         written.append(_write_png(png, filename))
         paths.append(filename)
         entry['file'] = filename
         if res.get('fit_score') is not None:
             fit_scores.append(res['fit_score'])
         template.use_count = (template.use_count or 0) + 1
-        appmod._mark_knowledge_used(city.id, res.get('vars') or {}, template.id)
+        # _mark_knowledge_used committet sofort; scheitert ein späterer Slide, wären die
+        # 14-Tage-Sperren gesetzt, Post und Task aber zurückgerollt. Darum erst nach dem Flush.
+        used_knowledge.append((res.get('vars') or {}, template.id))
         slide_results.append(entry)
 
     if not paths:
@@ -346,6 +394,8 @@ def _process_series(appmod, task, city, written):
     task.status = 'done'
     task.error = None
     task.finished_at = datetime.utcnow()
+    for vars_dict, template_id in used_knowledge:
+        appmod._mark_knowledge_used(city.id, vars_dict, template_id)   # commitet die Session
     db.session.commit()
 
 
@@ -437,6 +487,98 @@ def _reset_stale_running():
     return len(stale)
 
 
+def _referenced_render_files():
+    """Alle Dateinamen im Render-Ordner, auf die noch etwas zeigt."""
+    used = set()
+
+    def add(value):
+        name = os.path.basename(str(value or '').strip())
+        if name:
+            used.add(name)
+
+    for image_path, carousel in db.session.query(MemePost.image_path, MemePost.carousel_paths).all():
+        add(image_path)
+        if carousel:
+            # Unlesbare carousel_paths brechen den ganzen Lauf ab (siehe cleanup_orphan_renders)
+            names = json.loads(carousel)
+            if not isinstance(names, list):
+                raise ValueError('carousel_paths ist keine Liste')
+            for n in names:
+                add(n)
+    for (filename,) in db.session.query(RenderJob.image_filename).all():
+        add(filename)
+    return used
+
+
+def cleanup_orphan_renders(max_age_days=ORPHAN_MAX_AGE_DAYS, dry_run=False):
+    """Alte Dateien im Render-Ordner löschen, auf die kein MemePost und kein RenderJob zeigt.
+
+    Sicherheitsnetz: Ist auch nur ein carousel_paths-Eintrag unlesbar, wird gar nichts gelöscht –
+    ein Slide eines Karussells zu verlieren wäre schlimmer als eine Datei zu viel zu behalten.
+    Liefert die Liste der (gelöschten bzw. bei dry_run gefundenen) Dateinamen."""
+    try:
+        used = _referenced_render_files()
+    except Exception as ex:
+        log.warning(f'RenderQueue: Aufräumen übersprungen, Referenzen nicht lesbar: {ex}')
+        return []
+    folder = _render_dir()
+    cutoff = time.time() - max(0, float(max_age_days)) * 86400
+    removed = []
+    try:
+        names = os.listdir(folder)
+    except OSError as ex:
+        log.warning(f'RenderQueue: Render-Ordner nicht lesbar: {ex}')
+        return []
+    for name in names:
+        if name in used:
+            continue
+        path = os.path.join(folder, name)
+        try:
+            if not os.path.isfile(path) or os.path.getmtime(path) > cutoff:
+                continue
+        except OSError:
+            continue
+        if dry_run:
+            removed.append(name)
+            continue
+        try:
+            os.remove(path)
+            removed.append(name)
+        except OSError as ex:
+            log.warning(f'RenderQueue: {name} nicht löschbar: {ex}')
+    if removed and not dry_run:
+        log.info(f'RenderQueue: {len(removed)} verwaiste Render-Datei(en) gelöscht')
+    return removed
+
+
+def _idle_maintenance():
+    """Aufräumarbeiten im Leerlauf: Wiedervorlage, verwaiste Tasks (max. 1×/Minute),
+    Dateirotation (max. 1×/Tag). Fehler hier dürfen den Worker nicht anhalten."""
+    _requeue_due_retries()
+    now = time.monotonic()
+    global _last_stale_check, _last_cleanup
+    with _maintenance_lock:
+        # 0.0 = in diesem Prozess noch nie gelaufen → sofort fällig
+        do_stale = _last_stale_check == 0.0 or (now - _last_stale_check) >= STALE_CHECK_SECONDS
+        if do_stale:
+            _last_stale_check = now
+        do_cleanup = _last_cleanup == 0.0 or (now - _last_cleanup) >= CLEANUP_INTERVAL_SECONDS
+        if do_cleanup:
+            _last_cleanup = now
+    if do_stale:
+        try:
+            _reset_stale_running()
+        except Exception as ex:
+            log.warning(f'RenderQueue: Reset verwaister Tasks fehlgeschlagen: {ex}')
+            db.session.rollback()
+    if do_cleanup:
+        try:
+            cleanup_orphan_renders()
+        except Exception as ex:
+            log.warning(f'RenderQueue: Aufräumen fehlgeschlagen: {ex}')
+            db.session.rollback()
+
+
 def _worker_loop(flask_app, name):
     log.info(f'RenderQueue: Worker {name} gestartet')
     while not _stop_event.is_set():
@@ -445,7 +587,7 @@ def _worker_loop(flask_app, name):
                 token = f'{name}:{secrets.token_hex(3)}'
                 task_id = _claim(token)
                 if task_id is None:
-                    _requeue_due_retries()
+                    _idle_maintenance()
                 else:
                     _process_task(task_id)
         except Exception as ex:
@@ -695,7 +837,12 @@ def api_render_run_once():
     if not _workers_disabled():
         return jsonify({'error': 'run-once nur ohne Worker (MEMEOS_WORKERS=0 oder TESTING)'}), 403
     d = request.get_json(silent=True) or {}
-    processed = run_once(d.get('limit', RUN_ONCE_LIMIT))
+    raw = d.get('limit', RUN_ONCE_LIMIT)
+    try:
+        limit = int(raw) if raw not in (None, '') else RUN_ONCE_LIMIT
+    except (TypeError, ValueError):
+        return jsonify({'error': 'limit muss eine Zahl sein'}), 400
+    processed = run_once(limit)
     return jsonify({'processed': len(processed), 'tasks': processed, 'counts': _counts()})
 
 

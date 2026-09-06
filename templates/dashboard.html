@@ -923,6 +923,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
           <span><a href="#" onclick="rqCancel();return false;" style="color:var(--muted);">Wartende abbrechen</a> · <a href="#" onclick="rqOpenVorrat();return false;">Im Vorrat öffnen →</a></span>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="rq-progress-fill" style="width:0%"></div></div>
+        <div id="rq-poll-hint" hidden style="font-size:12px;color:var(--warning);margin-top:6px;"></div>
       </div>
     </div>
 
@@ -1129,6 +1130,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
         <button class="btn btn-primary btn-sm" onclick="saveTelegramSettings()">Speichern</button>
+        <button class="btn btn-ghost btn-sm" id="btn-telegram-token-clear" style="display:none;" onclick="clearTelegramToken()" title="Gespeicherten Bot-Token löschen – danach sendet MemeOS nichts mehr über Telegram">Token entfernen</button>
         <button class="btn btn-ghost btn-sm" onclick="testTelegram(this)">🔔 Test-Nachricht</button>
         <button class="btn btn-ghost btn-sm" onclick="showDigestPreview()" title="Zeigt, was der Tages-Digest heute senden würde (sendet nichts)">Digest-Vorschau</button>
         <span id="telegram-test-result" style="font-size:12px;"></span>
@@ -3001,7 +3003,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 <!-- ══ JAVASCRIPT ══════════════════════════════════════════════════════ -->
 <script>
-const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const CSRF = '{{ csrf_token }}';
+// Kopfzeilen für schreibende Aufrufe – jeder POST/PUT/DELETE/PATCH unter /api/ braucht den Token
+const CSRF_H = {'X-CSRF-Token': CSRF};
+const CSRF_JSON_H = {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF};
 // HTML-escape helper — used throughout all render functions
 function _esc(s) {
   if (s === null || s === undefined) return '';
@@ -3011,12 +3016,15 @@ let _selectedCityId = null;
 let _selectedSurveyId = null;
 let _allTemplates = [];
 let _rqBatchId = null, _rqPoll = null;
+let _rqStallTicks = 0, _rqLastCounts = '', _rqWorkersDead = false;
 
 // ── CSRF META ──
 document.head.insertAdjacentHTML('beforeend','<meta name="csrf-token" content="{{ csrf_token }}">');
 
 // ── Navigation ──
 function showPage(name) {
+  // Bulk-Polling läuft nur, solange die Bulk-Seite offen ist
+  if(name !== 'bulk' && _rqPoll) { clearInterval(_rqPoll); _rqPoll = null; }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
@@ -3056,10 +3064,20 @@ function toast(msg, type='info') {
 
 // ── API helper ──
 async function api(method, url, body) {
-  const opts = {method, headers:{'Content-Type':'application/json','X-CSRF-Token':'{{ csrf_token }}'}};
+  const opts = {method, headers: Object.assign({}, CSRF_JSON_H)};
   if(body) opts.body = JSON.stringify(body);
-  const r = await fetch(url, opts);
-  return r.json();
+  let r;
+  try { r = await fetch(url, opts); }
+  catch(e) { return {error: 'Netzwerkfehler – Server nicht erreichbar'}; }
+  // Abgelaufene Sitzung: @login_required leitet auf /login um – nicht als kaputte Antwort deuten
+  if (r.status === 401 || (r.redirected && /\/login(\?|$)/.test(r.url))) { location.href = '/login'; return {error: 'Nicht angemeldet'}; }
+  const ct = r.headers.get('Content-Type') || '';
+  let data = null;
+  if (ct.includes('json')) { try { data = await r.json(); } catch(e) { data = null; } }
+  // HTML-Fehlerseite (404/500) oder kaputtes JSON: nie werfen, immer ein Fehlerobjekt liefern
+  if (data === null) return {error: r.ok ? 'Unerwartete Antwort vom Server' : ('HTTP ' + r.status)};
+  if (!r.ok && !(data && data.error)) return {error: 'HTTP ' + r.status};
+  return data;
 }
 
 // ── Stats refresh ──
@@ -3318,21 +3336,21 @@ function _renderTemplateCard(t) {
   const seasonal = _isSaisonActive(t);
   const renderBadge = _renderTypeBadge(t);
   const thumb = t.preview_image
-    ? `<img src="/uploads/${t.preview_image}">`
-    : `${t.category_emoji||'📋'}`;
+    ? `<img src="/uploads/${_esc(t.preview_image)}">`
+    : `${_esc(t.category_emoji||'📋')}`;
   const seasonDot = seasonal ? `<span title="Saisonal aktiv" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fbbf24;margin-left:4px;vertical-align:middle;"></span>` : '';
   const canvaBtn = t.canva_url
-    ? `<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" title="In Canva öffnen" style="text-decoration:none;padding:3px 7px;">↗ Canva</a>`
+    ? `<a href="${_esc(t.canva_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs" title="In Canva öffnen" style="text-decoration:none;padding:3px 7px;">↗ Canva</a>`
     : '';
 
   return `<div class="tlib-row" data-tmpl-id="${t.id}">
     <div class="tlib-thumb-cell">${thumb}</div>
     <div class="tlib-name-cell">
-      <div class="tname">${t.name}${seasonDot}</div>
-      <div class="tdesc">${t.description || t.example_text || '<span style="color:var(--border);">—</span>'}</div>
+      <div class="tname">${_esc(t.name)}${seasonDot}</div>
+      <div class="tdesc">${(t.description || t.example_text) ? _esc(t.description || t.example_text) : '<span style="color:var(--border);">—</span>'}</div>
     </div>
     <div class="tlib-cat-cell">
-      <span class="badge badge-gray" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;">${t.category_emoji||''} ${t.category_label||t.category}</span>
+      <span class="badge badge-gray" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;">${_esc(t.category_emoji||'')} ${_esc(t.category_label||t.category)}</span>
     </div>
     <div class="tlib-type-cell">${renderBadge}</div>
     <div class="tlib-rating-cell" onclick="quickRateTemplate(${t.id},this)" title="Klicken um zu bewerten">${stars}</div>
@@ -3340,7 +3358,7 @@ function _renderTemplateCard(t) {
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
       <button class="btn btn-ghost btn-xs" onclick="openStudio(${t.id})" title="Template-Studio öffnen">Studio</button>
-      <button class="btn btn-ghost btn-xs" onclick="rqStartBatch({template_id:${t.id}, city_ids:'all', skip_recent_days:30})" title="Dieses Template für alle aktiven Städte in die Render-Queue stellen">Alle Städte</button>
+      <button class="btn btn-ghost btn-xs" onclick="rqStartAllCities({template_id:${t.id}, city_ids:'all', skip_recent_days:30})" title="Dieses Template für alle aktiven Städte in die Render-Queue stellen (Rückfrage folgt)">Alle Städte</button>
       ${canvaBtn}
       <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
       <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
@@ -3414,23 +3432,23 @@ function _renderSeriesGroup(sname, templates) {
   const count = templates.length;
   const isOpen = _expandedSeries.has(sname);
   const thumb = first.preview_image
-    ? `<img src="/uploads/${first.preview_image}">`
-    : (first.category_emoji || '📋');
+    ? `<img src="/uploads/${_esc(first.preview_image)}">`
+    : _esc(first.category_emoji || '📋');
   const avgRating = templates.reduce((s,t)=>s+(t.rating||0),0)/count;
   const stars = '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5-Math.round(avgRating));
   const totalUses = templates.reduce((s,t)=>s+(t.use_count||0),0);
   const renderBadge = `<span class="badge badge-gray" style="font-size:10px;">${count} Slides</span>`;
 
   // Series header row
-  let html = `<div class="tlib-series-row" onclick="toggleSeries('${sname.replace(/'/g,"\\'")}', this)" id="series-row-${CSS.escape(sname)}">
+  let html = `<div class="tlib-series-row" data-series="${_esc(sname)}" onclick="toggleSeries(this.dataset.series, this)" id="series-row-${_esc(CSS.escape(sname))}">
     <div class="tlib-series-arrow${isOpen?' open':''}">▶</div>
     <div class="tlib-thumb-cell">${thumb}</div>
     <div class="tlib-name-cell">
-      <div class="tname">${sname} <span style="color:var(--accent);font-weight:400;">(${count} Slides)</span></div>
+      <div class="tname">${_esc(sname)} <span style="color:var(--accent);font-weight:400;">(${count} Slides)</span></div>
       <div class="tdesc">${isOpen ? 'Klicken zum Einklappen' : 'Klicken zum Ausklappen aller Slides'}</div>
     </div>
     <div class="tlib-cat-cell">
-      <span class="badge badge-gray" style="font-size:10px;">${first.category_emoji||''} ${first.category_label||first.category}</span>
+      <span class="badge badge-gray" style="font-size:10px;">${_esc(first.category_emoji||'')} ${_esc(first.category_label||first.category)}</span>
     </div>
     <div class="tlib-type-cell">${renderBadge}</div>
     <div class="tlib-rating-cell" style="font-size:12px;">${stars}</div>
@@ -3438,7 +3456,7 @@ function _renderSeriesGroup(sname, templates) {
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="event.stopPropagation();openGeneratorWith(${first.id})" title="Erste Slide generieren">⚡</button>
       <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();openCarouselModal(this.dataset.series)" title="Alle Slides dieser Serie für eine Stadt rendern">Karussell rendern</button>
-      <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();rqStartBatch({series:this.dataset.series, city_ids:'all', skip_recent_days:30})" title="Karussell dieser Serie für alle aktiven Städte in die Render-Queue stellen">Alle Städte</button>
+      <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();rqStartAllCities({series:this.dataset.series, city_ids:'all', skip_recent_days:30})" title="Karussell dieser Serie für alle aktiven Städte in die Render-Queue stellen (Rückfrage folgt)">Alle Städte</button>
       <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openTemplateModal(${first.id})" title="Erste Slide bearbeiten">✏️</button>
     </div>
   </div>`;
@@ -3446,7 +3464,7 @@ function _renderSeriesGroup(sname, templates) {
   // Sub-rows (only if expanded)
   if(isOpen) {
     templates.forEach(t => {
-      const subThumb = t.preview_image ? `<img src="/uploads/${t.preview_image}">` : (t.category_emoji||'📋');
+      const subThumb = t.preview_image ? `<img src="/uploads/${_esc(t.preview_image)}">` : _esc(t.category_emoji||'📋');
       const subStars = '★'.repeat(t.rating||0) + '☆'.repeat(5-(t.rating||0));
       const posLabel = t.series_position || '?';
       html += `<div class="tlib-sub-row${t.active?'':' inactive'}" data-tmpl-id="${t.id}">
@@ -3454,8 +3472,8 @@ function _renderSeriesGroup(sname, templates) {
         <div class="tlib-sub-badge">${posLabel}</div>
         <div class="tlib-thumb-cell" style="width:36px;height:36px;">${subThumb}</div>
         <div class="tlib-name-cell">
-          <div class="tname" style="font-size:12px;">${t.name}</div>
-          <div class="tdesc">${t.description || t.example_text || ''}</div>
+          <div class="tname" style="font-size:12px;">${_esc(t.name)}</div>
+          <div class="tdesc">${_esc(t.description || t.example_text || '')}</div>
         </div>
         <div class="tlib-cat-cell"></div>
         <div class="tlib-type-cell">
@@ -3466,7 +3484,7 @@ function _renderSeriesGroup(sname, templates) {
         <div class="tlib-actions-cell">
           <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
           <button class="btn btn-ghost btn-xs" onclick="openStudio(${t.id})" title="Template-Studio öffnen">Studio</button>
-          ${t.canva_url?`<a href="${t.canva_url}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;padding:3px 7px;">↗</a>`:''}
+          ${t.canva_url?`<a href="${_esc(t.canva_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs" style="text-decoration:none;padding:3px 7px;">↗</a>`:''}
           <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
           <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
         </div>
@@ -3581,7 +3599,7 @@ async function _uploadTemplateBg(templateId, file) {
   const fd = new FormData();
   fd.append('file', file);
   const r = await fetch(`/api/templates/${templateId}/upload-preview`, {
-    method: 'POST', headers: {'X-CSRF-Token': '{{ csrf_token }}'}, body: fd,
+    method: 'POST', headers: CSRF_H, body: fd,
   }).then(x => x.json()).catch(() => ({error: 'Upload fehlgeschlagen'}));
   if (r.error) { toast('Hintergrundbild: ' + r.error, 'error'); return null; }
   return r.filename || null;
@@ -3659,7 +3677,12 @@ async function startCarouselRender() {
   res.style.display = '';
   res.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);"><div class="spinner"></div> Karussell wird gerendert …</div>';
 
-  const r = await api('POST', '/api/generate/carousel', { city_id: parseInt(cityId), series: _carouselSeries });
+  let r;
+  try {
+    r = await api('POST', '/api/generate/carousel', { city_id: parseInt(cityId), series: _carouselSeries });
+  } catch (e) {
+    r = {error: 'Start fehlgeschlagen: ' + (e && e.message ? e.message : e)};
+  }
   if (!r || r.error || !r.post_id) {
     res.innerHTML = `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;">${_esc((r && r.error) || 'Unbekannter Fehler')}</div>`;
     btn.disabled = false; btn.textContent = 'Erneut versuchen';
@@ -3669,7 +3692,13 @@ async function startCarouselRender() {
   const started = Date.now();
   const poll = async () => {
     _carouselPollTimer = null;
-    const c = await api('GET', `/api/posts/${postId}/carousel`).catch(() => null);
+    let c = null;
+    try { c = await api('GET', `/api/posts/${postId}/carousel`); } catch (e) { c = null; }
+    if (c && c.error && !c.status) {
+      res.innerHTML = `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;">${_esc(c.error)}</div>`;
+      btn.disabled = false; btn.textContent = 'Erneut versuchen';
+      return;
+    }
     if (c && c.status && c.status !== 'rendering') {
       _renderCarouselResult(postId, c);
       btn.disabled = false; btn.textContent = 'Noch einmal';
@@ -3690,13 +3719,29 @@ function _renderCarouselResult(postId, c) {
   const res  = document.getElementById('carousel-result');
   const urls = Array.isArray(c.image_urls) ? c.image_urls : [];
   const failed = ['failed', 'error'].includes(c.status);
-  const errMsg = c.error_message || c.error || '';
+  const errMsg = c.error || c.error_message || '';
+  // slides_detail (Backend): Liste je Slide – Text oder Objekt mit slide/status/error
+  const detail = Array.isArray(c.slides_detail) ? c.slides_detail : [];
+  const detailHtml = detail.length ? `<div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">
+      ${detail.map((d, i) => {
+        if (d === null || d === undefined) return '';
+        if (typeof d !== 'object') return `<div>Slide ${i + 1}: ${_esc(d)}</div>`;
+        const nr    = d.slide ?? d.index ?? d.position ?? (i + 1);
+        const name  = d.template || d.template_name || d.name || '';
+        const state = d.status || (d.ok === false ? 'Fehler' : d.ok === true ? 'ok' : '');
+        const err   = d.error || d.error_message || '';
+        const warn  = d.warning || '';
+        const mark  = (d.ok === false || err || String(state).toLowerCase().includes('fail')) ? '✕' : (warn ? '●' : '✓');
+        return `<div>${mark} Slide ${_esc(nr)}${name ? ' · ' + _esc(name) : ''}${state ? ' · ' + _esc(state) : ''}${err ? ' · ' + _esc(err) : ''}${warn ? ' · ' + _esc(warn) : ''}</div>`;
+      }).join('')}
+    </div>` : '';
   res.innerHTML = `
     <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       ${failed ? `<span class="badge badge-red">Fehler</span>` : `<span class="badge badge-green">${_esc(c.status)}</span>`}
       <span style="color:var(--muted);">${_esc(c.title || '')}${c.title ? ' · ' : ''}${c.slide_count || urls.length} Slides</span>
     </div>
-    ${failed && errMsg ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:8px;">${_esc(errMsg)}</div>` : ''}
+    ${errMsg ? `<div style="font-size:12px;color:#f87171;padding:8px;background:rgba(239,68,68,.1);border-radius:6px;margin-bottom:8px;">${_esc(errMsg)}</div>` : ''}
+    ${detailHtml}
     ${urls.length ? `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">${urls.map((u,i)=>`<div class="vorrat-slide-thumb" title="Slide ${i+1}"><img src="${_esc(u)}" loading="lazy"><span class="vorrat-slide-idx">${i+1}</span></div>`).join('')}</div>` : ''}
     <div style="margin-top:10px;"><button class="btn btn-ghost btn-sm" onclick="closeCarouselModal();openVorratFromJob(${postId})">Im Vorrat öffnen →</button></div>`;
 }
@@ -3881,7 +3926,7 @@ async function pollJob(jobId, statusEl) {
   for(let i=0; i<60; i++) {
     await new Promise(res => setTimeout(res, 3000));
     const job = await api('GET', `/api/jobs/${jobId}`);
-    if(statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:var(--muted);">Status: ${job.status_label} | Fit-Score: ${job.fit_score ?? '–'}</div>`;
+    if(statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:var(--muted);">Status: ${_esc(job.status_label)} | Fit-Score: ${_esc(job.fit_score ?? '–')}</div>`;
     if(['done','failed','approved','rejected'].includes(job.status)) {
       renderJobResult(job);
       if(statusEl) statusEl.style.display='none';
@@ -3902,15 +3947,15 @@ function renderJobResult(job) {
         <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Verwendete Variablen</div>
         ${Object.entries(job.vars_used).map(([k,v])=>`
           <div style="display:flex;gap:6px;margin-bottom:3px;font-size:12px;">
-            <span style="color:var(--muted);min-width:120px;">${k}</span>
-            <span style="font-weight:600;color:var(--text);">${v}</span>
+            <span style="color:var(--muted);min-width:120px;">${_esc(k)}</span>
+            <span style="font-weight:600;color:var(--text);">${_esc(v)}</span>
           </div>`).join('')}
        </div>` : '';
 
   const briefHtml = job.manual_brief
     ? `<div style="margin-bottom:12px;padding:10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:8px;">
         <div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">📋 Creator Brief</div>
-        <div style="font-size:13px;line-height:1.5;">${job.manual_brief}</div>
+        <div style="font-size:13px;line-height:1.5;">${_esc(job.manual_brief)}</div>
        </div>` : '';
 
   const failed = job.status === 'failed';
@@ -3919,15 +3964,15 @@ function renderJobResult(job) {
 
   el.innerHTML = `<div>
     <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;padding:10px;background:var(--surface2);border-radius:8px;">
-      <div style="font-size:32px;font-family:var(--font-display);color:${scoreColor};min-width:44px;text-align:center;">${job.fit_score ?? '–'}</div>
+      <div style="font-size:32px;font-family:var(--font-display);color:${_esc(scoreColor)};min-width:44px;text-align:center;">${_esc(job.fit_score ?? '–')}</div>
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Fit-Score</div>
-        <div style="font-size:13px;color:var(--text);margin-top:2px;">${job.fit_reasoning || (job.fit_score == null ? 'Keine KI-Bewertung' : '–')}</div>
+        <div style="font-size:13px;color:var(--text);margin-top:2px;">${_esc(job.fit_reasoning || (job.fit_score == null ? 'Keine KI-Bewertung' : '–'))}</div>
       </div>
     </div>
     ${varsHtml}
     ${briefHtml}
-    ${job.image_url ? `<img src="${job.image_url}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
+    ${job.image_url ? `<img src="${_esc(job.image_url)}" style="width:100%;border-radius:8px;margin-bottom:12px;">` : ''}
     ${failed ? `<div style="padding:10px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:8px;margin-bottom:12px;">
         <div style="font-size:11px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Fehlgeschlagen</div>
         <div style="font-size:12px;color:#fca5a5;">${_esc(job.error_message || 'Kein Fehlertext vorhanden')}</div>
@@ -3938,7 +3983,7 @@ function renderJobResult(job) {
       <button class="btn btn-success btn-sm" onclick="approveJob(${job.id})">✓ Freigeben</button>
       <button class="btn btn-danger btn-sm" onclick="rejectJob(${job.id})">✕ Ablehnen</button>`}
       ${vorratBtn}
-      ${job.image_url ? `<a href="${job.image_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
+      ${job.image_url ? `<a href="${_esc(job.image_url)}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
     </div>
   </div>`;
 }
@@ -3989,6 +4034,17 @@ function rqModeChanged() {
   const mode = document.querySelector('input[name="rq-mode"]:checked')?.value || 'all';
   document.getElementById('rq-city-list').hidden = mode !== 'list';
 }
+// Schnellstart über alle Städte: erst Anzahl zeigen und nach den KI-Kosten fragen
+async function rqStartAllCities(preset) {
+  let anzahl = null;
+  const cities = await api('GET', '/api/cities');
+  if (Array.isArray(cities)) anzahl = cities.filter(c => c.active !== false).length;
+  const wen = anzahl == null ? 'alle aktiven Städte' : `${anzahl} aktive Stadt${anzahl === 1 ? '' : 'e'}`;
+  if (anzahl === 0) { toast('Keine aktive Stadt vorhanden', 'error'); return; }
+  if (!confirm(`Render-Auftrag für ${wen} in die Queue stellen?\n\nDas erzeugt je Stadt eine KI-Generierung und kostet Guthaben.`)) return;
+  rqStartBatch(preset);
+}
+
 // preset (optional): {template_id | series, city_ids: [ids]|'all'|'with_wiki', skip_recent_days}
 async function rqStartBatch(preset) {
   const body = preset ? Object.assign({}, preset) : {};
@@ -4016,6 +4072,7 @@ async function rqStartBatch(preset) {
   showPage('bulk');
   document.getElementById('rq-progress').hidden = false;
   rqShowSkipped(skipped);
+  rqResetPollState();
   rqPoll();
   if(_rqPoll) clearInterval(_rqPoll);
   _rqPoll = setInterval(rqPoll, 3000);
@@ -4025,10 +4082,18 @@ function rqShowSkipped(skipped) {
   el.textContent = skipped && skipped.length
     ? 'Übersprungen: ' + skipped.map(s=>`${s.city} (${s.reason})`).join(', ') : '';
 }
+function rqStopPoll(hinweis) {
+  if(_rqPoll) clearInterval(_rqPoll);
+  _rqPoll = null; _rqStallTicks = 0; _rqLastCounts = '';
+  const el = document.getElementById('rq-poll-hint');
+  if(el) { el.textContent = hinweis || ''; el.hidden = !hinweis; }
+  if(hinweis) toast(hinweis, 'info');
+}
+function rqResetPollState() { _rqStallTicks = 0; _rqLastCounts = ''; const el = document.getElementById('rq-poll-hint'); if(el) { el.textContent = ''; el.hidden = true; } }
 async function rqPoll() {
   if(!_rqBatchId) return;
   const g = await api('GET', `/api/render/batch/${_rqBatchId}`).catch(() => ({error: true}));
-  if(g.error) { if(_rqPoll) clearInterval(_rqPoll); _rqPoll = null; return; }
+  if(g.error) { rqStopPoll(); return; }
   const c = g.counts, finished = c.done + c.failed + c.cancelled;
   document.getElementById('rq-progress').hidden = false;
   document.getElementById('rq-progress-text').textContent =
@@ -4037,7 +4102,17 @@ async function rqPoll() {
   document.getElementById('rq-batch-label').textContent = g.label || '';
   rqRenderTasks(g.tasks || []);
   rqRefreshQueueTile();
-  if(g.done && _rqPoll) { clearInterval(_rqPoll); _rqPoll = null; toast('Batch abgeschlossen – Ergebnisse liegen im Vorrat','success'); rqLoadRecent(); }
+  if(g.done) {
+    if(_rqPoll) { rqStopPoll(); toast('Batch abgeschlossen – Ergebnisse liegen im Vorrat','success'); }
+    rqLoadRecent();
+    return;
+  }
+  if(!_rqPoll) return;
+  // Ohne laufenden Worker wird der Batch nie fertig – dann nicht endlos weiterfragen
+  if(_rqWorkersDead) { rqStopPoll('Keine Worker aktiv, Fortschritt angehalten'); return; }
+  const sig = JSON.stringify(c);
+  if(sig === _rqLastCounts) _rqStallTicks++; else { _rqStallTicks = 0; _rqLastCounts = sig; }
+  if(_rqStallTicks >= 10) rqStopPoll('Keine Worker aktiv, Fortschritt angehalten');
 }
 function rqRenderTasks(tasks) {
   const badge = s => ({done:'badge-green',failed:'badge-red',running:'badge-blue',cancelled:'badge-gray',pending:'badge-yellow'})[s] || 'badge-gray';
@@ -4063,7 +4138,7 @@ function rqRenderTasks(tasks) {
 }
 async function rqRetry(id) {
   const r = await api('POST', `/api/render/task/${id}/retry`).catch(() => ({error: 'Nicht erreichbar'}));
-  if(r.error) toast(r.error,'error'); else { toast('Auftrag wieder in der Queue','info'); if(!_rqPoll) _rqPoll = setInterval(rqPoll, 3000); rqPoll(); }
+  if(r.error) toast(r.error,'error'); else { toast('Auftrag wieder in der Queue','info'); rqResetPollState(); if(!_rqPoll) _rqPoll = setInterval(rqPoll, 3000); rqPoll(); }
 }
 async function rqCancel() {
   if(!_rqBatchId) return;
@@ -4078,6 +4153,7 @@ function rqOpenVorrat(cityId) {
 }
 function rqOpenBatch(batchId) {
   _rqBatchId = batchId;
+  rqResetPollState();
   rqPoll();
   if(_rqPoll) clearInterval(_rqPoll);
   _rqPoll = setInterval(rqPoll, 3000);
@@ -4098,14 +4174,15 @@ async function rqLoadRecent() {
         <span style="color:var(--muted);white-space:nowrap;">${c.done||0} fertig${c.failed ? ` · ${c.failed} Fehler` : ''}${open ? ` · ${open} offen` : ''}</span>
       </div>`;
     }).join('');
-  if(!_rqBatchId && rows.length && ((rows[0].counts||{}).pending || (rows[0].counts||{}).running)) rqOpenBatch(rows[0].batch_id);
+  // Kein automatisches Polling beim Öffnen der Seite – ein Klick auf einen Batch startet es
 }
 async function rqRefreshQueueTile() {
   const card = document.getElementById('stat-queue-card'); if(!card) return;
   const q = await api('GET','/api/render/queue').catch(() => ({error: true}));
   if(q.error) return;
   const c = q.counts || {}, open = (c.pending||0) + (c.running||0);
-  const dead = q.workers && !q.alive;
+  const dead = !!((q.workers || q.configured_workers) && !q.alive);
+  _rqWorkersDead = dead;
   document.getElementById('stat-queue').textContent = String(open || 0);
   document.getElementById('stat-queue-label').textContent =
     `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + (dead ? ' · Worker tot' : '');
@@ -4177,7 +4254,7 @@ async function runImport(dryRun) {
   const category = document.getElementById('import-category').value || 'allgemein';
   const series = document.getElementById('import-series').value.trim();
   const errEl = document.getElementById('import-error'); errEl.textContent = '';
-  const csrf = {'X-CSRF-Token': '{{ csrf_token }}'};
+  const csrf = CSRF_H;
   let res;
   try {
     if (_importTab === 'canva') {
@@ -4337,26 +4414,27 @@ async function loadReviewJobs() {
   const status = document.getElementById('review-filter')?.value || 'done';
   const jobs = await api('GET', `/api/jobs?status=${status}`);
   const grid = document.getElementById('review-grid');
+  if(!Array.isArray(jobs)) { grid.innerHTML=`<div class="empty"><p>${_esc((jobs && jobs.error) || 'Jobs nicht abrufbar')}</p></div>`; return; }
   if(!jobs.length) { grid.innerHTML='<div class="empty"><p>Keine Jobs in diesem Status</p></div>'; return; }
   grid.innerHTML = jobs.map(j => `
     <div class="job-card" data-job-id="${j.id}" data-city-id="${j.city_id||''}" data-template-id="${j.template_id||''}">
       <div class="job-card-img">
-        ${j.image_url ? `<img src="${j.image_url}" alt="meme">` : `<span style="font-size:12px;color:var(--muted);">${j.manual_brief ? '📋 Brief verfügbar' : 'Kein Bild'}</span>`}
+        ${j.image_url ? `<img src="${_esc(j.image_url)}" alt="meme">` : `<span style="font-size:12px;color:var(--muted);">${j.manual_brief ? '📋 Brief verfügbar' : 'Kein Bild'}</span>`}
       </div>
       <div class="job-card-body">
         <div style="display:flex;align-items:center;gap:6px;">
-          <div class="job-card-title">${j.city_name}</div>
+          <div class="job-card-title">${_esc(j.city_name)}</div>
           <span id="dup-warn-${j.id}" style="display:none;background:#f59e0b;color:#000;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;">⚠ Duplikat</span>
         </div>
-        <div class="job-card-meta">${j.template_name}</div>
-        <div class="fit-bar"><div class="fit-bar-fill" style="width:${j.fit_score||0}%;background:${j.fit_color||'var(--border)'};"></div></div>
-        <div style="font-size:11px;color:${j.fit_color||'var(--muted)'};font-weight:600;margin-bottom:4px;">Score: ${j.fit_score ?? '–'} · ${j.fit_reasoning || (j.fit_score == null ? 'Keine KI-Bewertung' : '')}</div>
+        <div class="job-card-meta">${_esc(j.template_name)}</div>
+        <div class="fit-bar"><div class="fit-bar-fill" style="width:${parseInt(j.fit_score,10)||0}%;background:${_esc(j.fit_color||'var(--border)')};"></div></div>
+        <div style="font-size:11px;color:${_esc(j.fit_color||'var(--muted)')};font-weight:600;margin-bottom:4px;">Score: ${_esc(j.fit_score ?? '–')} · ${_esc(j.fit_reasoning || (j.fit_score == null ? 'Keine KI-Bewertung' : ''))}</div>
         ${j.status==='failed' ? `<div style="padding:8px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:6px;margin-bottom:6px;">
             <div style="font-size:10px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Fehlgeschlagen</div>
             <div style="font-size:11px;color:#fca5a5;">${_esc(j.error_message || 'Kein Fehlertext vorhanden')}</div>
           </div>` : ''}
-        ${j.manual_brief ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic;">"${j.manual_brief}"</div>` : ''}
-        ${Object.keys(j.vars_used||{}).length ? `<div style="margin-bottom:6px;">${Object.entries(j.vars_used).map(([k,v])=>`<span class="badge badge-blue" style="font-size:10px;margin-right:3px;">${k}: ${v}</span>`).join('')}</div>` : ''}
+        ${j.manual_brief ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic;">"${_esc(j.manual_brief)}"</div>` : ''}
+        ${Object.keys(j.vars_used||{}).length ? `<div style="margin-bottom:6px;">${Object.entries(j.vars_used).map(([k,v])=>`<span class="badge badge-blue" style="font-size:10px;margin-right:3px;">${_esc(k)}: ${_esc(v)}</span>`).join('')}</div>` : ''}
         <div id="dup-detail-${j.id}" style="display:none;font-size:10px;color:#f59e0b;margin-bottom:4px;"></div>
         <div class="job-card-actions">
           ${j.status==='done' ? `
@@ -4364,9 +4442,9 @@ async function loadReviewJobs() {
             <button class="btn btn-danger btn-xs" onclick="rejectJob(${j.id})">✕</button>
           ` : j.status==='failed' ? `
             <button class="btn btn-ghost btn-xs" onclick="retryGenerate(${j.template_id||'null'}, ${j.city_id||'null'})" title="Mit gleichem Template und Stadt neu starten">↻ Erneut versuchen</button>
-          ` : `<span class="badge ${j.status==='approved'||j.status==='sent'?'badge-green':j.status==='rejected'?'badge-red':'badge-gray'}">${j.status_label}</span>`}
+          ` : `<span class="badge ${j.status==='approved'||j.status==='sent'?'badge-green':j.status==='rejected'?'badge-red':'badge-gray'}">${_esc(j.status_label)}</span>`}
           ${j.post_id ? `<button class="btn btn-ghost btn-xs" onclick="openVorratFromJob(${j.post_id})" title="Angelegten Vorrat-Post öffnen">Im Vorrat öffnen</button>` : ''}
-          ${j.image_url ? `<a href="${j.image_url}" download class="btn btn-ghost btn-xs">↓</a>` : ''}
+          ${j.image_url ? `<a href="${_esc(j.image_url)}" download class="btn btn-ghost btn-xs">↓</a>` : ''}
           ${j.status==='approved' && !j.sent_to_content_os ? `<button class="btn btn-ghost btn-xs" onclick="resendJob(${j.id})">→ ContentOS</button>` : ''}
           <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteJob(${j.id})">🗑</button>
         </div>
@@ -4589,7 +4667,7 @@ async function loadCloudinaryStatus() {
 async function cloudinaryMigrate(btn) {
   btn.disabled = true;
   btn.textContent = '↑ Wird hochgeladen…';
-  const r = await fetch('/api/cloudinary/migrate', {method:'POST'}).then(r => r.json()).catch(() => null);
+  const r = await fetch('/api/cloudinary/migrate', {method:'POST', headers: CSRF_H}).then(r => r.json()).catch(() => null);
   btn.disabled = false;
   btn.textContent = '↑ Bestehende Bilder hochladen';
   const res = document.getElementById('cloudinary-migrate-result');
@@ -4630,10 +4708,17 @@ async function deleteUser(id) {
 }
 
 // ── MODALS ──
+// Registry offener Timer je Modal: jeder Schließweg (Knopf, Klick daneben) räumt gleich auf
+const _modalCloseHooks = {};
+function registerModalCloseHook(id, fn) { _modalCloseHooks[id] = fn; }
+function _runModalCloseHook(id) { const fn = _modalCloseHooks[id]; if (fn) { try { fn(); } catch(e) { /* egal */ } } }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) { _runModalCloseHook(id); document.getElementById(id).classList.remove('open'); }
+registerModalCloseHook('modal-carousel', () => {
+  if (_carouselPollTimer) { clearTimeout(_carouselPollTimer); _carouselPollTimer = null; }
+});
 document.querySelectorAll('.modal-overlay').forEach(el => {
-  el.addEventListener('click', e => { if(e.target === el) el.classList.remove('open'); });
+  el.addEventListener('click', e => { if(e.target === el) { _runModalCloseHook(el.id); el.classList.remove('open'); } });
 });
 
 // ── Auto-refresh stats every 30s ──
@@ -4789,7 +4874,7 @@ async function hlStartUpload() {
     fd.append('as_carousel', 'true');
     const carouselTitle = document.getElementById('hl-carousel-title')?.value.trim();
     if(carouselTitle) fd.append('carousel_title', carouselTitle);
-    const res = await fetch('/api/upload/batch', {method:'POST', body:fd}).then(r=>r.json());
+    const res = await fetch('/api/upload/batch', {method:'POST', headers: CSRF_H, body:fd}).then(r=>r.json());
     if(res.created) _hlUploaded = res.created;
     document.getElementById('hl-progress-bar').style.width = '100%';
     document.getElementById('hl-progress-text').textContent = `Karussell-Post mit ${_hlFiles.length} Slides erstellt ✓`;
@@ -4805,7 +4890,7 @@ async function hlStartUpload() {
       document.getElementById('hl-progress-bar').style.width = pct + '%';
       document.getElementById('hl-progress-text').textContent =
         `${Math.min(i + chunkSize, _hlFiles.length)} / ${_hlFiles.length} hochgeladen…`;
-      const res = await fetch('/api/upload/batch', {method:'POST', body:fd}).then(r=>r.json());
+      const res = await fetch('/api/upload/batch', {method:'POST', headers: CSRF_H, body:fd}).then(r=>r.json());
       if(res.created) _hlUploaded = _hlUploaded.concat(res.created);
     }
     document.getElementById('hl-progress-bar').style.width = '100%';
@@ -5146,7 +5231,7 @@ function renderVorratGrid(data) {
   }
   grid.innerHTML = data.map(p => {
     const st  = VORRAT_STATUS[p.status] || VORRAT_STATUS.entwurf;
-    const dot = `<span class="vorrat-status-dot" style="background:${st.color}"></span>`;
+    const dot = `<span class="vorrat-status-dot" style="background:${_esc(st.color)}"></span>`;
     // Slides (Karussell): [{url, kind:'image'|'video'}], Hauptbild = erstes Slide
     const slides = Array.isArray(p.slides) ? p.slides : [];
     const slideCount = p.slide_count || slides.length || (p.image_url ? 1 : 0);
@@ -5170,22 +5255,22 @@ function renderVorratGrid(data) {
       <div class="vorrat-img">${img}
         <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;">
           ${slideCount > 1 ? `<div style="background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;" title="${slideCount} Slides">1/${slideCount}</div>` : ''}
-          <div style="background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.post_type}</div>
+          <div style="background:rgba(0,0,0,.6);border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${_esc(p.post_type)}</div>
         </div>
-        <div style="position:absolute;top:6px;left:30px;background:${p.city_color||'#3b82f6'};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${p.city_name}</div>
+        <div style="position:absolute;top:6px;left:30px;background:${_esc(p.city_color||'#3b82f6')};border-radius:6px;padding:2px 7px;font-size:10px;color:#fff;">${_esc(p.city_name)}</div>
       </div>
       <div class="vorrat-body">
-        <div style="font-size:12px;font-weight:600;">${p.title || p.city_name + ' Meme'}</div>
-        ${p.caption ? `<div style="font-size:11px;color:var(--muted2);overflow:hidden;max-height:32px;">${p.caption.substring(0,80)}${p.caption.length>80?'…':''}</div>` : ''}
+        <div style="font-size:12px;font-weight:600;">${_esc(p.title || p.city_name + ' Meme')}</div>
+        ${p.caption ? `<div style="font-size:11px;color:var(--muted2);overflow:hidden;max-height:32px;">${_esc(p.caption.substring(0,80))}${p.caption.length>80?'…':''}</div>` : ''}
         ${p.scheduled_at ? `<div style="font-size:11px;color:#fbbf24;">📅 ${new Date(p.scheduled_at).toLocaleDateString('de-DE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
         ${p.engagement_rate ? `<div style="font-size:11px;color:#4ade80;">❤ ${p.perf_likes||0} · 💾 ${p.perf_saves||0} · ${p.engagement_rate}% ER</div>` : ''}
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-          ${dot}<span style="font-size:11px;color:${st.color};">${st.label}</span>
+          ${dot}<span style="font-size:11px;color:${_esc(st.color)};">${_esc(st.label)}</span>
           <div style="flex:1;"></div>
           ${slideCount > 1 ? `<button class="btn btn-xs btn-ghost" id="vslides-btn-${p.id}" onclick="toggleVorratSlides(${p.id})" title="Alle Slides anzeigen">Slides ${slidesOpen?'▼':'▶'}</button>` : ''}
           <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})" title="Bearbeiten">✏</button>
           <button class="btn btn-xs btn-ghost" onclick="openDuplicateModal(${p.id})" title="Duplizieren">⧉</button>
-          <button class="btn btn-xs btn-ghost" onclick="openPerfModal(${p.id},'${(p.title||p.city_name).replace(/'/g,"\\'")}')">📊</button>
+          <button class="btn btn-xs btn-ghost" onclick="openPerfModal(${p.id})" title="Performance eintragen">📊</button>
           <button class="btn btn-xs btn-ghost" onclick="deleteVorratPost(${p.id})" style="color:var(--muted)">✕</button>
         </div>
       </div>
@@ -5225,6 +5310,7 @@ function openVorratCreateModal() {
 
 async function openVorratEdit(id) {
   const p = _vorratData.find(x => x.id === id) || await api('GET', `/api/vorrat/${id}`);
+  if (!p || p.error) { toast('Post nicht gefunden – vermutlich schon gelöscht', 'error'); loadVorrat(); return; }
   document.getElementById('vorrat-modal-title').textContent = 'POST BEARBEITEN';
   document.getElementById('vorrat-edit-id').value = id;
   document.getElementById('vorrat-city').value   = p.city_id;
@@ -5287,9 +5373,11 @@ async function generateVorratCaption() {
 }
 
 function openPerfModal(id, title) {
-  document.getElementById('perf-post-id').value = id;
-  document.getElementById('perf-post-title').textContent = title;
   const p = _vorratData.find(x => x.id === id);
+  document.getElementById('perf-post-id').value = id;
+  // Titel nie über ein onclick-Attribut transportieren – hier aus den geladenen Daten holen
+  document.getElementById('perf-post-title').textContent =
+    title || (p && (p.title || p.city_name)) || ('Post ' + id);
   if (p) {
     document.getElementById('perf-likes').value       = p.perf_likes || '';
     document.getElementById('perf-comments').value    = p.perf_comments || '';
@@ -5363,7 +5451,7 @@ function renderKalender(posts, monthStart) {
     const isToday = dt.getTime() === today.getTime();
     const dayPosts = postsByDay[d] || [];
     const chips = dayPosts.map(p =>
-      `<div class="kal-post-chip" style="background:${p.city_color||'#6366f1'}" onclick="openVorratEdit(${p.id})" title="${p.city_name}: ${p.title||'Meme'}">${p.city_name}</div>`
+      `<div class="kal-post-chip" style="background:${_esc(p.city_color||'#6366f1')}" onclick="openVorratEdit(${p.id})" title="${_esc(p.city_name)}: ${_esc(p.title||'Meme')}">${_esc(p.city_name)}</div>`
     ).join('');
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}T10:00`;
     cells += `<div class="kal-cell${isToday?' today':''}">
@@ -5554,7 +5642,7 @@ async function saveCityFollowers(cityId, inputEl) {
   if (isNaN(val) || val < 0) return;
   const r = await fetch(`/api/city/${cityId}/followers`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: CSRF_JSON_H,
     body: JSON.stringify({ count: val }),
   }).then(r => r.json()).catch(() => null);
   if (!r || r.error) { toast(r?.error || 'Speichern fehlgeschlagen', 'error'); return; }
@@ -5590,7 +5678,7 @@ async function openCityDashboard(cityId) {
   document.getElementById('cdash-btn-trending').onclick = async () => {
     const btn = document.getElementById('cdash-btn-trending');
     btn.disabled = true; btn.textContent = '…';
-    const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST'}).then(r=>r.json());
+    const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST', headers: CSRF_H}).then(r=>r.json());
     btn.disabled = false; btn.textContent = 'Trending laden';
     const msg = r.error ? r.error : `${r.added} neu, ${r.skipped||0} übersprungen für ${r.city}`;
     toast(msg, r.error ? 'error' : 'success');
@@ -5768,7 +5856,7 @@ async function bulkSetStatus() {
   if (!status) { toast('Bitte Status auswählen', 'error'); return; }
   if (!_vorratSelected.size) return;
   const r = await fetch('/api/vorrat/bulk', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: CSRF_JSON_H,
     body: JSON.stringify({ ids: [..._vorratSelected], action: 'status', status })
   }).then(r => r.json());
   if (r.error) { toast(r.error, 'error'); return; }
@@ -5780,7 +5868,7 @@ async function bulkArchive() {
   if (!_vorratSelected.size) return;
   if (!confirm(`${_vorratSelected.size} Posts archivieren?`)) return;
   const r = await fetch('/api/vorrat/bulk', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: CSRF_JSON_H,
     body: JSON.stringify({ ids: [..._vorratSelected], action: 'archive' })
   }).then(r => r.json());
   toast(`${r.affected} Posts archiviert`, 'info');
@@ -5791,7 +5879,7 @@ async function bulkDelete() {
   if (!_vorratSelected.size) return;
   if (!confirm(`${_vorratSelected.size} Posts unwiderruflich löschen?`)) return;
   const r = await fetch('/api/vorrat/bulk', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: CSRF_JSON_H,
     body: JSON.stringify({ ids: [..._vorratSelected], action: 'delete' })
   }).then(r => r.json());
   toast(`${r.affected} Posts gelöscht`, 'info');
@@ -5814,7 +5902,7 @@ async function _startZipExport(params) {
   try {
     const r = await fetch('/api/vorrat/export-zip/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: CSRF_JSON_H,
       body: JSON.stringify(params),
     }).then(r => r.json());
     if (!r.job_id) { toast('ZIP-Start fehlgeschlagen', 'error'); return; }
@@ -5875,7 +5963,7 @@ async function saveDuplicate() {
   const cityId   = parseInt(document.getElementById('dup-city').value);
   const title    = document.getElementById('dup-title').value.trim();
   const r = await fetch(`/api/vorrat/${sourceId}/duplicate`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: CSRF_JSON_H,
     body: JSON.stringify({ city_id: cityId, title: title || undefined })
   }).then(r => r.json());
   if (r.error) { toast(r.error, 'error'); return; }
@@ -6027,7 +6115,7 @@ function _trendCard(t) {
 async function refreshTrending(cityId, btn) {
   const orig = btn.textContent;
   btn.textContent = '…'; btn.disabled = true;
-  const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST'}).then(r => r.json());
+  const r = await fetch(`/api/trending/refresh/${cityId}`, {method:'POST', headers: CSRF_H}).then(r => r.json());
   btn.textContent = orig; btn.disabled = false;
   if (r.error) { toast(r.error, 'error'); return; }
   toast(`${r.added} neue Themen für ${r.city} geladen`, 'success');
@@ -6055,7 +6143,7 @@ async function openTrendIdea(topicId) {
 
 async function _fetchTrendIdea(topicId, bodyEl) {
   bodyEl.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
-  const r = await fetch(`/api/trending/${topicId}/idea`, {method:'POST'}).then(r => r.json());
+  const r = await fetch(`/api/trending/${topicId}/idea`, {method:'POST', headers: CSRF_H}).then(r => r.json());
   if (r.error) { bodyEl.innerHTML = `<div class="empty"><p>${r.error}</p></div>`; return; }
   const idx = _trendTopics.findIndex(t => t.id === topicId);
   if (idx >= 0) _trendTopics[idx] = r.topic;
@@ -6073,7 +6161,7 @@ function _showIdeaInModal(ideaText, bodyEl) {
 }
 
 async function toggleTrendIgnore(id) {
-  const r = await fetch(`/api/trending/${id}/ignore`, {method:'POST'}).then(r => r.json());
+  const r = await fetch(`/api/trending/${id}/ignore`, {method:'POST', headers: CSRF_H}).then(r => r.json());
   const t = _trendTopics.find(x => x.id === id);
   if (t) t.ignored = r.ignored;
   _renderTrending(_trendTopics);
@@ -6083,7 +6171,7 @@ async function toggleTrendIgnore(id) {
 
 async function deleteTrend(id) {
   if (!confirm('Thema löschen?')) return;
-  await fetch(`/api/trending/${id}`, {method:'DELETE'});
+  await fetch(`/api/trending/${id}`, {method:'DELETE', headers: CSRF_H});
   _trendTopics = _trendTopics.filter(t => t.id !== id);
   _renderTrending(_trendTopics);
   _updateTrendBadge(_trendTopics);
@@ -6102,7 +6190,7 @@ async function saveTrendManual() {
   if (!keyword) { toast('Schlagwort fehlt', 'error'); return; }
   const r = await fetch('/api/trending', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: CSRF_JSON_H,
     body: JSON.stringify({
       keyword,
       description: document.getElementById('tm-desc').value.trim(),
@@ -6385,7 +6473,7 @@ async function saveRecycleJob() {
 
   const r = await fetch('/api/recycle/jobs', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: CSRF_JSON_H,
     body: JSON.stringify({
       source_post_id: sourceId,
       new_caption: caption,
@@ -6412,7 +6500,7 @@ async function generateRcCaption() {
 }
 
 async function generateRcCaptionForJob(jobId) {
-  const r = await fetch(`/api/recycle/caption/${jobId}`, {method:'POST'}).then(r => r.json());
+  const r = await fetch(`/api/recycle/caption/${jobId}`, {method:'POST', headers: CSRF_H}).then(r => r.json());
   if (r.error) { toast(r.error, 'error'); return; }
   const box = document.getElementById('rc-caption-suggestions');
   const inputId = `rjcap-${jobId}`;
@@ -6439,7 +6527,7 @@ async function updateRjCaption(jobId) {
   if (!inp) return;
   await fetch(`/api/recycle/jobs/${jobId}`, {
     method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    headers: CSRF_JSON_H,
     body: JSON.stringify({ new_caption: inp.value })
   });
 }
@@ -6449,7 +6537,7 @@ async function approveRcJob(jobId) {
   const schedFor = job?.scheduled_for;
   const r = await fetch(`/api/recycle/jobs/${jobId}/approve`, {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: CSRF_JSON_H,
     body: JSON.stringify({ scheduled_for: schedFor })
   }).then(r => r.json());
   if (r.error) { toast(r.error, 'error'); return; }
@@ -6461,7 +6549,7 @@ async function rejectRcJob(jobId) {
   const reason = prompt('Grund für Ablehnung (optional):') ?? '';
   await fetch(`/api/recycle/jobs/${jobId}/reject`, {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: CSRF_JSON_H,
     body: JSON.stringify({ reason })
   });
   toast('Abgelehnt', 'info');
@@ -7066,6 +7154,8 @@ async function loadSettingsPage() {
     tToken.value = '';
     tToken.placeholder = d.telegram_token_set ? `gesetzt (…${d.telegram_token_hint || ''})` : '123456:ABC-DEFxxx';
   }
+  const clrBtn = document.getElementById('btn-telegram-token-clear');
+  if (clrBtn) clrBtn.style.display = d.telegram_token_set ? '' : 'none';
   if (tChat  && d.telegram_chat_id) tChat.value = d.telegram_chat_id;
   if (aDay   && d.alert_threshold_days) aDay.value = d.alert_threshold_days;
   const cosUrl = document.getElementById('settings-content-os-url');
@@ -7082,6 +7172,16 @@ async function saveTelegramSettings() {
   const r = await api('POST', '/api/settings', body);
   toast(r.ok ? 'Telegram-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
   if (r.ok) loadSettingsPage();
+}
+
+// Gespeicherten Bot-Token löschen (leeres Feld heißt „unverändert“, deshalb ein eigener Weg)
+async function clearTelegramToken() {
+  if (!confirm('Gespeicherten Bot-Token entfernen?\n\nDanach bleiben Digest, Erinnerungen und Warnungen still, bis ein neuer Token gespeichert wird.')) return;
+  const r = await api('POST', '/api/settings', { telegram_token_clear: true });
+  if (!r || r.error) { toast((r && r.error) || 'Entfernen fehlgeschlagen', 'error'); return; }
+  const f = document.getElementById('settings-telegram-token'); if (f) f.value = '';
+  toast('Token entfernt', 'success');
+  loadSettingsPage();
 }
 
 // ── Automatik (B5, GET/POST /api/automation) ──

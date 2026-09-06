@@ -533,8 +533,12 @@ class BuyablePage(db.Model):
 class MemoInspirationSource(db.Model):
     """Instagram-Seiten die wir für Meme-Inspiration beobachten."""
     __tablename__ = 'memo_inspiration_source'
+    # Derselbe Handle kann auf mehreren Plattformen existieren (@stadt auf Instagram UND TikTok),
+    # deshalb ist erst Name + Plattform eindeutig – nicht der Name allein.
+    __table_args__ = (db.UniqueConstraint('username', 'platform',
+                                          name='uq_inspo_source_user_platform'),)
     id         = db.Column(db.Integer, primary_key=True)
-    username   = db.Column(db.String(100), nullable=False, unique=True)
+    username   = db.Column(db.String(100), nullable=False)
     city_id    = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=True, index=True)
     platform   = db.Column(db.String(20), default='instagram')  # instagram | tiktok | …
     notes      = db.Column(db.Text)
@@ -786,6 +790,20 @@ class MemeEvent(db.Model):
         d = date.fromisoformat(s)
         return d.month, d.day
 
+    @staticmethod
+    def _safe_date(year, month, day):
+        """date(), das den 29.02. in Nicht-Schaltjahren auf den 28.02. legt (statt ValueError zu
+        werfen – dadurch war ein solches Event drei von vier Jahren unsichtbar). Gleiches gilt
+        für einen 31., den es im Monat nicht gibt."""
+        from datetime import date
+        d = int(day or 1)
+        while d > 1:
+            try:
+                return date(year, month, d)
+            except ValueError:
+                d -= 1
+        return date(year, month, 1)
+
     def _window(self, today):
         """(start, ende, wiederkehrend) als date-Objekte für das aktuelle Jahr bzw. das feste Datum.
         None, wenn kein/ungültiges Datum."""
@@ -795,10 +813,10 @@ class MemeEvent(db.Model):
         try:
             if self.recurring:
                 mf, df_ = self._month_day(self.date_from)
-                start = date(today.year, mf, df_)
+                start = self._safe_date(today.year, mf, df_)
                 if self.date_to:
                     mt, dt_ = self._month_day(self.date_to)
-                    end = date(today.year, mt, dt_)
+                    end = self._safe_date(today.year, mt, dt_)
                 else:
                     end = start
                 return start, end, True
@@ -836,7 +854,7 @@ class MemeEvent(db.Model):
             return 0
         if rec and start < today:
             try:
-                start = date(today.year + 1, start.month, start.day)
+                start = self._safe_date(today.year + 1, start.month, start.day)
             except Exception:
                 return None
         return (start - today).days

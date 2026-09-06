@@ -8,6 +8,11 @@ services:
     # (--threads hält die App reaktionsfähig, während Jobs/Renders laufen)
     startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180
     envVars:
+      # Render liest .python-version (runtime.txt ist Heroku-Konvention und wird ignoriert);
+      # PYTHON_VERSION ist die zweite Sicherung. Ohne beides baut Render mit der neuesten
+      # Python-Version, für die es kein Pillow-10.4.0-Wheel gibt.
+      - key: PYTHON_VERSION
+        value: "3.11.11"
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_API_KEY
@@ -45,4 +50,6 @@ services:
     disk:
       name: memeos-data
       mountPath: /opt/render/project/src/instance
-      sizeGB: 1
+      # DB + Uploads + Renders + Exporte + Importe liegen alle hier; ein Stapel über 100 Städte
+      # mit 5 Slides belegt schon rund 0,66 GB.
+      sizeGB: 10

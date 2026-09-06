@@ -139,6 +139,13 @@ def _appmod():
         mod = sys.modules.get(getattr(fa, 'import_name', '') or '')
         if mod is not None and hasattr(mod, '_DATA_ROOT'):
             return mod
+    # Ohne Flask-App (z. B. beim Start): gleiche Reihenfolge wie in den übrigen Modulen
+    main = sys.modules.get('__main__')
+    if main is not None and hasattr(main, '_DATA_ROOT'):
+        return main
+    mod = sys.modules.get('app')
+    if mod is not None:
+        return mod
     import app as appmod   # noqa: WPS433 – bewusst erst hier
     return appmod
 

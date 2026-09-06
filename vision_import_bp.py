@@ -11,17 +11,19 @@ Routen (Login):
   GET  /api/templates/import/image/help   Anleitungstext
 
 Regeln:
-  - app.py wird NIE auf Modulebene importiert (zirkulärer Import); in Funktionen 'import app as appmod'.
+  - app.py wird NIE auf Modulebene importiert (zirkulärer Import); Zugriff nur über _appmod().
   - Ohne ANTHROPIC_API_KEY oder bei KI-Fehler: Template trotzdem anlegen, analysis null, hint setzen.
   - Dateien landen unter <DATA_ROOT>/uploads/, nie unter static/.
 """
 import os
 import io
 import re
+import sys
 import json
 import time
 import base64
 import logging
+import importlib
 from datetime import datetime
 from functools import wraps
 
@@ -58,10 +60,18 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _appmod():
-    """app.py nur zur Laufzeit laden (kein zirkulärer Import auf Modulebene)."""
+    """app.py nur zur Laufzeit laden (kein zirkulärer Import auf Modulebene).
+    Läuft app.py als __main__ (python3 app.py), liegt es unter sys.modules['__main__'];
+    ein 'import app' würde die Datei ein zweites Mal ausführen (zweite Flask-App, Seeds,
+    Migrationen). Darum zuerst __main__ und sys.modules prüfen."""
+    main = sys.modules.get('__main__')
+    if main is not None and hasattr(main, '_DATA_ROOT'):
+        return main
+    mod = sys.modules.get('app')
+    if mod is not None:
+        return mod
     try:
-        import app as appmod
-        return appmod
+        return importlib.import_module('app')
     except Exception as ex:  # pragma: no cover
         log.warning(f'vision_import: app-Modul nicht ladbar: {ex}')
         return None

@@ -273,6 +273,7 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
 <script>
 'use strict';
 const TID = {{ template_id|tojson }};
+const CSRF = '{{ csrf_token }}';
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -303,7 +304,8 @@ function toast(msg, type) {
 }
 async function api(method, url, body, opts) {
   opts = opts || {};
-  const init = {method, headers: {}, signal: opts.signal};
+  // Jeder schreibende Aufruf unter /api/ braucht den Token – auch die FormData-Uploads
+  const init = {method, headers: {'X-CSRF-Token': CSRF}, signal: opts.signal};
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   const r = await fetch(url, init);
@@ -426,6 +428,10 @@ function updateUndoButtons() {
   $('#btn-redo').disabled = !S.redo.length;
 }
 function afterStructuralChange() {
+  // Der Canvas steckt in der Konfiguration – nach Undo/Redo muss die Bühne ihm folgen
+  const cc = S.config.canvas;
+  if (cc && isNum(cc.width) && isNum(cc.height)) S.canvas = {width: num(cc.width, 1080), height: num(cc.height, 1350)};
+  else S.canvas = S.imageSize || S.canvas || {width: 1080, height: 1350};
   if (S.selectedId && !selected()) S.selectedId = null;
   S.propsKey = '';
   renderAll();
@@ -455,6 +461,8 @@ async function load() {
   S.config.elements.forEach((el, i) => { if (!el.id) el.id = 'el' + (i + 1); if (!el.type) el.type = 'text'; });
   S.imageSize = d.image_size || null;
   S.canvas = d.canvas || S.imageSize || (S.config.canvas || {width: 1080, height: 1350});
+  // Canvas immer in der Konfiguration führen: sonst kennt ein Undo-Schnappschuss ihn nicht
+  S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
   S.bgUrl = d.background_url;
   S.fonts = d.fonts || []; S.variables = d.variables || []; S.cities = d.cities || [];
   S.brand = d.brand_example || S.brand; S.aiAvailable = !!d.ai_available;
@@ -659,9 +667,12 @@ function positionElementDom(el) {
     if (!elDiv) { select(null); return; }
     const id = elDiv.dataset.id; const el = S.config.elements.find(x => x.id === id); if (!el) return;
     if (id !== S.selectedId) select(id);
-    if (!isNum(el.height)) el.height = Math.round(parseFloat(elDiv.style.height) / S.scale);
+    // Höhe nur für die Resize-Mathematik aus der Bühne lesen – nie ins Element schreiben,
+    // sonst macht schon ein Klick die Konfiguration ungespeichert (und der Wert hinge am Zoom)
+    const domH = Math.round((parseFloat(elDiv.style.height) || 0) / (S.scale || 1));
     drag = {id, mode: handle ? 'resize' : 'move', h: handle ? handle.dataset.h : null, sx: e.clientX, sy: e.clientY,
-            start: {x: num(el.x, 0), y: num(el.y, 0), w: num(el.width, 10), h: num(el.height, 10)}, moved: false};
+            start: {x: num(el.x, 0), y: num(el.y, 0), w: num(el.width, 10),
+                    h: isNum(el.height) ? num(el.height, 10) : Math.max(10, domH)}, moved: false};
     stage.setPointerCapture(e.pointerId); e.preventDefault();
   });
   stage.addEventListener('pointermove', e => {

@@ -9,16 +9,21 @@ Blueprint 'pptx_import', Routen (Login):
   POST /api/templates/import/canva   JSON {design_url, name, category, series, dry_run}
   GET  /api/templates/import/help    Platzhalter-Anleitung + Variablenliste
 
-Kein app-Import auf Modulebene (zirkulär) – innerhalb der Funktionen 'import app as appmod'.
+Kein app-Import auf Modulebene (zirkulär) – Zugriff nur über _appmod().
 """
 import io
 import os
 import re
+import sys
 import json
 import time
+import socket
 import logging
+import ipaddress
+import importlib
 from datetime import datetime
 from functools import wraps
+from urllib.parse import urljoin, urlparse
 
 import requests
 from flask import Blueprint, request, jsonify, session, redirect
@@ -47,6 +52,10 @@ EMU_PER_PT = 12700
 CANVA_API = 'https://api.canva.com/rest/v1'
 CANVA_EXPORT_TIMEOUT_S = 60
 CANVA_POLL_INTERVAL_S = 2
+CANVA_MAX_PPTX_BYTES = 80 * 1024 * 1024      # Obergrenze für den Export-Download
+CANVA_MAX_REDIRECTS = 3
+CANVA_SHORT_HOSTS = ('canva.link', 'www.canva.link')
+CANVA_LINK_HOSTS = ('canva.com', 'www.canva.com', 'canva.link', 'www.canva.link')
 
 PLACEHOLDER_RE = re.compile(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}')
 CITY_ALIASES = {'stadt': 'city_name', 'city': 'city_name', 'stadtname': 'city_name'}
@@ -68,13 +77,30 @@ EFFECTS_HINT = 'Konturen/Schatten aus Canva kommen nicht mit, im Studio ergänze
 # Hilfen: Pfade, Login, Schriften
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _data_root():
+def _appmod():
+    """app.py als Modul – nur zur Laufzeit (zirkulärer Import). Läuft app.py als __main__
+    (python3 app.py), liegt es unter sys.modules['__main__']; ein 'import app' würde die Datei
+    ein zweites Mal ausführen (zweite Flask-App, Seeds, Migrationen). Darum zuerst __main__
+    und sys.modules prüfen. Liefert None, wenn app nicht ladbar ist."""
+    main = sys.modules.get('__main__')
+    if main is not None and hasattr(main, '_DATA_ROOT'):
+        return main
+    mod = sys.modules.get('app')
+    if mod is not None:
+        return mod
     try:
-        import app as appmod
-        return appmod._DATA_ROOT
-    except Exception:
-        base = os.path.dirname(os.path.abspath(__file__))
-        return os.getenv('MEMEOS_DATA_ROOT') or os.path.join(base, 'instance')
+        return importlib.import_module('app')
+    except Exception as ex:  # pragma: no cover
+        log.warning('pptx_import: app-Modul nicht ladbar: %s', ex)
+        return None
+
+
+def _data_root():
+    root = getattr(_appmod(), '_DATA_ROOT', None)
+    if root:
+        return root
+    base = os.path.dirname(os.path.abspath(__file__))
+    return os.getenv('MEMEOS_DATA_ROOT') or os.path.join(base, 'instance')
 
 
 def _dir(sub):
@@ -664,6 +690,29 @@ def _safe_name(s, fallback='Import'):
     return s[:180] or fallback
 
 
+def _series_position_offset(series_name, warnings):
+    """Höchste belegte Position der Serie – neue Folien zählen darüber weiter.
+    Meldet außerdem bereits doppelt belegte Positionen als Warnung. 0, wenn die Serie neu ist."""
+    if not series_name:
+        return 0
+    try:
+        existing = MemeTemplate.query.filter(MemeTemplate.series == series_name).all()
+    except Exception as ex:      # pragma: no cover – DB nicht erreichbar
+        log.warning('Serienpositionen nicht lesbar: %s', ex)
+        return 0
+    if not existing:
+        return 0
+    used = [t.series_position for t in existing if t.series_position is not None]
+    dups = sorted({p for p in used if used.count(p) > 1})
+    if dups:
+        warnings.add(f'Serie „{series_name}“ hat schon doppelte Positionen '
+                     f'({", ".join(str(p) for p in dups)}) – Reihenfolge im Studio prüfen')
+    offset = max(used) if used else len(existing)
+    warnings.add(f'Serie „{series_name}“ hat bereits {len(existing)} Folie(n) – '
+                 f'die neuen bekommen Position {offset + 1} aufwärts')
+    return offset
+
+
 def import_slides(slides, name, category='allgemein', series=None, dry_run=False,
                   source='PPTX', canva_url=''):
     """Folien-Analysen in MemeTemplate-Zeilen überführen (eine Transaktion). Liefert das
@@ -675,6 +724,9 @@ def import_slides(slides, name, category='allgemein', series=None, dry_run=False
     global_warnings = _Warnings()
     if not slides:
         global_warnings.add('Die Datei enthält keine Folien')
+    # Import in eine bestehende Serie: hinten anhängen statt wieder bei 1 zu beginnen.
+    # Zwei Templates mit derselben series_position wären sonst im Karussell nicht unterscheidbar.
+    series_offset = _series_position_offset(series_name, global_warnings)
     results = []
     configs = []
     for s in slides:
@@ -702,10 +754,7 @@ def import_slides(slides, name, category='allgemein', series=None, dry_run=False
     upload_dir = _dir('uploads')
     ts = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
     written = []
-    try:
-        import app as appmod
-    except Exception:
-        appmod = None
+    appmod = _appmod()
     try:
         for s, res, config in zip(slides, results, configs):
             fname = f'import_{ts}_{s["slide"]}.png'
@@ -734,7 +783,7 @@ def import_slides(slides, name, category='allgemein', series=None, dry_run=False
                 example_text=(' | '.join(s['texts']))[:300],
                 notes=notes,
                 series=series_name,
-                series_position=(s['slide'] if series_name else None),
+                series_position=(series_offset + s['slide'] if series_name else None),
             )
             db.session.add(t)
             db.session.flush()
@@ -766,8 +815,125 @@ def _truthy(v):
 _DESIGN_ID_RE = re.compile(r'canva\.com/design/([A-Za-z0-9_-]+)')
 
 
+def _host_allowed(url, hosts):
+    """http(s)-URL, deren Host genau einer der erlaubten ist. Schützt davor, dass eine Eingabe
+    wie http://169.254.169.254/…?ref=https://canva.link/x als Canva-Link durchgeht."""
+    try:
+        parts = urlparse(str(url or '').strip())
+    except ValueError:
+        return False
+    if parts.scheme not in ('http', 'https'):
+        return False
+    try:
+        host = (parts.hostname or '').lower()
+    except ValueError:
+        return False
+    return host in hosts
+
+
+def _is_public_url(url):
+    """http(s)-URL, deren Namen alle auf öffentliche Adressen zeigen (SSRF-Schutz).
+    Lokaler Ersatz, falls app._safe_fetch_url (noch) nicht existiert."""
+    try:
+        parts = urlparse(str(url or '').strip())
+    except ValueError:
+        return False
+    if parts.scheme not in ('http', 'https'):
+        return False
+    try:
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return False
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, port or (443 if parts.scheme == 'https' else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError, OSError):
+        return False
+    for info in infos or []:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                or ip.is_multicast or ip.is_unspecified):
+            return False
+    return bool(infos)
+
+
+def _fetch_public_bytes(url, timeout=60, max_bytes=CANVA_MAX_PPTX_BYTES):
+    """Datei von einer öffentlichen http(s)-URL laden, Weiterleitungen einzeln geprüft,
+    Größe begrenzt. Liefert Bytes oder wirft ValueError/requests.RequestException."""
+    current = str(url or '').strip()
+    for _ in range(CANVA_MAX_REDIRECTS + 1):
+        if not _is_public_url(current):
+            raise ValueError('Ziel ist keine öffentliche http/https-Adresse')
+        resp = requests.get(current, timeout=timeout, allow_redirects=False, stream=True)
+        try:
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get('Location')
+                if not location:
+                    raise ValueError('Weiterleitung ohne Ziel')
+                current = urljoin(current, location)
+                continue
+            if not resp.ok:
+                raise ValueError(f'HTTP {resp.status_code}')
+            data = b''
+            for chunk in resp.iter_content(1 << 16):
+                data += chunk
+                if len(data) > max_bytes:
+                    raise ValueError(f'Datei größer als {max_bytes // (1024 * 1024)} MB')
+        finally:
+            resp.close()
+        return data
+    raise ValueError('Zu viele Weiterleitungen')
+
+
+def _safe_fetch_bytes(url, timeout=60, max_bytes=CANVA_MAX_PPTX_BYTES):
+    """Bevorzugt app._safe_fetch_url (eine Prüfung für die ganze App), sonst der lokale Ersatz."""
+    fn = getattr(_appmod(), '_safe_fetch_url', None)
+    if callable(fn):
+        try:
+            result = fn(url, timeout=timeout, max_bytes=max_bytes)
+        except (TypeError, AttributeError) as ex:      # andere Signatur als erwartet
+            log.warning('app._safe_fetch_url nicht nutzbar (%s), lokale Prüfung', ex)
+        except (requests.RequestException, ValueError):
+            raise
+        except Exception as ex:                        # z. B. app.UnsafeUrlError
+            raise ValueError(str(ex) or type(ex).__name__)
+        else:
+            data = _as_bytes(result)
+            if data is not None:
+                return data
+            log.warning('app._safe_fetch_url lieferte keine Bytes, lokale Prüfung')
+    return _fetch_public_bytes(url, timeout=timeout, max_bytes=max_bytes)
+
+
+def _as_bytes(result):
+    """Rückgabe von _safe_fetch_url in Bytes wandeln (Bytes, Response oder Dateiobjekt)."""
+    if isinstance(result, (bytes, bytearray)):
+        return bytes(result)
+    content = getattr(result, 'content', None)
+    if isinstance(content, (bytes, bytearray)):
+        return bytes(content)
+    read = getattr(result, 'read', None)
+    if callable(read):
+        data = read()
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+    if isinstance(result, tuple):
+        for item in result:
+            if isinstance(item, (bytes, bytearray)):
+                return bytes(item)
+    return None
+
+
 def canva_design_id(url, resolve_short_links=True):
-    """Design-ID aus Canva-URL (oder canva.link-Kurzlink, wird per Redirect aufgelöst)."""
+    """Design-ID aus Canva-URL (oder canva.link-Kurzlink, wird per Redirect aufgelöst).
+
+    Der Kurzlink wird nur abgerufen, wenn der HOST der Eingabe canva.link ist – nicht schon,
+    wenn irgendwo in der Eingabe eine canva.link-Adresse vorkommt."""
     s = (url or '').strip()
     if not s:
         return None
@@ -776,15 +942,29 @@ def canva_design_id(url, resolve_short_links=True):
         return m.group(1)
     if re.fullmatch(r'[A-Za-z0-9_-]{8,}', s):
         return s
-    if resolve_short_links and re.search(r'https?://(www\.)?canva\.link/', s):
-        try:
-            r = requests.get(s, allow_redirects=True, timeout=15,
-                             headers={'User-Agent': 'MemeOS/1.0'})
-            m = _DESIGN_ID_RE.search(r.url or '')
+    if resolve_short_links and _host_allowed(s, CANVA_SHORT_HOSTS):
+        current = s
+        for _ in range(CANVA_MAX_REDIRECTS + 1):
+            try:
+                r = requests.get(current, allow_redirects=False, timeout=15,
+                                 headers={'User-Agent': 'MemeOS/1.0'})
+            except Exception as ex:
+                log.warning('canva.link nicht auflösbar: %s', ex)
+                return None
+            m = _DESIGN_ID_RE.search(r.url or current)
             if m:
                 return m.group(1)
-        except Exception as ex:
-            log.warning('canva.link nicht auflösbar: %s', ex)
+            if r.status_code not in (301, 302, 303, 307, 308):
+                break
+            target = urljoin(current, r.headers.get('Location') or '')
+            # Weiterleitungsziel muss wieder bei Canva liegen, sonst brechen wir ab
+            if not _host_allowed(target, CANVA_LINK_HOSTS):
+                log.warning('canva.link leitet auf ein fremdes Ziel weiter, abgebrochen')
+                return None
+            m = _DESIGN_ID_RE.search(target)
+            if m:
+                return m.group(1)
+            current = target
     return None
 
 
@@ -849,15 +1029,13 @@ def canva_export_pptx(design_id, token, dest_dir, timeout_s=CANVA_EXPORT_TIMEOUT
     os.makedirs(dest_dir, exist_ok=True)
     path = os.path.join(dest_dir, f'canva_{re.sub(r"[^A-Za-z0-9_-]", "", design_id)}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pptx')
     try:
-        with requests.get(urls[0], stream=True, timeout=60) as dl:
-            if not dl.ok:
-                return None, f'Download der PPTX fehlgeschlagen ({dl.status_code})'
-            with open(path, 'wb') as fh:
-                for chunk in dl.iter_content(1 << 16):
-                    if chunk:
-                        fh.write(chunk)
+        data = _safe_fetch_bytes(urls[0], timeout=60, max_bytes=CANVA_MAX_PPTX_BYTES)
     except requests.RequestException as ex:
         return None, f'Download der PPTX fehlgeschlagen: {ex.__class__.__name__}'
+    except ValueError as ex:
+        return None, f'Download der PPTX fehlgeschlagen: {ex}'
+    with open(path, 'wb') as fh:
+        fh.write(data)
     return path, None
 
 
@@ -889,8 +1067,7 @@ def api_import_help():
 
 def _canva_connected():
     try:
-        import app as appmod
-        return bool(appmod._canva_is_connected())
+        return bool(_appmod()._canva_is_connected())
     except Exception:
         return False
 
@@ -953,8 +1130,7 @@ def api_import_canva():
     if not design_url:
         return jsonify({'error': 'design_url fehlt'}), 400
     try:
-        import app as appmod
-        token = appmod._canva_get_token()
+        token = _appmod()._canva_get_token()
     except Exception as ex:
         log.warning('Canva-Token nicht abrufbar: %s', ex)
         token = None

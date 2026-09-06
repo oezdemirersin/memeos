@@ -32,12 +32,15 @@ Nur Pillow ist Pflicht. cv2 + numpy werden für cover:'inpaint' genutzt, wenn vo
 (sonst Fallback auf 'auto'). requests wird nur für Bild-URLs gebraucht.
 """
 import io
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import statistics
 import threading
+from urllib.parse import urljoin, urlparse
 
 from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -59,6 +62,13 @@ FONT_BASE_DIR = os.path.join(_BASE_DIR, 'fonts')                       # mitgeli
 _DATA_ROOT = os.getenv('MEMEOS_DATA_ROOT') or os.path.join(_BASE_DIR, 'instance')
 USER_FONT_DIR = os.path.join(_DATA_ROOT, 'fonts')                      # eigene Uploads
 _UPLOAD_DIR = os.path.join(_DATA_ROOT, 'uploads')
+_RENDER_DIR = os.path.join(_DATA_ROOT, 'renders')
+
+# Bildquellen: nur diese Ordner sind erlaubt, und nur öffentlich erreichbare http(s)-Ziele.
+_IMAGE_DIRS = (_UPLOAD_DIR, _RENDER_DIR, USER_FONT_DIR, FONT_BASE_DIR)
+_IMAGE_MAX_BYTES = 25 * 1024 * 1024
+_IMAGE_TIMEOUT = 10
+_IMAGE_MAX_REDIRECTS = 3
 
 _FONT_EXTS = ('.ttf', '.otf', '.ttc')
 
@@ -601,16 +611,25 @@ _VAR_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*)\}')
 
 
 def _open_background(bg_path):
-    """bg_path: Dateipfad, Bytes, Dateiobjekt oder PIL-Image. Fehlt die Datei -> FileNotFoundError."""
+    """bg_path: Dateipfad, Bytes, Dateiobjekt oder PIL-Image. Fehlt die Datei oder ist sie
+    nicht lesbar (leer, abgeschnitten, kein Bildformat) -> FileNotFoundError. Das ist der
+    einzige Fehler, der nach außen geht; die Aufrufer fangen genau diesen ab."""
     if isinstance(bg_path, Image.Image):
         return bg_path.convert('RGBA')
     if isinstance(bg_path, (bytes, bytearray)):
-        return Image.open(io.BytesIO(bg_path)).convert('RGBA')
-    if hasattr(bg_path, 'read'):
-        return Image.open(bg_path).convert('RGBA')
-    if not bg_path or not os.path.isfile(str(bg_path)):
-        raise FileNotFoundError(f'Hintergrundbild fehlt: {bg_path!r}')
-    return Image.open(str(bg_path)).convert('RGBA')
+        source, label = io.BytesIO(bg_path), f'{len(bg_path)} Bytes'
+    elif hasattr(bg_path, 'read'):
+        source, label = bg_path, getattr(bg_path, 'name', 'Dateiobjekt')
+    else:
+        if not bg_path or not os.path.isfile(str(bg_path)):
+            raise FileNotFoundError(f'Hintergrundbild fehlt: {bg_path!r}')
+        source = label = str(bg_path)
+    try:
+        return Image.open(source).convert('RGBA')
+    except FileNotFoundError:
+        raise
+    except Exception as ex:
+        raise FileNotFoundError(f'Hintergrundbild nicht lesbar: {label} ({type(ex).__name__}: {ex})')
 
 
 def _value_for(el, values):
@@ -751,20 +770,97 @@ def _render_text(img, el, values, brand):
     return img
 
 
+def _is_safe_public_url(url):
+    """True, wenn die URL http(s) ist und JEDE aufgelöste Adresse öffentlich ist.
+
+    Gleiche Prüfung wie app._safe_fetch_url, hier lokal umgesetzt: memeos_render importiert
+    bewusst kein app.py. Verhindert, dass eine im Studio eingetippte oder in einer
+    Template-Config gespeicherte URL den Server auf localhost, ins interne Netz oder auf
+    den Metadatendienst der Cloud (169.254.169.254) schicken kann."""
+    try:
+        parts = urlparse(str(url or ''))
+    except ValueError:
+        return False
+    if parts.scheme not in ('http', 'https'):
+        return False
+    try:
+        host, port = parts.hostname, parts.port
+    except ValueError:          # unbrauchbare Portangabe
+        return False
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, port or (443 if parts.scheme == 'https' else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError, OSError):
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
+def _fetch_image_url(url):
+    """Bild von einer öffentlichen http(s)-URL holen. Weiterleitungen werden einzeln geprüft
+    (sonst ließe sich die Zielprüfung per Redirect umgehen), die Größe ist begrenzt."""
+    import requests  # nur bei URLs nötig
+    current = str(url).strip()
+    for _ in range(_IMAGE_MAX_REDIRECTS + 1):
+        if not _is_safe_public_url(current):
+            raise ValueError(f'Bild-URL nicht erlaubt (kein öffentliches http/https-Ziel): {current}')
+        resp = requests.get(current, timeout=_IMAGE_TIMEOUT, allow_redirects=False, stream=True)
+        try:
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get('Location')
+                if not location:
+                    raise ValueError('Weiterleitung ohne Ziel')
+                current = urljoin(current, location)
+                continue
+            resp.raise_for_status()
+            data = b''
+            for chunk in resp.iter_content(1 << 16):
+                data += chunk
+                if len(data) > _IMAGE_MAX_BYTES:
+                    raise ValueError(f'Bild größer als {_IMAGE_MAX_BYTES // (1024 * 1024)} MB')
+        finally:
+            resp.close()
+        return data
+    raise ValueError('Zu viele Weiterleitungen')
+
+
+def _local_image_path(src):
+    """Dateiname → Pfad in einem der erlaubten Ordner. Absolute Pfade, Ordnerangaben und
+    Symlinks aus den Ordnern heraus werden abgelehnt – sonst ließe sich über eine
+    Template-Config jede Datei des Servers in ein Bild hineinrendern."""
+    s = str(src).strip().replace('\\', '/')
+    if os.path.isabs(s) or s.startswith('~') or (len(s) > 1 and s[1] == ':'):
+        raise ValueError(f'Absolute Bildpfade sind nicht erlaubt: {src}')
+    name = os.path.basename(s)
+    if not name or name in ('.', '..'):
+        raise ValueError(f'Bildquelle ohne Dateinamen: {src}')
+    for folder in _IMAGE_DIRS:
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            continue
+        real, root = os.path.realpath(path), os.path.realpath(folder)
+        if real == root or real.startswith(root + os.sep):
+            return real
+        log.warning('Bildquelle %s zeigt aus %s heraus, übersprungen', name, folder)
+    raise FileNotFoundError(f'Bildquelle nicht gefunden: {name}')
+
+
 def _load_image_source(src):
     s = str(src).strip()
     if s.lower().startswith(('http://', 'https://')):
-        import requests  # nur bei URLs nötig
-        resp = requests.get(s, timeout=10)
-        resp.raise_for_status()
-        return Image.open(io.BytesIO(resp.content)).convert('RGBA')
-    candidates = [s]
-    if not os.path.isabs(s):
-        candidates.append(os.path.join(_UPLOAD_DIR, os.path.basename(s)))
-    for p in candidates:
-        if os.path.isfile(p):
-            return Image.open(p).convert('RGBA')
-    raise FileNotFoundError(f'Bildquelle nicht gefunden: {s}')
+        return Image.open(io.BytesIO(_fetch_image_url(s))).convert('RGBA')
+    return Image.open(_local_image_path(s)).convert('RGBA')
 
 
 def _render_image(img, el, values, brand):

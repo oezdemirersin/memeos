@@ -45,6 +45,7 @@ ROUTE_EXCLUDE = (
     '/renders/', '/uploads/', 'send', 'notify', 'migrate', 'sync', 'publish', 'webhook',
     'instagram', 'generate', 'scan', 'import',
     'weather',   # /api/automation/weather/<id>/preview ruft Open-Meteo (extern) und schreibt lat/lon
+    'studio',    # /api/studio/<id> lädt bei fehlendem Hintergrund extern nach und schreibt in die DB
 )
 
 # URL-Parameter → Beispielobjekt (nur int-Konverter; alles andere wird übersprungen)
@@ -509,6 +510,87 @@ def check_data():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 7b. Studio (nur Registrierung – die Routen selbst werden bewusst nicht aufgerufen)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_STUDIO_ROUTES = ('/studio/<int:template_id>', '/api/studio/<int:template_id>')
+
+
+def check_studio(flask_app):
+    """Ersatz für den Routen-Check: GET /api/studio/<id> würde bei fehlendem lokalen
+    Hintergrundbild extern nachladen und in die DB schreiben. Darum prüfen wir nur, dass
+    das Blueprint registriert ist und seine Routen in der url_map stehen."""
+    if 'studio' not in flask_app.blueprints:
+        return _check('studio', 'Studio', False,
+                      'Blueprint studio_bp nicht registriert – /studio/<id> ist nicht erreichbar',
+                      'warn')
+    rules = {r.rule for r in flask_app.url_map.iter_rules()}
+    missing = [r for r in _STUDIO_ROUTES if r not in rules]
+    if missing:
+        return _check('studio', 'Studio', False, 'Route fehlt: ' + ', '.join(missing), 'warn')
+    return _check('studio', 'Studio', True,
+                  f'Blueprint registriert, {len(_STUDIO_ROUTES)} Kernrouten vorhanden '
+                  f'(nicht aufgerufen: Seiteneffekte)', 'info')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7c. Speicherplatz
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DISK_WARN_PERCENT = 80
+DISK_CRIT_PERCENT = 95
+
+
+def _disk_percent(report):
+    """Belegung in Prozent aus dem Bericht von app._disk_report() lesen (tolerant gegenüber
+    der genauen Feldbenennung)."""
+    if not isinstance(report, dict):
+        return None, {}
+    for key in ('percent', 'used_percent', 'percent_used', 'usage_percent', 'used_pct'):
+        val = report.get(key)
+        if isinstance(val, (int, float)):
+            return float(val), report
+    total = report.get('total') or report.get('total_bytes') or report.get('total_mb')
+    used = report.get('used') or report.get('used_bytes') or report.get('used_mb')
+    free = report.get('free') or report.get('free_bytes') or report.get('free_mb')
+    if isinstance(total, (int, float)) and total > 0:
+        if not isinstance(used, (int, float)) and isinstance(free, (int, float)):
+            used = total - free
+        if isinstance(used, (int, float)):
+            return used / float(total) * 100.0, report
+    return None, report
+
+
+def check_disk():
+    """Nur wenn app._disk_report() existiert: Warnung ab 80 %, kritisch ab 95 % Belegung."""
+    mod = _appmod()
+    fn = getattr(mod, '_disk_report', None) if mod else None
+    if not callable(fn):
+        return []
+    report = fn()
+    percent, raw = _disk_percent(report)
+    detail_extra = raw.get('detail') or raw.get('text') or ''
+    if percent is None:
+        return [_check('disk', 'Speicherplatz', True,
+                       f'Bericht ohne Prozentangabe: {json.dumps(report, default=str)[:200]}',
+                       'info')]
+    parts = [f'{percent:.0f} % belegt']
+    for key, label in (('free_human', 'frei'), ('free_mb', 'frei (MB)'), ('path', 'Pfad')):
+        if raw.get(key) not in (None, ''):
+            parts.append(f'{label}: {raw[key]}')
+    if detail_extra:
+        parts.append(str(detail_extra))
+    detail = ', '.join(parts)
+    if percent >= DISK_CRIT_PERCENT:
+        return [_check('disk', 'Speicherplatz', False,
+                       f'{detail} – Platte fast voll, Datenbank-Schreibvorgänge scheitern gleich',
+                       'crit')]
+    if percent >= DISK_WARN_PERCENT:
+        return [_check('disk', 'Speicherplatz', False, f'{detail} – aufräumen einplanen', 'warn')]
+    return [_check('disk', 'Speicherplatz', True, detail, 'info')]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 8. Migrationen
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -546,6 +628,8 @@ def run_checks(flask_app, quick=False, skip=()):
         ('config',      'Konfiguration', lambda: check_config(flask_app),     'crit', True),
         ('background',  'Hintergrund',   lambda: check_background(flask_app), 'warn', True),
         ('data',        'Daten',         check_data,                          'warn', False),
+        ('studio',      'Studio',        lambda: check_studio(flask_app),     'warn', False),
+        ('disk',        'Speicherplatz', check_disk,                          'warn', True),
         ('migrations',  'Migrationen',   check_migrations,                    'warn', False),
     ]
     checks = []
