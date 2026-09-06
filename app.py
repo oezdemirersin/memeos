@@ -331,46 +331,83 @@ def _build_zip_async(job_id: str, post_ids: list, status_filter: str, city_id_fi
             fname = f'memeos_export_{datetime.utcnow().strftime("%Y%m%d_%H%M")}_{job_id[:6]}.zip'
             zip_path = os.path.join(_EXPORT_DIR, fname)
 
+            def _bild_holen(quelle, ist_url):
+                """(bytes, endung) zu einer Bildquelle. (None, '') wenn nichts zu holen ist."""
+                if ist_url:
+                    try:
+                        data, final_url, _ctype = _safe_fetch_url(quelle, timeout=15)
+                    except UnsafeUrlError as ex:
+                        log.warning(f'Export: Bild-URL abgelehnt ({ex})')
+                        return None, ''
+                    except Exception:
+                        return None, ''
+                    if not data:
+                        return None, ''
+                    roh = final_url.split('?')[0].rsplit('.', 1)[-1].lower()
+                    return data, (roh if roh in ('jpg', 'jpeg', 'png', 'webp', 'gif') else 'jpg')
+                pfad = _local_media_path(quelle)
+                if not pfad:
+                    return None, ''
+                try:
+                    with open(pfad, 'rb') as fh:
+                        daten = fh.read()
+                except OSError as ex:
+                    log.warning(f'Export: Datei nicht lesbar ({ex})')
+                    return None, ''
+                base = os.path.basename(pfad)
+                return daten, (base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg')
+
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 csv_buf = io.StringIO()
+                # Karussells bekommen EINE ZEILE JE SLIDE (so entschieden, damit jede Datei
+                # im ZIP genau eine Zeile hat und die Tabelle direkt weiterverarbeitbar ist).
+                # slide_no zählt ab 1, slide_count sagt wie viele Folien der Beitrag hat;
+                # ein Einzelbeitrag hat slide_count 1 und slide_no 1.
                 writer = csv_mod.DictWriter(csv_buf, fieldnames=[
                     'id', 'city', 'title', 'caption', 'hashtags', 'post_type',
-                    'scheduled_at', 'status', 'image_file'
+                    'scheduled_at', 'status', 'slide_no', 'slide_count', 'image_file'
                 ])
                 writer.writeheader()
                 for p in posts:
                     city_slug = (p.city.name if p.city else 'unbekannt').lower().replace(' ', '_')
-                    img_filename = 'kein_bild'
-                    img_bytes = None
-                    if p.image_url and p.image_url.startswith('http'):
-                        try:
-                            data, final_url, _ctype = _safe_fetch_url(p.image_url, timeout=15)
-                            if data:
-                                img_bytes = data
-                                raw_ext = final_url.split('?')[0].rsplit('.', 1)[-1].lower()
-                                ext = raw_ext if raw_ext in ('jpg', 'jpeg', 'png', 'webp', 'gif') else 'jpg'
-                                img_filename = f'post_{p.id}_{city_slug}.{ext}'
-                        except UnsafeUrlError as ex:
-                            log.warning(f'Export Post {p.id}: Bild-URL abgelehnt ({ex})')
-                        except Exception:
-                            pass
-                    else:
-                        candidate = _local_media_path(p.image_path) or _local_media_path(p.image_url)
-                        if candidate:
-                            base = os.path.basename(candidate)
-                            with open(candidate, 'rb') as fh:
-                                img_bytes = fh.read()
-                            ext = base.rsplit('.', 1)[-1].lower() if '.' in base else 'jpg'
-                            img_filename = f'post_{p.id}_{city_slug}.{ext}'
-                    if img_bytes:
-                        zf.writestr(f'images/{img_filename}', img_bytes)
-                    writer.writerow({
-                        'id': p.id, 'city': p.city.name if p.city else '',
-                        'title': p.title or '', 'caption': p.caption or '',
-                        'hashtags': p.hashtags or '', 'post_type': p.post_type or 'feed',
-                        'scheduled_at': p.scheduled_at.strftime('%Y-%m-%d %H:%M') if p.scheduled_at else '',
-                        'status': p.status, 'image_file': img_filename,
-                    })
+
+                    # Quellen sammeln: bei einem Karussell ALLE Folien. Vorher wurde genau eine
+                    # Datei je Beitrag gepackt — aus drei Karussells wurden 3 statt 15 Bilder,
+                    # ohne jede Meldung.
+                    quellen = []          # (quelle, ist_url)
+                    if p.post_type == 'carousel':
+                        for name in p.get_carousel_paths():
+                            quellen.append((name, False))
+                    if not quellen:
+                        if p.image_url and p.image_url.startswith('http'):
+                            quellen.append((p.image_url, True))
+                        else:
+                            # wie bisher: erst image_path, dann image_url als Dateiname
+                            quellen.append((_local_media_path(p.image_path)
+                                            or _local_media_path(p.image_url), False))
+
+                    mehrere = len(quellen) > 1
+                    zeilen = []
+                    for idx, (quelle, ist_url) in enumerate(quellen, start=1):
+                        img_bytes, ext = _bild_holen(quelle, ist_url)
+                        if img_bytes:
+                            img_filename = (f'post_{p.id}_{city_slug}_{idx:02d}.{ext}' if mehrere
+                                            else f'post_{p.id}_{city_slug}.{ext}')
+                            zf.writestr(f'images/{img_filename}', img_bytes)
+                        else:
+                            img_filename = 'kein_bild'
+                        zeilen.append((idx, img_filename))
+
+                    for slide_no, img_filename in zeilen:
+                        writer.writerow({
+                            'id': p.id, 'city': p.city.name if p.city else '',
+                            'title': p.title or '', 'caption': p.caption or '',
+                            'hashtags': p.hashtags or '', 'post_type': p.post_type or 'feed',
+                            'scheduled_at': p.scheduled_at.strftime('%Y-%m-%d %H:%M') if p.scheduled_at else '',
+                            'status': p.status,
+                            'slide_no': slide_no, 'slide_count': len(zeilen),
+                            'image_file': img_filename,
+                        })
                 zf.writestr('manifest.csv', csv_buf.getvalue())
 
             _export_job_update(job_id, status='ready', path=zip_path,
@@ -449,6 +486,85 @@ def inject_csrf():
     if 'csrf_token' not in session:
         session['csrf_token'] = secrets.token_hex(32)
     return dict(csrf_token=session['csrf_token'])
+
+# ── Notizen und Metadaten eines Beitrags ──────────────────────────────────────
+# meme_post.notes trägt zwei völlig verschiedene Dinge: die Metadaten der Render-Queue
+# (missing_vars, quality, task_kind, series, slides) als JSON UND die Notiz, die ein Mensch
+# im Bearbeiten-Dialog schreibt. Bisher überschrieb das Speichern der Notiz das JSON — und
+# damit das Kennzeichen „Variablen fehlen". Die drei Helfer trennen beides sauber; die Spalte
+# bleibt ein JSON-Text, damit Bestandsdaten und Altcode (post.notes) unberührt bleiben.
+
+def _post_meta(post):
+    """Metadaten-Dict aus notes. Leeres Dict, wenn dort kein JSON-Objekt steht.
+    Der lesbare Teil ('notiz') ist NICHT enthalten.
+
+    Bringt das Modell die Trennung schon mit (models.MemePost.meta_dict), gilt dessen
+    Ergebnis — es darf nur EINE Auslegung von notes geben."""
+    if hasattr(post, 'meta_dict'):
+        return post.meta_dict()
+    roh = getattr(post, 'notes', None)
+    if not roh:
+        return {}
+    try:
+        daten = json.loads(roh)
+    except Exception:
+        return {}
+    if not isinstance(daten, dict):
+        return {}
+    return {k: v for k, v in daten.items() if k != 'notiz'}
+
+
+def _post_notiz(post):
+    """Der menschenlesbare Anteil von notes.
+
+    Steht dort JSON, ist es das Feld 'notiz'. Steht dort gar kein JSON (Altbestand, von Hand
+    geschriebene Notizen), gilt der ganze Text als Notiz."""
+    if hasattr(post, 'notiz_text'):
+        return post.notiz_text()
+    roh = getattr(post, 'notes', None)
+    if not roh:
+        return ''
+    try:
+        daten = json.loads(roh)
+    except Exception:
+        return str(roh)
+    if not isinstance(daten, dict):
+        return str(roh)
+    return str(daten.get('notiz') or '')
+
+
+def _post_notes_schreiben(post, notiz=None, meta_update=None):
+    """notes neu schreiben, ohne den jeweils anderen Teil zu verlieren.
+
+    notiz=None lässt die Notiz stehen, meta_update=None die Metadaten. Ein leerer Text
+    ('') löscht die Notiz ausdrücklich. Rückgabe: der geschriebene JSON-Text."""
+    meta = _post_meta(post)
+    if meta_update:
+        meta.update(meta_update)
+    text = _post_notiz(post) if notiz is None else str(notiz or '')
+    daten = dict(meta)
+    if text:
+        daten['notiz'] = text
+    post.notes = json.dumps(daten, ensure_ascii=False)
+    return post.notes
+
+
+# MemePost.to_dict muss zusätzlich 'notiz' und 'meta' liefern. Bringt das Modell das schon
+# selbst mit (models.MemePost.notiz_text), bleibt es dabei — sonst wird es hier ergänzt, ohne
+# models.py anzufassen. 'notes' bleibt in beiden Fällen unverändert im Ergebnis, damit
+# Altcode weiterläuft.
+if not hasattr(MemePost, 'notiz_text') and not getattr(MemePost.to_dict, '_mit_notiz', False):
+    _memepost_to_dict_original = MemePost.to_dict
+
+    def _memepost_to_dict_mit_notiz(self):
+        d = _memepost_to_dict_original(self)
+        d['notiz'] = _post_notiz(self)
+        d['meta']  = _post_meta(self)
+        return d
+
+    _memepost_to_dict_mit_notiz._mit_notiz = True
+    MemePost.to_dict = _memepost_to_dict_mit_notiz
+
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 def login_required(f):
@@ -890,10 +1006,17 @@ def api_knowledge_delete(entry_id):
 @login_required
 def api_knowledge_ai_generate(city_id):
     city = City.query.get_or_404(city_id)
-    if not ANTHROPIC_API_KEY:
-        return jsonify({'error': 'Kein Anthropic API Key'}), 400
+    # Reihenfolge bewusst: erst Schlüssel, dann Kostenbremse, dann erst zahlen. Vorher lief der
+    # Aufruf los und die Erfassung stand HINTER der JSON-Auswertung — bei kaputtem JSON war der
+    # Aufruf bezahlt, aber nirgends gebucht.
+    if not _ai_key_vorhanden():
+        hinweis = _ai_key_hinweis()
+        return jsonify({'error': ('Kein Anthropic API Key' if not hinweis
+                                  else f'Kein brauchbarer Anthropic API Key: {hinweis}')}), 400
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        return jsonify({'error': gesperrt}), 400
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         categories_str = ', '.join([f"{k} ({label})" for k, label, _ in KNOWLEDGE_CATEGORIES])
         prompt = f"""Du bist ein Experte für deutsche Städte und lokale Meme-Kultur.
 Generiere City-Wiki-Einträge für {city.name} ({city.state}, ~{city.population or '?'} Einwohner).
@@ -910,21 +1033,21 @@ Generiere 3-5 Einträge pro vorhandener Kategorie, insgesamt 30-50 Einträge.
 Sei möglichst spezifisch und lokal — generische Antworten wie "Stadtpark" sind wertlos.
 Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
 
-        msg = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=4000,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        raw = msg.content[0].text.strip()
+        # _anthropic_complete bucht den Verbrauch unmittelbar nach dem Aufruf und meldet eine
+        # abgeschnittene Antwort (stop_reason max_tokens) als eigenen Fehler.
+        raw, fehler = _anthropic_complete([], prompt, 4000, 'city_wiki_generate')
+        if fehler:
+            if fehler.startswith('KI-Antwort abgeschnitten'):
+                return jsonify({'error': 'Antwort abgeschnitten, bitte weniger Einträge '
+                                         'anfordern'}), 400
+            return jsonify({'error': fehler}), 502
+
         # Extrahiere JSON
         import re
         match = re.search(r'\[.*\]', raw, re.DOTALL)
         if not match:
             return jsonify({'error': 'KI hat kein gültiges JSON zurückgegeben'}), 500
         entries_data = json.loads(match.group(0))
-
-        _log_ai_usage('city_wiki_generate', 'claude-haiku-4-5-20251001',
-                      msg.usage.input_tokens, msg.usage.output_tokens)
 
         created = 0
         for e_data in entries_data:
@@ -1585,12 +1708,7 @@ def api_carousel_get(post_id):
     slides = post.get_slides() if post.post_type == 'carousel' else []
     # notes ist ein JSON-Text (Renderer/Queue schreiben ihn); daraus den Fehlertext und die
     # Slide-Einzelheiten herausziehen, damit die Oberfläche bei status 'failed' etwas zeigen kann.
-    try:
-        parsed = json.loads(post.notes or '{}')
-        if not isinstance(parsed, dict):
-            parsed = {}
-    except Exception:
-        parsed = {}
+    parsed = _post_meta(post)
     raw_slides = parsed.get('slides') if isinstance(parsed.get('slides'), list) else []
     slides_detail = []
     for entry in raw_slides:
@@ -1623,7 +1741,9 @@ def api_carousel_get(post_id):
         'image_urls': [s['url'] for s in slides],
         'slides': slides,
         'slide_count': len(slides),
-        'notes': post.notes or '',
+        'notes': post.notes or '',        # Rohtext, für Altcode
+        'notiz': _post_notiz(post),       # nur der lesbare Teil
+        'meta':  parsed,                  # nur die Metadaten
         'error': error,
         'slides_detail': slides_detail,
     })
@@ -1718,12 +1838,19 @@ def _preise(eingabe_usd_mio, ausgabe_usd_mio, cache_write_faktor=1.25, cache_rea
 MODEL_PRICES = {
     'claude-haiku-4-5':  _preise(1.00, 5.00),
     'claude-sonnet-4-5': _preise(3.00, 15.00),
+    'claude-sonnet-4-6': _preise(3.00, 15.00),
+    'claude-sonnet-5':   _preise(2.00, 10.00),
+    # Die Opus-Reihe kostet durchgehend 5,00 / 25,00 $ je 1 Mio Token. Der Eintrag steht
+    # bewusst als kurze Vorsilbe da, damit jede Opus-Ausgabe erfasst ist — über die
+    # Umgebungsvariable MEMEOS_VISION_MODEL lässt sich ein Opus-Modell frei einstellen.
+    'claude-opus':       _preise(5.00, 25.00),
     'deepseek-chat':     _preise(0.27, 1.10, cache_write_faktor=1.00, cache_read_faktor=0.26),
     'deepseek-reasoner': _preise(0.55, 2.19, cache_write_faktor=1.00, cache_read_faktor=0.26),
 }
-# Unbekanntes Modell: bewusst der teurere Sonnet-Satz. Lieber zu hoch schätzen — sonst greift
-# die Kostenbremse zu spät.
-MODEL_PRICE_DEFAULT = _preise(3.00, 15.00)
+# Unbekanntes Modell: der Opus-Satz, das teuerste hier geführte Modell. Vorher stand hier der
+# Sonnet-Satz — 40 Prozent unter Opus, obwohl der Kommentar „lieber zu hoch schätzen" versprach.
+# Bei einem unbekannten Opus-Modell hätte die Kostenbremse dadurch viel zu spät gegriffen.
+MODEL_PRICE_DEFAULT = _preise(5.00, 25.00)
 
 
 def _model_price(model):
@@ -1736,6 +1863,38 @@ def _model_price(model):
     if treffer:
         return MODEL_PRICES[max(treffer, key=len)]
     return MODEL_PRICE_DEFAULT
+
+
+def _modell_ohne_preis(model):
+    """True, wenn für dieses Modell kein ausdrücklicher Preis hinterlegt ist. Dann greift
+    MODEL_PRICE_DEFAULT und die Abrechnung ist nur geschätzt."""
+    name = (model or '').strip()
+    if not name:
+        return False
+    return not (name in MODEL_PRICES or any(name.startswith(k) for k in MODEL_PRICES))
+
+
+def _modellpreise_pruefen():
+    """Beim Start warnen, wenn ein eingestelltes Modell auf keine Vorsilbe in MODEL_PRICES
+    passt. Ohne diese Warnung rutscht so ein Modell still in den Schätzpreis — und die
+    KI-Kosten-Seite zeigt Zahlen, die mit der echten Rechnung nichts zu tun haben."""
+    modelle = {'AI_MODEL_ANTHROPIC':   AI_MODEL_ANTHROPIC,
+               'MEMEOS_VISION_MODEL':  os.getenv('MEMEOS_VISION_MODEL', '')}
+    try:
+        modelle['deepseek_model'] = _deepseek_model()
+    except Exception:      # noch keine DB / kein App-Kontext – dann eben ohne
+        pass
+    unbekannt = []
+    for herkunft, name in modelle.items():
+        if _modell_ohne_preis(name):
+            unbekannt.append(f'{name} ({herkunft})')
+    if unbekannt:
+        log.warning('Kein Preis hinterlegt für: %s — gerechnet wird mit dem Schätzpreis '
+                    '%.2f/%.2f USD je 1 Mio Token. Eintrag in MODEL_PRICES ergänzen.',
+                    ', '.join(unbekannt),
+                    MODEL_PRICE_DEFAULT['input'] * 1000 / _USD_EUR,
+                    MODEL_PRICE_DEFAULT['output'] * 1000 / _USD_EUR)
+    return unbekannt
 
 
 def _ai_cost(model, input_tokens=0, output_tokens=0, cache_creation_tokens=0, cache_read_tokens=0):
@@ -1768,9 +1927,37 @@ def _ai_provider():
     return 'anthropic'
 
 
+_AI_KEY_BEISPIEL_HINWEIS = 'Der Schlüssel sieht nach dem Beispielwert aus .env.example aus'
+
+
+def _ai_key_plausibel(key):
+    """Formprüfung für einen Anthropic-Schlüssel.
+
+    Kein Netzaufruf, nur die Form: beginnt mit 'sk-ant-', mindestens 40 Zeichen, und keine
+    drei Punkte hintereinander. Der Platzhalter 'sk-ant-...' aus .env.example bestand die
+    alte Prüfung bool(ANTHROPIC_API_KEY) — der Live-Test lief danach in jedem einzelnen
+    Auftrag in ein 401."""
+    k = (key or '').strip()
+    return bool(k) and k.startswith('sk-ant-') and len(k) >= 40 and '...' not in k
+
+
+def _ai_key_hinweis():
+    """Leerer Text wenn alles in Ordnung ist, sonst die Erklärung fürs Dashboard."""
+    if _ai_provider() == 'deepseek':
+        return ''
+    if not ANTHROPIC_API_KEY:
+        return ''
+    if not _ai_key_plausibel(ANTHROPIC_API_KEY):
+        return _AI_KEY_BEISPIEL_HINWEIS
+    return ''
+
+
 def _ai_key_vorhanden():
-    """Hat der aktive Anbieter einen Schlüssel?"""
-    return _ai_provider() == 'deepseek' or bool(ANTHROPIC_API_KEY)
+    """Hat der aktive Anbieter einen brauchbaren Schlüssel?
+
+    Ein gesetzter, aber unplausibler Schlüssel zählt wie kein Schlüssel — sonst laufen alle
+    Aufträge in ein 401, statt gleich zu sagen, dass nichts hinterlegt ist."""
+    return _ai_provider() == 'deepseek' or _ai_key_plausibel(ANTHROPIC_API_KEY)
 
 
 # ── Kostenbremse ───────────────────────────────────────────────────────────────
@@ -1813,25 +2000,171 @@ def _usage_wert(usage, name):
         return 0
 
 
-def _anthropic_complete(system_blocks, user_text, max_tokens, feature):
+# ── Fehler einordnen: dauerhaft oder vorübergehend ────────────────────────────
+# Die Render-Queue legt eine gescheiterte Aufgabe nach 30 s wieder vor, wenn im Fehlertext
+# 'KI nicht erreichbar' steht (render_queue._requeue_due_retries). Ein falscher Schlüssel lief
+# damit in dieselbe Endlosschleife wie ein Netzaussetzer. Darum tragen dauerhafte Fehler eigene
+# Anfänge und ausdrücklich NICHT die Zeichenkette 'KI nicht erreichbar'.
+_KI_DAUERHAFT_ANFAENGE = (
+    'KI-Zugang abgelehnt:',            # 401/403 – falscher oder gesperrter Schlüssel
+    'KI-Anfrage ungültig:',            # 400/404/422 – kaputte Anfrage, unbekanntes Modell
+    'KI-Antwort abgeschnitten',        # max_tokens zu klein – ein zweiter Versuch scheitert gleich
+    'KI-Budget',                       # Kostenbremse – wiederholen hilft nicht
+    'Kein Anthropic-Key',
+    'Kein DeepSeek-Schlüssel',
+)
+
+
+def _ki_fehler_endgueltig(text):
+    """True, wenn ein zweiter Versuch mit Sicherheit wieder scheitert."""
+    t = (text or '').strip()
+    return any(t.startswith(anfang) for anfang in _KI_DAUERHAFT_ANFAENGE)
+
+
+def _ki_fehlertext(fehler):
+    """Fertiger Fehlertext für den Aufrufer. Dauerhafte Fehler bleiben unverändert; alles
+    andere bekommt das Kennzeichen 'KI nicht erreichbar', nach dem die Queue filtert."""
+    if _ki_fehler_endgueltig(fehler):
+        return fehler
+    return f'KI nicht erreichbar: {fehler or "unbekannt"}'
+
+
+def _ki_status_code(exc):
+    """HTTP-Status einer SDK-Ausnahme, falls vorhanden. anthropic.APIStatusError trägt
+    status_code; .code ist dort ein Text-Fehlercode und wird deshalb übergangen."""
+    wert = getattr(exc, 'status_code', None)
+    if isinstance(wert, int):
+        return wert
+    wert = getattr(getattr(exc, 'response', None), 'status_code', None)
+    return wert if isinstance(wert, int) else None
+
+
+def _retry_after_sekunden(exc):
+    """Wartezeit aus dem Kopf 'retry-after' der Antwort (Sekunden). None, wenn nicht lesbar.
+    Gedeckelt auf 60 s — länger blockiert der Aufruf den Worker unnötig."""
+    kopf = getattr(getattr(exc, 'response', None), 'headers', None)
+    if kopf is None:
+        return None
+    roh = None
+    try:
+        roh = kopf.get('retry-after') or kopf.get('Retry-After')
+    except Exception:
+        return None
+    if roh in (None, ''):
+        return None
+    try:
+        wert = float(str(roh).strip())
+    except (TypeError, ValueError):
+        return None
+    if wert < 0:
+        return None
+    return min(60.0, wert)
+
+
+def _ki_wartezeit(versuch):
+    """Exponentiell: 2 s vor dem zweiten Versuch, 8 s vor dem dritten."""
+    return 2.0 * (4 ** max(0, int(versuch or 0)))
+
+
+def _ki_fehler_art(exc, versuch=0):
+    """Einen Fehler eines KI-Aufrufs einordnen.
+
+    Rückgabe: (art, text, wartezeit_sekunden) mit art 'dauerhaft' oder 'temporaer'.
+    - 'dauerhaft': falscher/gesperrter Schlüssel (401/403), kaputte Anfrage oder unbekanntes
+      Modell (400/404/422). Kein zweiter Versuch, Wartezeit 0. Der Text enthält bewusst NICHT
+      'KI nicht erreichbar'.
+    - 'temporaer': Ratenbegrenzung (429), Überlastung, 5xx, Zeitüberschreitung, Netzfehler.
+      Bei 429 kommt die Wartezeit aus dem Kopf 'retry-after', sonst exponentiell (2, dann 8 s).
+    Unbekannte Ausnahmen gelten als vorübergehend — ein echter Ausfall darf nicht als
+    dauerhaft abgestempelt werden."""
+    detail = f'{type(exc).__name__}: {str(exc)[:120]}'
+    status = _ki_status_code(exc)
+    name = type(exc).__name__
+
+    if status is None:      # Ausnahme ohne HTTP-Status: über den Klassennamen einordnen
+        if 'Authentication' in name:
+            status = 401
+        elif 'PermissionDenied' in name:
+            status = 403
+        elif 'NotFound' in name:
+            status = 404
+        elif 'BadRequest' in name:
+            status = 400
+        elif 'RateLimit' in name:
+            status = 429
+
+    if status in (401, 403):
+        return 'dauerhaft', f'KI-Zugang abgelehnt: {detail}', 0.0
+    if status in (400, 404, 422):
+        return 'dauerhaft', f'KI-Anfrage ungültig: {detail}', 0.0
+
+    warte = _retry_after_sekunden(exc)
+    if warte is None:
+        warte = _ki_wartezeit(versuch)
+    return 'temporaer', detail, warte
+
+
+def _ki_fehler_art_status(status, detail, versuch=0):
+    """Wie _ki_fehler_art, aber für Anbieter, die den Status als Zahl liefern (DeepSeek)."""
+    if status in (401, 403):
+        return 'dauerhaft', f'KI-Zugang abgelehnt: {detail}', 0.0
+    if status in (400, 404, 422):
+        return 'dauerhaft', f'KI-Anfrage ungültig: {detail}', 0.0
+    return 'temporaer', detail, _ki_wartezeit(versuch)
+
+
+def _ki_hinweis_setzen(hinweise, art, wartezeit):
+    """Nebenkanal für die Wiederholungs-Schleife des Aufrufers: sie sieht am (text, fehler)-Paar
+    nicht, wie lange sie warten soll. 'hinweise' gehört dem Aufrufer, ist also thread-sicher."""
+    if hinweise is None:
+        return
+    hinweise['art'] = art
+    hinweise['wartezeit'] = wartezeit
+
+
+def _anthropic_complete(system_blocks, user_text, max_tokens, feature, versuch=0, hinweise=None):
+    """Ein Anthropic-Aufruf. Rückgabe (text, fehler); bei Erfolg ist fehler None.
+
+    Kostenbremse und Schlüsselprüfung sitzen HIER, damit jeder Aufrufer sie erbt — vorher
+    saßen sie an genau zwei von zwölf Aufrufstellen.
+    Der Verbrauch wird unmittelbar nach dem Aufruf gebucht, noch vor jeder Auswertung der
+    Antwort: bezahlt ist er auch dann, wenn die Antwort unbrauchbar ist.
+    'hinweise' ist ein Dict des Aufrufers und bekommt Art und Wartezeit des Fehlers."""
+    _ki_hinweis_setzen(hinweise, 'temporaer', _ki_wartezeit(versuch))
     if not ANTHROPIC_API_KEY:
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', 'Kein Anthropic-Key'
+    if not _ai_key_plausibel(ANTHROPIC_API_KEY):
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
+        return '', f'KI-Zugang abgelehnt: {_AI_KEY_BEISPIEL_HINWEIS}'
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
+        return '', gesperrt
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
-        msg = client.messages.create(
-            model=AI_MODEL_ANTHROPIC,
-            max_tokens=max_tokens,
-            system=system_blocks,
-            messages=[{'role': 'user', 'content': user_text}],
-        )
+        anfrage = {'model': AI_MODEL_ANTHROPIC,
+                   'max_tokens': max_tokens,
+                   'messages': [{'role': 'user', 'content': user_text}]}
+        if system_blocks:
+            anfrage['system'] = system_blocks
+        msg = client.messages.create(**anfrage)
     except Exception as ex:
-        return '', f'{type(ex).__name__}: {str(ex)[:120]}'
+        art, text, warte = _ki_fehler_art(ex, versuch)
+        _ki_hinweis_setzen(hinweise, art, warte)
+        return '', text
     usage = getattr(msg, 'usage', None)
     _log_ai_usage(feature, AI_MODEL_ANTHROPIC,
                   _usage_wert(usage, 'input_tokens'), _usage_wert(usage, 'output_tokens'),
                   cache_creation_tokens=_usage_wert(usage, 'cache_creation_input_tokens'),
                   cache_read_tokens=_usage_wert(usage, 'cache_read_input_tokens'),
                   provider='anthropic')
+    # Abgeschnittene Antwort: bezahlt, aber unbrauchbar. Ein zweiter Versuch scheitert
+    # deterministisch genauso — deshalb ein eigener Fehlertext ohne 'KI nicht erreichbar'.
+    if getattr(msg, 'stop_reason', None) == 'max_tokens':
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
+        return '', (f'KI-Antwort abgeschnitten (max_tokens {max_tokens} zu klein) — '
+                    f'weniger auf einmal anfordern')
     teile = []
     for block in (getattr(msg, 'content', None) or []):
         if getattr(block, 'type', 'text') == 'text':
@@ -1842,10 +2175,16 @@ def _anthropic_complete(system_blocks, user_text, max_tokens, feature):
     return raw, None
 
 
-def _deepseek_complete(system_blocks, user_text, max_tokens, feature):
+def _deepseek_complete(system_blocks, user_text, max_tokens, feature, versuch=0, hinweise=None):
+    _ki_hinweis_setzen(hinweise, 'temporaer', _ki_wartezeit(versuch))
     key = _deepseek_key()
     if not key:
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', 'Kein DeepSeek-Schlüssel'
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
+        return '', gesperrt
     model = _deepseek_model()
     try:
         antwort = requests.post(
@@ -1856,9 +2195,15 @@ def _deepseek_complete(system_blocks, user_text, max_tokens, feature):
                                {'role': 'user',   'content': user_text}]},
             timeout=60)
     except Exception as ex:
-        return '', f'{type(ex).__name__}: {str(ex)[:120]}'
+        art, text, warte = _ki_fehler_art(ex, versuch)
+        _ki_hinweis_setzen(hinweise, art, warte)
+        return '', text
     if antwort.status_code != 200:
-        return '', f'DeepSeek HTTP {antwort.status_code}: {str(antwort.text)[:120]}'
+        art, text, warte = _ki_fehler_art_status(
+            antwort.status_code,
+            f'DeepSeek HTTP {antwort.status_code}: {str(antwort.text)[:120]}', versuch)
+        _ki_hinweis_setzen(hinweise, art, warte)
+        return '', text
     try:
         daten = antwort.json()
     except Exception as ex:
@@ -1884,7 +2229,7 @@ def _deepseek_complete(system_blocks, user_text, max_tokens, feature):
     return text.strip(), None
 
 
-def _ai_complete(system_blocks, user_text, max_tokens, feature):
+def _ai_complete(system_blocks, user_text, max_tokens, feature, versuch=0, hinweise=None):
     """Ein KI-Aufruf beim eingestellten Anbieter.
 
     system_blocks: Liste von Blöcken {'type': 'text', 'text': ..., optional 'cache_control': {...}}.
@@ -1892,10 +2237,18 @@ def _ai_complete(system_blocks, user_text, max_tokens, feature):
                    DeepSeek als eine zusammengefügte system-Nachricht.
     Rückgabe: (text, fehler). Bei Erfolg ist fehler None, sonst ist text ''.
     Wirft nichts; eine leere Antwort gilt ausdrücklich als Fehler.
+
+    Die Kostenbremse steht hier UND in den beiden Anbieter-Funktionen — doppelt schadet
+    nicht, und so erbt sie auch, wer eine der beiden direkt aufruft.
     """
+    _ki_hinweis_setzen(hinweise, 'temporaer', _ki_wartezeit(versuch))
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
+        return '', gesperrt
     if _ai_provider() == 'deepseek':
-        return _deepseek_complete(system_blocks, user_text, max_tokens, feature)
-    return _anthropic_complete(system_blocks, user_text, max_tokens, feature)
+        return _deepseek_complete(system_blocks, user_text, max_tokens, feature, versuch, hinweise)
+    return _anthropic_complete(system_blocks, user_text, max_tokens, feature, versuch, hinweise)
 
 
 # ── Prompt-Bausteine (stabil = cachebar) ───────────────────────────────────────
@@ -2048,13 +2401,17 @@ def _claude_fit_and_vars(city, template):
     user_text = _template_prompt_teil(template)
 
     last_error = ''
-    for attempt in range(2):                     # ein Retry nach 2 s
+    hinweise = {}
+    for attempt in range(2):        # höchstens ein zweiter Versuch, Wartezeit siehe hinweise
         if attempt:
-            time.sleep(2)
-        raw, fehler = _ai_complete(system_blocks, user_text, 500, 'fit_score')
+            time.sleep(hinweise.get('wartezeit', 2.0))
+        raw, fehler = _ai_complete(system_blocks, user_text, 500, 'fit_score',
+                                   versuch=attempt, hinweise=hinweise)
         if fehler:
             last_error = fehler
             log.error(f'KI Fit-Score Fehler (Versuch {attempt + 1}): {fehler}')
+            if _ki_fehler_endgueltig(fehler):
+                break               # falscher Schlüssel, kaputte Anfrage, Budget: nicht wiederholen
             continue
         daten, fehler = _ki_json_lesen(raw)
         if fehler:
@@ -2062,7 +2419,7 @@ def _claude_fit_and_vars(city, template):
             continue
         return _ki_antwort_zu_ergebnis(daten, template, city)
 
-    return {'error': f'KI nicht erreichbar: {last_error or "unbekannt"}',
+    return {'error': _ki_fehlertext(last_error),
             'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
 
 
@@ -2099,13 +2456,17 @@ def _claude_fit_and_vars_multi(city, templates):
     max_tokens = min(4000, 400 + 350 * len(templates))
 
     last_error = ''
+    hinweise = {}
     for attempt in range(2):
         if attempt:
-            time.sleep(2)
-        raw, fehler = _ai_complete(system_blocks, user_text, max_tokens, 'fit_score_multi')
+            time.sleep(hinweise.get('wartezeit', 2.0))
+        raw, fehler = _ai_complete(system_blocks, user_text, max_tokens, 'fit_score_multi',
+                                   versuch=attempt, hinweise=hinweise)
         if fehler:
             last_error = fehler
             log.error(f'KI Fit-Score (Serie) Fehler (Versuch {attempt + 1}): {fehler}')
+            if _ki_fehler_endgueltig(fehler):
+                break
             continue
         daten, fehler = _ki_json_lesen(raw)
         if fehler:
@@ -2123,7 +2484,7 @@ def _claude_fit_and_vars_multi(city, templates):
                                   'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
         return ergebnis
 
-    fehlertext = f'KI nicht erreichbar: {last_error or "unbekannt"}'
+    fehlertext = _ki_fehlertext(last_error)
     return {t.id: {'error': fehlertext, 'fit_score': None, 'reasoning': '',
                    'vars': {}, 'brief': ''} for t in templates}
 
@@ -2546,7 +2907,6 @@ def _score_news_items(flask_app):
         unscoredItems = NewsItem.query.filter_by(status='new').limit(20).all()
         if not unscoredItems:
             return
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         templates = MemeTemplate.query.filter_by(active=True).all()
         templates_str = '\n'.join([f"- ID:{t.id} {t.name}: {t.description or ''}" for t in templates])
 
@@ -2572,14 +2932,14 @@ meme_score:
 - 30-60: möglich
 - 60-100: sehr meme-würdig (Skandal, Kurioses, lokales Klischee bestätigt)"""
 
-                msg = client.messages.create(
-                    model='claude-haiku-4-5-20251001',
-                    max_tokens=200,
-                    messages=[{'role': 'user', 'content': prompt}]
-                )
-                raw = msg.content[0].text.strip()
-                _log_ai_usage('news_score', 'claude-haiku-4-5-20251001',
-                              msg.usage.input_tokens, msg.usage.output_tokens)
+                # Über _anthropic_complete: Kostenbremse greift auch hier, und zwar vor JEDEM
+                # Artikel — bei erschöpftem Budget bricht die Schleife ab, statt 20-mal zu zahlen.
+                raw, fehler = _anthropic_complete([], prompt, 200, 'news_score')
+                if fehler:
+                    log.warning(f'News Score Fehler: {fehler}')
+                    if _ki_fehler_endgueltig(fehler):
+                        break          # falscher Schlüssel oder Budget: die restlichen sparen
+                    continue
                 import re
                 match = re.search(r'\{.*\}', raw, re.DOTALL)
                 if match:
@@ -2907,6 +3267,10 @@ def api_settings_get():
         'canva_connected':      _canva_is_connected(),
         'canva_client_id':      bool(CANVA_CLIENT_ID),
         'ai_key_set':           bool(ANTHROPIC_API_KEY),
+        # Ein gesetzter Schlüssel muss noch kein brauchbarer sein: der Platzhalter aus
+        # .env.example besteht bool(), scheitert aber in jedem Aufruf mit 401.
+        'ai_key_plausibel':     _ai_key_plausibel(ANTHROPIC_API_KEY),
+        'ai_key_hinweis':       _ai_key_hinweis(),
         'ai_cost_month':        _ai_cost_this_month(),
         # KI-Anbieter: gewählt vs. tatsächlich benutzt. Ohne DeepSeek-Schlüssel fällt die
         # Wahl still auf Anthropic zurück — 'ai_provider_hinweis' sagt das dem Dashboard.
@@ -2921,6 +3285,11 @@ def api_settings_get():
         'ai_budget_month_eur':  _ai_budget_eur(),
         'ai_budget_reached':    bool(_ai_budget_gesperrt()),
         'ai_budget_hinweis':    _ai_budget_gesperrt() or '',
+        # 0 ist ein gültiger Wert und bedeutet ausdrücklich: keine Bremse, beliebig hohe Kosten.
+        'ai_budget_aktiv':      _ai_budget_eur() > 0,
+        'ai_budget_bedeutung':  ('Keine Bremse — die Kosten sind nach oben offen'
+                                 if _ai_budget_eur() <= 0
+                                 else f'Bremse bei {_ai_budget_eur():.2f} EUR im Monat'),
         # Token nie im Klartext ausgeben – nur ob gesetzt + die letzten 4 Zeichen
         'telegram_token_set':   bool(_tg_token),
         'telegram_token_hint':  _tg_token[-4:] if _tg_token else '',
@@ -2975,6 +3344,35 @@ def api_settings_save():
                     'ai_budget_month_eur': _ai_budget_eur()})
 
 
+@app.route('/api/settings/ai-test', methods=['POST'])
+@login_required
+def api_ai_test():
+    """Prüft den hinterlegten Anthropic-Schlüssel mit einem einzigen, billigen Aufruf.
+
+    Gedacht für den Moment VOR einem großen Lauf: im Live-Test scheiterte jeder einzelne
+    Auftrag mit 401, weil der Platzhalter aus .env.example als gültiger Schlüssel galt.
+    Ohne plausiblen Schlüssel wird gar nicht erst ins Netz gegangen."""
+    if _ai_provider() == 'deepseek':
+        return jsonify({'ok': bool(_deepseek_key()),
+                        'detail': ('DeepSeek ist als Anbieter eingestellt; dieser Test prüft '
+                                   'nur den Anthropic-Schlüssel')})
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'ok': False, 'detail': 'Kein Anthropic-Schlüssel hinterlegt'})
+    if not _ai_key_plausibel(ANTHROPIC_API_KEY):
+        return jsonify({'ok': False, 'detail': _AI_KEY_BEISPIEL_HINWEIS})
+    gesperrt = _ai_budget_gesperrt()
+    if gesperrt:
+        return jsonify({'ok': False, 'detail': gesperrt})
+    # max_tokens=1: die Antwort wird abgeschnitten sein, das ist gewollt und beweist trotzdem,
+    # dass der Schlüssel angenommen wurde.
+    _raw, fehler = _anthropic_complete([], 'ok', 1, 'ai_key_test')
+    if fehler and fehler.startswith('KI-Antwort abgeschnitten'):
+        return jsonify({'ok': True, 'detail': f'Schlüssel gültig (Modell {AI_MODEL_ANTHROPIC})'})
+    if fehler:
+        return jsonify({'ok': False, 'detail': fehler})
+    return jsonify({'ok': True, 'detail': f'Schlüssel gültig (Modell {AI_MODEL_ANTHROPIC})'})
+
+
 @app.route('/api/settings/telegram/test', methods=['POST'])
 @login_required
 def api_telegram_test():
@@ -2995,6 +3393,87 @@ def api_telegram_test():
         return jsonify({'error': str(e)}), 500
 
 
+def _zeile(obj, felder):
+    """Ein Modell-Objekt als Dict für den JSON-Export. datetime und date werden zu Text."""
+    d = {}
+    for f in felder:
+        wert = getattr(obj, f, None)
+        if hasattr(wert, 'isoformat'):
+            wert = wert.isoformat()
+        d[f] = wert
+    return d
+
+
+# Einstellungen, die NICHT in die Sicherung gehören. Zusätzlich fliegt alles heraus, was auf
+# '_key', '_token' oder '_secret' endet — eine Sicherung wandert per Definition irgendwohin.
+_BACKUP_GEHEIM = {'telegram_token', 'deepseek_api_key', 'rapidapi_key', 'canva_tokens',
+                  'anthropic_api_key', 'content_os_key', 'admin_password'}
+_BACKUP_GEHEIM_ENDUNGEN = ('_key', '_token', '_secret', '_password')
+
+
+def _setting_geheim(key):
+    k = (key or '').strip().lower()
+    return k in _BACKUP_GEHEIM or k.endswith(_BACKUP_GEHEIM_ENDUNGEN)
+
+
+def _sqlite_datei():
+    """Pfad der SQLite-Datei hinter SQLALCHEMY_DATABASE_URI, oder None bei anderer Datenbank."""
+    uri = str(app.config.get('SQLALCHEMY_DATABASE_URI', ''))
+    if not uri.startswith('sqlite:'):
+        return None
+    pfad = uri.split('sqlite:', 1)[1].lstrip('/')
+    if uri.startswith('sqlite:////'):
+        pfad = '/' + pfad
+    elif not os.path.isabs(pfad):
+        pfad = os.path.join(_BASE_DIR, pfad)
+    return pfad if os.path.exists(pfad) else None
+
+
+@app.route('/api/backup/db')
+@login_required
+def api_backup_db():
+    """Konsistente Kopie der SQLite-Datei zum Herunterladen.
+
+    Über sqlite3.Connection.backup(), NICHT über ein einfaches Kopieren: die Datenbank läuft
+    im WAL-Modus, dort steht der zuletzt geschriebene Teil noch in der -wal-Datei. Genau daran
+    ist im Live-Test eine Sicherung gescheitert — die Kopie war unvollständig."""
+    from flask import send_file
+    import io, sqlite3, tempfile
+    quelle = _sqlite_datei()
+    if not quelle:
+        return jsonify({'error': 'Keine SQLite-Datenbank — diese Sicherung gibt es nur für '
+                                 'SQLite'}), 400
+    ziel_fd, ziel = tempfile.mkstemp(suffix='.db', dir=_EXPORT_DIR)
+    os.close(ziel_fd)
+    try:
+        q = sqlite3.connect(f'file:{urllib.parse.quote(quelle)}?mode=ro', uri=True)
+        try:
+            z = sqlite3.connect(ziel)
+            try:
+                q.backup(z)
+            finally:
+                z.close()
+        finally:
+            q.close()
+        with open(ziel, 'rb') as fh:
+            daten = fh.read()
+    except Exception as ex:
+        log.error(f'DB-Sicherung fehlgeschlagen: {ex}')
+        return jsonify({'error': f'Sicherung fehlgeschlagen: {ex}'}), 500
+    finally:
+        # Die Kopie liegt danach im Speicher; die Zwischendatei wird in jedem Fall entfernt,
+        # damit im Export-Ordner keine vollständige Datenbank liegen bleibt.
+        try:
+            os.remove(ziel)
+        except OSError:
+            pass
+    buf = io.BytesIO(daten)
+    buf.seek(0)
+    fname = f'memeos_{datetime.utcnow().strftime("%Y%m%d_%H%M")}.db'
+    return send_file(buf, mimetype='application/x-sqlite3',
+                     as_attachment=True, download_name=fname)
+
+
 @app.route('/api/backup')
 @login_required
 def api_backup():
@@ -3002,7 +3481,7 @@ def api_backup():
     import io
     data = {
         'exported_at': datetime.utcnow().isoformat(),
-        'version': '1.0',
+        'version': '1.1',
         'cities': [{'id': c.id, 'name': c.name, 'state': c.state, 'population': c.population,
                     'instagram_handle': c.instagram_handle, 'accent_color': c.accent_color,
                     'rss_url': c.rss_url, 'notes': c.notes}
@@ -3022,6 +3501,41 @@ def api_backup():
                                  'recorded_at': s.recorded_at.isoformat()}
                                 for s in CityFollowerSnapshot.query.order_by(
                                     CityFollowerSnapshot.city_id, CityFollowerSnapshot.recorded_at).all()],
+        # Ab Fassung 1.1: ohne diese Bereiche wäre eine Wiederherstellung wertlos gewesen —
+        # Templates, Stadtwissen und Einstellungen sind die eigentliche Arbeit, die Beiträge
+        # lassen sich daraus neu erzeugen.
+        'templates': [_zeile(t, ['id', 'name', 'description', 'canva_url', 'render_type',
+                                 'pil_config', 'required_vars', 'tags', 'category', 'rating',
+                                 'preview_image', 'preview_url', 'example_text', 'notes',
+                                 'seasonal_from', 'seasonal_to', 'min_population', 'use_count',
+                                 'active', 'series', 'series_position', 'created_at'])
+                      for t in MemeTemplate.query.order_by(MemeTemplate.id).all()],
+        'template_categories': [_zeile(c, ['id', 'key', 'label', 'emoji', 'group',
+                                           'sort_order', 'active'])
+                                for c in TemplateCategory.query.order_by(TemplateCategory.id).all()],
+        'knowledge': [_zeile(k, ['id', 'city_id', 'category', 'name', 'description',
+                                 'confidence', 'source', 'source_post_id', 'used_count',
+                                 'last_used_at', 'cooldown_until', 'active', 'created_at',
+                                 'updated_at'])
+                      for k in CityKnowledge.query.order_by(CityKnowledge.id).all()],
+        'events': [_zeile(e, ['id', 'name', 'description', 'event_type', 'date_from', 'date_to',
+                              'recurring', 'lead_days', 'city_scope', 'meme_relevance',
+                              'suggested_cats', 'emoji', 'notes', 'active', 'created_at'])
+                   for e in MemeEvent.query.order_by(MemeEvent.id).all()],
+        'collab_niches': [_zeile(n, ['id', 'name', 'emoji', 'description', 'active', 'created_at'])
+                          for n in CollabNiche.query.order_by(CollabNiche.id).all()],
+        'collab_ideas': [_zeile(i, ['id', 'niche_id', 'title', 'description', 'template_text',
+                                    'example_image', 'active', 'created_at'])
+                         for i in CollabIdea.query.order_by(CollabIdea.id).all()],
+        'city_collabs': [_zeile(c, ['id', 'idea_id', 'city_id', 'partner_name', 'partner_ig',
+                                    'status', 'notes', 'created_at'])
+                         for c in CityCollab.query.order_by(CityCollab.id).all()],
+        # Einstellungen OHNE Schlüssel und Token (siehe _setting_geheim).
+        'settings': [_zeile(s, ['key', 'value', 'updated_at'])
+                     for s in AppSettings.query.order_by(AppSettings.key).all()
+                     if not _setting_geheim(s.key)],
+        'settings_ausgelassen': sorted(s.key for s in AppSettings.query.all()
+                                       if _setting_geheim(s.key)),
     }
     buf = io.BytesIO(json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8'))
     buf.seek(0)
@@ -3314,6 +3828,22 @@ def _seed_events():
             ))
         db.session.commit()
 
+def _seed_ai_settings():
+    """Standardwerte für die KI-Einstellungen. Wichtig: nur anlegen, was noch fehlt — eine
+    bewusst gespeicherte 0 (Bremse aus) bleibt dadurch unberührt.
+
+    Das Monatsbudget stand bisher standardmäßig auf 0 = keine Bremse. Ein Fehler in einer
+    Schleife konnte damit unbegrenzt Geld kosten; 5,00 EUR sind ein Anfangswert, den der
+    Nutzer in den Einstellungen jederzeit ändert."""
+    defaults = {
+        'ai_budget_month_eur': '5.00',
+    }
+    for k, v in defaults.items():
+        if not AppSettings.query.filter_by(key=k).first():
+            db.session.add(AppSettings(key=k, value=v))
+    db.session.commit()
+
+
 def _seed_recycle_settings():
     defaults = {
         'recycle_min_age_days':       '180',
@@ -3450,6 +3980,8 @@ with app.app_context():
     _seed_template_categories()
     _seed_events()
     _seed_recycle_settings()
+    _seed_ai_settings()
+    _modellpreise_pruefen()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4054,16 +4586,12 @@ def api_inspo_post_delete(post_id):
 @login_required
 def api_inspo_post_generate(post_id):
     p = MemoInspirationPost.query.get_or_404(post_id)
-    if not ANTHROPIC_API_KEY:
-        return jsonify({'error': 'Kein API Key'}), 400
+    if not _ai_key_vorhanden():
+        return jsonify({'error': _ai_key_hinweis() or 'Kein API Key'}), 400
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         templates = MemeTemplate.query.filter_by(active=True).all()
         tmpl_str = '\n'.join([f"- ID:{t.id} {t.name}" for t in templates])
-        msg = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=300,
-            messages=[{'role': 'user', 'content': f"""Analysiere diesen Instagram-Post als Meme-Inspiration:
+        prompt = f"""Analysiere diesen Instagram-Post als Meme-Inspiration:
 
 Caption: {p.caption or '(keine)'}
 Likes: {p.like_count or '?'}
@@ -4073,11 +4601,10 @@ Verfügbare Meme-Templates:
 {tmpl_str}
 
 Antworte mit JSON:
-{{"meme_idea": "<konkrete Meme-Idee für eine deutsche Stadtseite, max 150 Zeichen>", "suggested_template_id": <ID oder null>}}"""}]
-        )
-        raw = msg.content[0].text.strip()
-        _log_ai_usage('inspo_analyze', 'claude-haiku-4-5-20251001',
-                      msg.usage.input_tokens, msg.usage.output_tokens)
+{{"meme_idea": "<konkrete Meme-Idee für eine deutsche Stadtseite, max 150 Zeichen>", "suggested_template_id": <ID oder null>}}"""
+        raw, fehler = _anthropic_complete([], prompt, 300, 'inspo_analyze')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         import re
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
@@ -4099,8 +4626,8 @@ Antworte mit JSON:
 @login_required
 def api_inspo_ai_sort():
     """Lässt Claude unsortierte Posts thematisch einordnen + Stadtwissen extrahieren."""
-    if not ANTHROPIC_API_KEY:
-        return jsonify({'error': 'Kein API Key'}), 400
+    if not _ai_key_vorhanden():
+        return jsonify({'error': _ai_key_hinweis() or 'Kein API Key'}), 400
     count = int(request.json.get('count', 20) if request.json else 20)
     posts = MemoInspirationPost.query.filter(
         MemoInspirationPost.ai_relevant.is_(None),
@@ -4109,9 +4636,9 @@ def api_inspo_ai_sort():
     if not posts:
         return jsonify({'ok': True, 'processed': 0, 'message': 'Alle Posts bereits sortiert'})
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
     processed = 0
     knowledge_added = 0
+    ki_fehler = ''
     import re
     # Einzige Taxonomie: KNOWLEDGE_CATEGORIES (Schlüssel + Label), unbekannte Antworten → 'sonstiges'
     categories_str = '\n'.join(f'- {k}: {label}' for k, label, _ in KNOWLEDGE_CATEGORIES)
@@ -4120,10 +4647,7 @@ def api_inspo_ai_sort():
         city_name = city.name if city else 'unbekannte Stadt'
         city_id   = city.id if city else None
         try:
-            msg = client.messages.create(
-                model='claude-haiku-4-5-20251001',
-                max_tokens=600,
-                messages=[{'role': 'user', 'content': f"""Du analysierst einen Instagram-Post aus {city_name} für ein lokales Meme-Konto.
+            prompt = f"""Du analysierst einen Instagram-Post aus {city_name} für ein lokales Meme-Konto.
 
 Von: @{p.source.username if p.source else 'unbekannt'}
 Caption: {(p.caption or '')[:500]}
@@ -4147,11 +4671,14 @@ Antworte NUR mit diesem JSON (kein anderer Text):
   ]
 }}
 
-Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als leeres Array []."""}]
-            )
-            _log_ai_usage('inspo_sort', 'claude-haiku-4-5-20251001',
-                          msg.usage.input_tokens, msg.usage.output_tokens)
-            raw = msg.content[0].text.strip()
+Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als leeres Array []."""
+            raw, fehler = _anthropic_complete([], prompt, 600, 'inspo_sort')
+            if fehler:
+                ki_fehler = fehler
+                log.warning(f'Inspiration-Sortierung: {fehler}')
+                if _ki_fehler_endgueltig(fehler):
+                    break        # falscher Schlüssel oder Budget: die restlichen Posts sparen
+                continue
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
@@ -4187,7 +4714,8 @@ Wenn kein spezifisches Stadtmeme-Wissen erkennbar ist, lass city_knowledge als l
         except Exception as ex:
             log.warning(f'KI-Sort Post {p.id}: {ex}')
     db.session.commit()
-    return jsonify({'ok': True, 'processed': processed, 'knowledge_added': knowledge_added, 'total': len(posts)})
+    return jsonify({'ok': True, 'processed': processed, 'knowledge_added': knowledge_added,
+                    'total': len(posts), 'ki_fehler': ki_fehler})
 
 
 @app.route('/api/inspiration/posts/<int:post_id>/ai-approve', methods=['POST'])
@@ -4588,11 +5116,10 @@ def api_upload_schedule():
 @login_required
 def api_upload_caption(post_id):
     p = MemePost.query.get_or_404(post_id)
-    if not ANTHROPIC_API_KEY:
-        return jsonify({'error': 'Kein API Key'}), 400
+    if not _ai_key_vorhanden():
+        return jsonify({'error': _ai_key_hinweis() or 'Kein API Key'}), 400
     city = p.city or (City.query.get(p.city_id) if p.city_id else None)
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         prompt = f"""Du bist Social-Media-Manager einer deutschen Stadt-Meme-Seite.
 Stadt: {city.name if city else 'Unbekannt'}
 Dateiname: {p.title}
@@ -4600,12 +5127,9 @@ Dateiname: {p.title}
 Erstelle 3 verschiedene Instagram-Captions auf Deutsch (locker, witzig, lokaler Humor).
 Format: {{"captions": ["...", "...", "..."]}}
 Nur JSON."""
-        msg = client.messages.create(
-            model='claude-haiku-4-5-20251001', max_tokens=500,
-            messages=[{'role':'user','content':prompt}]
-        )
-        raw = msg.content[0].text
-        _log_ai_usage('upload_caption', 'claude-haiku-4-5-20251001', msg.usage.input_tokens, msg.usage.output_tokens)
+        raw, fehler = _anthropic_complete([], prompt, 500, 'upload_caption')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             data = json.loads(match.group(0))
@@ -4731,8 +5255,10 @@ def api_vorrat_create():
         hashtags=d.get('hashtags',''),
         post_type=d.get('post_type','feed'),
         status=d.get('status','entwurf'),
-        notes=d.get('notes',''),
     )
+    # Neu angelegt gibt es noch keine Metadaten; die Notiz wird trotzdem gleich als JSON
+    # abgelegt, damit später beide Teile nebeneinander passen.
+    _post_notes_schreiben(p, notiz=d.get('notiz', d.get('notes', '')))
     if d.get('scheduled_at'):
         try: p.scheduled_at = datetime.fromisoformat(d['scheduled_at'])
         except: pass
@@ -4751,9 +5277,16 @@ def api_vorrat_item(post_id):
     if request.method == 'GET':
         return jsonify(p.to_dict())
     d = request.json or {}
-    for f in ['title','image_url','caption','hashtags','post_type','status','notes',
+    for f in ['title','image_url','caption','hashtags','post_type','status',
               'perf_likes','perf_comments','perf_saves','perf_reach','perf_impressions']:
         if f in d: setattr(p, f, d[f])
+    # 'notiz' ersetzt NUR den lesbaren Teil, die Metadaten der Render-Queue bleiben stehen.
+    # 'notes' (Altverhalten) gilt ab jetzt ebenfalls als lesbarer Teil — vorher überschrieb
+    # das Feld den ganzen JSON-Text und löschte damit das Kennzeichen „Variablen fehlen".
+    if 'notiz' in d:
+        _post_notes_schreiben(p, notiz=d.get('notiz'))
+    elif 'notes' in d:
+        _post_notes_schreiben(p, notiz=d.get('notes'))
     if 'scheduled_at' in d:
         p.scheduled_at = datetime.fromisoformat(d['scheduled_at']) if d['scheduled_at'] else None
         if d['scheduled_at']: p.status = 'geplant'
@@ -4768,12 +5301,11 @@ def api_vorrat_item(post_id):
 @login_required
 def api_vorrat_caption(post_id):
     p = MemePost.query.get_or_404(post_id)
-    if not ANTHROPIC_API_KEY:
-        return jsonify({'error': 'Kein API Key'}), 400
+    if not _ai_key_vorhanden():
+        return jsonify({'error': _ai_key_hinweis() or 'Kein API Key'}), 400
     city = p.city
     tmpl = p.template
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=1)
         prompt = f"""Du bist Social-Media-Manager für eine deutsche Stadt-Meme-Seite.
 Stadt: {city.name} ({city.state or ''})
 Template: {tmpl.name if tmpl else 'Stadtmeme'}
@@ -4786,12 +5318,9 @@ Erstelle eine Instagram-Caption auf Deutsch:
 - 10-15 relevante Hashtags
 Format: {{"caption": "...", "hashtags": "..."}}
 Nur JSON."""
-        msg = client.messages.create(
-            model='claude-haiku-4-5-20251001', max_tokens=400,
-            messages=[{'role':'user','content':prompt}]
-        )
-        raw = msg.content[0].text
-        _log_ai_usage('caption_gen', 'claude-haiku-4-5-20251001', msg.usage.input_tokens, msg.usage.output_tokens)
+        raw, fehler = _anthropic_complete([], prompt, 400, 'caption_gen')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             data = json.loads(match.group(0))
@@ -4848,8 +5377,8 @@ def api_vorrat_duplicate(post_id):
         hashtags=p.hashtags,
         post_type=p.post_type,
         status='entwurf',
-        notes=f'Dupliziert von Post #{p.id}',
     )
+    _post_notes_schreiben(new_post, notiz=f'Dupliziert von Post #{p.id}')
     db.session.add(new_post)
     db.session.commit()
     return jsonify(new_post.to_dict()), 201
@@ -5385,7 +5914,6 @@ def api_trending_refresh(city_id):
         if not headlines:
             return jsonify({'error': 'Keine Artikel im RSS-Feed gefunden'}), 400
 
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Du analysierst aktuelle Schlagzeilen aus {city.name} auf ihr Meme-Potenzial für Instagram-Stadtmemes.
 
 Schlagzeilen:
@@ -5397,12 +5925,11 @@ Antworte NUR mit validem JSON (kein Markdown, kein Text davor/danach):
 
 trend_score: 0-100, wie gut geeignet für einen viralen Stadtmeme."""
 
-        resp = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=800,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        raw = resp.content[0].text.strip()
+        # Über _anthropic_complete: bucht die Nutzung (Feature 'trending_refresh') und erbt
+        # Schlüsselprüfung und Kostenbremse. Vorher lief dieser Aufruf an beidem vorbei.
+        raw, fehler = _anthropic_complete([], prompt, 800, 'trending_refresh')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         start, end = raw.find('{'), raw.rfind('}') + 1
         data = json.loads(raw[start:end])
 
@@ -5470,7 +5997,6 @@ def api_trending_idea(tid):
     topic = TrendingTopic.query.get_or_404(tid)
     city_name = topic.city.name if topic.city else 'der Stadt'
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Generiere 3 kreative Meme-Ideen für das Thema "{topic.keyword}" aus {city_name}.
 
 Kontext: {topic.description or 'Lokales Trending-Thema'}
@@ -5478,11 +6004,9 @@ Kontext: {topic.description or 'Lokales Trending-Thema'}
 Format: kurze, prägnante Instagram-Meme-Konzepte (z.B. "POV: ..." oder "Wenn ..." oder direkte Aussage).
 Antworte NUR mit JSON: {{"ideas":["Idee 1","Idee 2","Idee 3"]}}"""
 
-        resp = client.messages.create(
-            model='claude-haiku-4-5-20251001', max_tokens=400,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        raw = resp.content[0].text.strip()
+        raw, fehler = _anthropic_complete([], prompt, 400, 'trending_idee')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         start, end = raw.find('{'), raw.rfind('}') + 1
         data = json.loads(raw[start:end])
         topic.meme_idea = '\n'.join(data.get('ideas', []))
@@ -5606,8 +6130,8 @@ def api_recycle_approve(jid):
         post_type=source.post_type,
         status='geplant',
         scheduled_at=job.scheduled_for,
-        notes=f'Recycelt aus Post #{source.id}'
     )
+    _post_notes_schreiben(new_post, notiz=f'Recycelt aus Post #{source.id}')
     db.session.add(new_post)
     db.session.flush()
     job.target_post_id = new_post.id
@@ -5680,7 +6204,6 @@ def api_recycle_caption(jid):
     source = job.source_post
     city_name = job.city.name if job.city else 'der Stadt'
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''), timeout=60.0, max_retries=1)
         prompt = f"""Generiere 3 neue Instagram-Captions für einen recycelten Meme-Post aus {city_name}.
 
 Original-Caption: "{source.caption or ''}"
@@ -5689,11 +6212,9 @@ Post-Typ: {source.post_type or 'feed'}
 Die neue Caption soll frisch klingen, nicht identisch mit dem Original sein, aber zum selben Bild passen.
 Antworte NUR mit JSON: {{"captions":["Caption 1","Caption 2","Caption 3"]}}"""
 
-        resp = client.messages.create(
-            model='claude-haiku-4-5-20251001', max_tokens=500,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        raw = resp.content[0].text.strip()
+        raw, fehler = _anthropic_complete([], prompt, 500, 'recycle_caption')
+        if fehler:
+            return jsonify({'error': fehler}), 502
         start, end = raw.find('{'), raw.rfind('}') + 1
         data = json.loads(raw[start:end])
         return jsonify({'captions': data.get('captions', [])})

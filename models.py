@@ -644,6 +644,43 @@ class MemePost(db.Model):
                 slides.append({'url': single, 'kind': slide_kind(single)})
         return slides
 
+    # ── Notizen und Metadaten ────────────────────────────────────────────────
+    # notes trägt zwei Dinge: die maschinenlesbaren Metadaten der Render-Queue
+    # (missing_vars, quality, task_kind, series, slides) und die Notiz, die ein Mensch
+    # im Bearbeiten-Dialog schreibt. Damit das eine das andere nicht überschreibt,
+    # liegt beides als ein JSON-Objekt in notes: die Notiz unter dem Schlüssel 'notiz',
+    # alles Übrige sind Metadaten. Altbestand (reiner Text in notes) gilt komplett als Notiz.
+
+    def _notes_objekt(self):
+        """notes als Dict, wenn dort ein JSON-Objekt steht – sonst None (reiner Text)."""
+        raw = (self.notes or '').strip()
+        if not raw or not raw.startswith('{'):
+            return None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def meta_dict(self):
+        """Die Metadaten aus notes OHNE den lesbaren Anteil 'notiz'.
+        Leeres Dict, wenn notes kein JSON-Objekt ist (dann gibt es keine Metadaten)."""
+        data = self._notes_objekt()
+        if not data:
+            return {}
+        return {k: v for k, v in data.items() if k != 'notiz'}
+
+    def notiz_text(self):
+        """Der menschenlesbare Anteil von notes als Text.
+        Ist notes kein JSON-Objekt, gilt der ganze Text als Notiz."""
+        data = self._notes_objekt()
+        if data is None:
+            return self.notes or ''
+        wert = data.get('notiz')
+        if wert is None:
+            return ''
+        return wert if isinstance(wert, str) else str(wert)
+
     def to_dict(self):
         city_name = self.city.name if self.city else ''
         city_color = self.city.accent_color if self.city else '#3b82f6'
@@ -660,7 +697,9 @@ class MemePost(db.Model):
             'status_label': self.status_label,
             'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
             'published_at': self.published_at.isoformat() if self.published_at else None,
-            'notes': self.notes or '',
+            'notes': self.notes or '',          # unverändert für Altcode
+            'notiz': self.notiz_text(),         # nur der lesbare Teil (Bearbeiten-Dialog)
+            'meta': self.meta_dict(),           # Metadaten der Queue ohne 'notiz'
             'perf_likes': self.perf_likes, 'perf_comments': self.perf_comments,
             'perf_saves': self.perf_saves, 'perf_reach': self.perf_reach,
             'perf_impressions': self.perf_impressions,

@@ -43,7 +43,9 @@ STATUS_LABELS = {'pending': 'Wartend', 'running': 'Läuft', 'done': 'Fertig',
 
 STALE_RUNNING_MINUTES = 10      # laufende Tasks älter als das gelten nach Neustart als verwaist
 RETRY_DELAY_SECONDS = 30        # Wartezeit vor dem automatischen zweiten Versuch (KI nicht erreichbar)
+RETRY_ERROR_MARKER = 'KI nicht erreichbar'      # nur dieser Fehler wird automatisch wiederholt
 MAX_AUTO_ATTEMPTS = 2           # automatische Versuche insgesamt
+DEFAULT_SKIP_RECENT_DAYS = 30   # Standardfenster „nicht noch einmal erzeugen“ (Anlegen und Abarbeiten)
 IDLE_SLEEP = 2.0                # Pause der Worker ohne Arbeit
 BETWEEN_TASKS_SLEEP = 0.5       # Pause je Worker zwischen zwei Tasks
 RUN_ONCE_LIMIT = 5              # Tasks pro /api/render/run-once
@@ -57,6 +59,10 @@ KEEP_LOCAL_SETTING = 'render_keep_local'   # '1' (Standard) = PNG bleibt auch na
 QUALITY_OK = 'ok'
 QUALITY_INCOMPLETE = 'unvollstaendig'
 QUALITY_LABELS = {QUALITY_OK: 'Vollständig', QUALITY_INCOMPLETE: 'Variablen fehlen'}
+QUALITY_LABEL_GELOESCHT = 'Ergebnis gelöscht'   # Task fertig, der Beitrag im Vorrat ist aber weg
+
+# Begründung, wenn eine wiedervorgelegte Aufgabe beim Abarbeiten überholt wurde
+SKIP_RECENT_REASON = 'Übersprungen: für diese Stadt ist bereits ein Beitrag entstanden'
 
 # Kategorie-Überhang beim Batch (nur Warnung, kein Überspringen)
 CATEGORY_MIX_SETTING = 'category_target_mix'          # von app.py gepflegt: {'pov': 20, ...}
@@ -92,6 +98,9 @@ class RenderTask(db.Model):
     fit_score     = db.Column(db.Integer)
     fit_reasoning = db.Column(db.Text)
     quality       = db.Column(db.String(20))     # None (ungeprüft) | 'ok' | 'unvollstaendig'
+    # Fenster des anlegenden Batches. Die Abarbeitung prüft damit ein zweites Mal – eine
+    # wiedervorgelegte Aufgabe darf nicht rendern, wenn die Stadt inzwischen versorgt ist.
+    skip_recent_days = db.Column(db.Integer)     # None = Standardfenster, 0 = nicht prüfen
     post_id       = db.Column(db.Integer, db.ForeignKey('meme_post.id'), nullable=True)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     started_at    = db.Column(db.DateTime)
@@ -127,16 +136,26 @@ class RenderTask(db.Model):
 
     @property
     def retry_pending(self):
-        """Automatischer zweiter Versuch steht noch aus (KI war nicht erreichbar)."""
+        """Automatischer zweiter Versuch steht noch aus (KI war nicht erreichbar).
+        Muss inhaltlich mit _retry_pending_filter() übereinstimmen – dieselbe Frage,
+        einmal für ein Objekt, einmal als SQL-Bedingung."""
         return (self.status == 'failed'
                 and (self.attempts or 0) < MAX_AUTO_ATTEMPTS
-                and 'KI nicht erreichbar' in (self.error or ''))
+                and RETRY_ERROR_MARKER in (self.error or ''))
 
     def to_dict(self):
         post = self.post
+        # Der Beitrag kann im Vorrat gelöscht worden sein. Dann zeigt post_id ins Leere: kein
+        # toter Knopf „Im Vorrat“ und kein leeres Kennzeichen, sondern eine klare Ansage.
+        # Nach verwaiste_post_ids_loesen() ist post_id bereits NULL – 'done' ohne Beitrag
+        # bedeutet dasselbe, darum steht der Status mit in der Bedingung.
+        ergebnis_weg = post is None and (self.post_id is not None or self.status == 'done')
         image_url = ''
         if post:
             image_url = post.image_url or (slide_url(post.image_path) if post.image_path else '')
+        quality_label = QUALITY_LABELS.get(self.quality or '', '')
+        if ergebnis_weg:
+            quality_label = QUALITY_LABEL_GELOESCHT
         return {
             'id': self.id,
             'batch_id': self.batch_id,
@@ -154,11 +173,13 @@ class RenderTask(db.Model):
             'error': self.error or '',
             'retry_pending': self.retry_pending,
             'quality': self.quality or '',
-            'quality_label': QUALITY_LABELS.get(self.quality or '', ''),
+            'quality_label': quality_label,
             'missing_vars': self.missing_vars,
             'fit_score': self.fit_score,
             'fit_reasoning': self.fit_reasoning or '',
-            'post_id': self.post_id,
+            'post_id': None if ergebnis_weg else self.post_id,
+            'post_geloescht': ergebnis_weg,
+            'skip_recent_days': self.skip_recent_days,
             'image_url': image_url,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
@@ -227,6 +248,19 @@ def _counts(query_filter=None):
     return counts
 
 
+def _retry_pending_filter():
+    """SQL-Bedingung: Aufgabe ist gescheitert, die automatische Wiederholung steht aber noch aus.
+
+    Eine einzige Definition für alle drei Stellen, die sie brauchen: die Wiedervorlage selbst
+    (_requeue_due_retries), die Stadt-Sperre beim Anlegen (_queued_city_ids) und das Abbrechen
+    eines Batches. Fehlte sie einer Stelle, galt eine wartende Aufgabe dort als „nicht in der
+    Warteschlange“ – genau so entstanden nach einem Fehlbatch zwei Beiträge je Stadt.
+    Inhaltlich identisch mit der Property RenderTask.retry_pending."""
+    return db.and_(RenderTask.status == 'failed',
+                   RenderTask.attempts < MAX_AUTO_ATTEMPTS,
+                   RenderTask.error.like('%' + RETRY_ERROR_MARKER + '%'))
+
+
 def _series_templates(series):
     return (MemeTemplate.query.filter_by(active=True)
             .filter(MemeTemplate.series == series)
@@ -258,6 +292,44 @@ def _mark_failed(task, error):
     task.error = (error or 'Unbekannter Fehler')[:2000]
     task.quality = None        # ohne Bild gibt es nichts zu bewerten
     task.finished_at = datetime.utcnow()
+
+
+def _mark_cancelled(task, grund):
+    """Aufgabe ohne KI-Aufruf und ohne Rendern beenden – sie ist gegenstandslos geworden."""
+    task.status = 'cancelled'
+    task.error = (grund or '')[:2000]
+    task.quality = None
+    task.finished_at = datetime.utcnow()
+
+
+def _task_skip_days(task):
+    """Fenster dieser Aufgabe in Tagen. None = das Feld ist alt/leer, dann der Standardwert;
+    0 = der Nutzer wollte ausdrücklich keine Prüfung."""
+    raw = task.skip_recent_days
+    if raw is None:
+        return DEFAULT_SKIP_RECENT_DAYS
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_SKIP_RECENT_DAYS
+
+
+def _inzwischen_erzeugt(task):
+    """Ist die Stadt seit dem Anlegen der Aufgabe schon versorgt worden?
+
+    skip_recent_days schützte bisher nur beim Anlegen des Batches. Eine Aufgabe, die eine halbe
+    Stunde auf ihre Wiedervorlage gewartet hat, rannte danach trotzdem los – auch wenn dieselbe
+    Stadt inzwischen aus einem zweiten Batch einen Beitrag bekommen hatte. Darum unmittelbar vor
+    dem KI-Aufruf noch einmal dieselbe Frage stellen, mit derselben Zahl wie beim Anlegen."""
+    days = _task_skip_days(task)
+    if days <= 0:
+        return False
+    try:
+        recent = _recent_city_ids(task.kind, task.template_id, task.series, days)
+    except Exception as ex:      # eine kaputte Prüfung darf das Rendern nicht verhindern
+        log.warning(f'RenderQueue: Nachprüfung skip_recent_days fehlgeschlagen: {ex}')
+        return False
+    return task.city_id in recent
 
 
 def _keep_local():
@@ -359,6 +431,10 @@ def _process_single(appmod, task, city, written):
         _mark_failed(task, 'Template nicht gefunden')
         return
 
+    if _inzwischen_erzeugt(task):
+        _mark_cancelled(task, SKIP_RECENT_REASON)
+        return
+
     res = appmod._claude_fit_and_vars(city, template)
     task.fit_score = res.get('fit_score')
     task.fit_reasoning = (res.get('reasoning') or '')[:2000]
@@ -429,6 +505,10 @@ def _process_series(appmod, task, city, written):
     templates = _series_templates(task.series)
     if not templates:
         _mark_failed(task, f'Keine aktiven Templates in Serie „{task.series}“')
+        return
+
+    if _inzwischen_erzeugt(task):
+        _mark_cancelled(task, SKIP_RECENT_REASON)
         return
 
     paths, slide_results, fit_scores = [], [], []
@@ -590,9 +670,7 @@ def _requeue_due_retries():
     if _master_paused():
         return 0
     cutoff = datetime.utcnow() - timedelta(seconds=RETRY_DELAY_SECONDS)
-    due = (RenderTask.query.filter(RenderTask.status == 'failed',
-                                   RenderTask.attempts < MAX_AUTO_ATTEMPTS,
-                                   RenderTask.error.like('%KI nicht erreichbar%'),
+    due = (RenderTask.query.filter(_retry_pending_filter(),
                                    RenderTask.finished_at <= cutoff)
            .all())
     for task in due:
@@ -614,6 +692,9 @@ def _reset_stale_running():
         task.status = 'pending'
         task.worker = None
         task.started_at = None
+        # _claim() zählt beim Ziehen hoch. Ein abgestürzter Arbeiter war aber kein Versuch –
+        # sonst frisst ein Neustart das Budget der automatischen Wiederholung auf.
+        task.attempts = max(0, (task.attempts or 0) - 1)
     if stale:
         db.session.commit()
         log.info(f'RenderQueue: {len(stale)} verwaiste Tasks zurück auf pending')
@@ -684,6 +765,25 @@ def cleanup_orphan_renders(max_age_days=ORPHAN_MAX_AGE_DAYS, dry_run=False):
     return removed
 
 
+def verwaiste_post_ids_loesen():
+    """render_task.post_id auf NULL setzen, wo der Beitrag im Vorrat gelöscht wurde.
+
+    Ohne das bleibt die Historie bei „Fertig“ mit einem Knopf stehen, der ins Leere führt.
+    Die Aufgabe selbst bleibt erhalten – sie ist ja gelaufen, nur ihr Ergebnis ist weg."""
+    ids = [row[0] for row in
+           db.session.query(RenderTask.id)
+           .outerjoin(MemePost, MemePost.id == RenderTask.post_id)
+           .filter(RenderTask.post_id.is_not(None), MemePost.id.is_(None))
+           .all()]
+    for start in range(0, len(ids), 500):      # große Listen nicht in ein einziges IN pressen
+        (RenderTask.query.filter(RenderTask.id.in_(ids[start:start + 500]))
+         .update({'post_id': None}, synchronize_session=False))
+    if ids:
+        db.session.commit()
+        log.info(f'RenderQueue: {len(ids)} Verweis(e) auf gelöschte Beiträge gelöst')
+    return len(ids)
+
+
 def _idle_maintenance():
     """Aufräumarbeiten im Leerlauf: Wiedervorlage, verwaiste Tasks (max. 1×/Minute),
     Dateirotation (max. 1×/Tag). Fehler hier dürfen den Worker nicht anhalten."""
@@ -709,6 +809,11 @@ def _idle_maintenance():
             cleanup_orphan_renders()
         except Exception as ex:
             log.warning(f'RenderQueue: Aufräumen fehlgeschlagen: {ex}')
+            db.session.rollback()
+        try:
+            verwaiste_post_ids_loesen()
+        except Exception as ex:
+            log.warning(f'RenderQueue: Verweise auf gelöschte Beiträge nicht lösbar: {ex}')
             db.session.rollback()
 
 
@@ -908,8 +1013,15 @@ def _category_overhang(kind, template, series, cities, days=CATEGORY_MIX_DAYS):
 
 
 def _queued_city_ids(kind, template_id, series):
-    q = db.session.query(RenderTask.city_id).filter(RenderTask.status.in_(('pending', 'running')),
-                                                    RenderTask.kind == kind)
+    """Städte, für die schon eine Aufgabe dieser Art offen ist.
+
+    Offen heißt nicht nur 'pending'/'running': eine mit „KI nicht erreichbar“ gescheiterte
+    Aufgabe steht auf 'failed' und wartet trotzdem auf ihre automatische Wiedervorlage. Wer sie
+    hier übersieht, legt beim zweiten Anlauf desselben Batches eine zweite Aufgabe je Stadt an –
+    und bekommt zwei Beiträge."""
+    q = db.session.query(RenderTask.city_id).filter(
+        db.or_(RenderTask.status.in_(('pending', 'running')), _retry_pending_filter()),
+        RenderTask.kind == kind)
     if kind == 'single':
         q = q.filter(RenderTask.template_id == template_id)
     else:
@@ -945,7 +1057,7 @@ def api_render_batch_create():
         kind, label = 'series', series
 
     try:
-        skip_days = int(d.get('skip_recent_days', 30) or 0)
+        skip_days = int(d.get('skip_recent_days', DEFAULT_SKIP_RECENT_DAYS) or 0)
     except (TypeError, ValueError):
         return jsonify({'error': 'skip_recent_days muss eine Zahl sein'}), 400
 
@@ -980,7 +1092,8 @@ def api_render_batch_create():
         db.session.add(RenderTask(batch_id=batch_id, kind=kind,
                                   template_id=template_id if kind == 'single' else None,
                                   series=series if kind == 'series' else None,
-                                  city_id=city.id, status='pending'))
+                                  city_id=city.id, status='pending',
+                                  skip_recent_days=skip_days))
         created += 1
     db.session.commit()
     return jsonify({'batch_id': batch_id, 'created': created, 'skipped': skipped,
@@ -999,7 +1112,9 @@ def api_render_batch_get(batch_id):
     retry_pending = sum(1 for t in tasks if t.retry_pending)
     done = counts['pending'] == 0 and counts['running'] == 0 and retry_pending == 0
     rows = [t.to_dict() for t in tasks]
-    incomplete = sum(1 for r in rows if r['quality'] == QUALITY_INCOMPLETE)
+    # Nur zählen, was es noch gibt: to_dict liefert post_id None, wenn der Beitrag gelöscht wurde.
+    incomplete = sum(1 for r in rows
+                     if r['quality'] == QUALITY_INCOMPLETE and r['post_id'] and not r['post_geloescht'])
     return jsonify({'batch_id': batch_id, 'label': tasks[0].label, 'kind': tasks[0].kind,
                     'counts': counts, 'total': len(tasks), 'retry_pending': retry_pending,
                     'incomplete': incomplete,
@@ -1022,13 +1137,19 @@ def api_render_queue():
                         'kind': first.kind if first else '',
                         'label': first.label if first else '',
                         'counts': _counts(RenderTask.batch_id == batch_id)})
+    # Der innere Join lässt Aufgaben weg, deren Beitrag gelöscht wurde (oder nie einen hatte) –
+    # sonst zählt die Kachel Beiträge mit, die es gar nicht mehr gibt.
     incomplete = (db.session.query(func.count(RenderTask.id))
+                  .join(MemePost, MemePost.id == RenderTask.post_id)
                   .filter(RenderTask.quality == QUALITY_INCOMPLETE).scalar() or 0)
+    retry_pending = (db.session.query(func.count(RenderTask.id))
+                     .filter(_retry_pending_filter()).scalar() or 0)
     return jsonify({'counts': counts, 'workers': _worker_count, 'alive': _alive_workers(),
                     'configured_workers': _workers_configured(),
                     'run_once_available': bool(_workers_disabled()),
                     'paused': _master_paused(),
                     'incomplete': int(incomplete),
+                    'retry_pending': int(retry_pending),
                     'recent_batches': batches})
 
 
@@ -1038,6 +1159,9 @@ def api_render_task_retry(task_id):
     task = RenderTask.query.get_or_404(task_id)
     if task.status in ('pending', 'running'):
         return jsonify({'error': f'Task ist bereits {STATUS_LABELS[task.status].lower()}'}), 409
+    # Von Hand ausgelöst schlägt die Absicht des Nutzers die automatische Nachprüfung: sonst
+    # würde ein Wiederholen genau das wieder abbrechen, was es gerade starten soll.
+    task.skip_recent_days = 0
     task.status = 'pending'
     task.worker = None
     task.error = None
@@ -1056,8 +1180,18 @@ def api_render_batch_cancel(batch_id):
     now = datetime.utcnow()
     n = (RenderTask.query.filter_by(batch_id=batch_id, status='pending')
          .update({'status': 'cancelled', 'finished_at': now}, synchronize_session=False))
+    # Wartende Wiedervorlagen stehen auf 'failed' und liefen nach dem Abbrechen trotzdem weiter.
+    # Sie gehören zum Batch und werden mit abgebrochen – einzeln, damit der Grund im Text steht.
+    wartende = (RenderTask.query.filter(RenderTask.batch_id == batch_id)
+                .filter(_retry_pending_filter()).all())
+    for task in wartende:
+        task.status = 'cancelled'
+        task.error = _combine_error(task.error, 'Wiederholung abgebrochen')
+        task.finished_at = now
     db.session.commit()
-    return jsonify({'ok': True, 'cancelled': n, 'counts': _counts(RenderTask.batch_id == batch_id)})
+    return jsonify({'ok': True, 'cancelled': n + len(wartende),
+                    'cancelled_pending': n, 'cancelled_retry': len(wartende),
+                    'counts': _counts(RenderTask.batch_id == batch_id)})
 
 
 @bp.route('/api/render/batch/<batch_id>', methods=['DELETE'])
@@ -1112,7 +1246,9 @@ def _migrate_columns():
         return []
     have = {c['name'] for c in insp.get_columns('render_task')}
     added = []
-    for column, ddl in (('quality', 'ALTER TABLE render_task ADD COLUMN quality VARCHAR(20)'),):
+    for column, ddl in (('quality', 'ALTER TABLE render_task ADD COLUMN quality VARCHAR(20)'),
+                        ('skip_recent_days',
+                         'ALTER TABLE render_task ADD COLUMN skip_recent_days INTEGER')):
         if column in have:
             continue
         try:

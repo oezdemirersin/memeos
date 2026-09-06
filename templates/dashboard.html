@@ -924,6 +924,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div id="rq-queue-incomplete" style="display:none;font-size:12px;color:var(--warning);margin-top:6px;cursor:pointer;"
            title="Entwürfe im Vorrat öffnen" onclick="rqOpenVorrat(null)"></div>
 
+      <div id="rq-key-hinweis" style="display:none;font-size:12px;color:var(--warning);border:1px solid var(--warning);background:rgba(245,158,11,.07);border-radius:8px;padding:8px 10px;margin-top:10px;">
+        <span id="rq-key-hinweis-text"></span>
+        <a href="#" onclick="rqZuSchluesselPruefung();return false;">Zu den Einstellungen →</a>
+      </div>
+
       <div id="rq-progress" hidden style="margin-top:16px;">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
           <span id="rq-progress-text"></span>
@@ -942,6 +947,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;">
         <div style="font-size:14px;font-weight:600;">Batch</div>
         <div id="rq-batch-label" style="font-size:12px;color:var(--muted);text-align:right;"></div>
+      </div>
+      <div id="rq-retry-hint" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--warning);margin-bottom:8px;">
+        <span id="rq-retry-text"></span>
+        <button class="btn btn-ghost btn-xs" onclick="rqCancel()">Wartende abbrechen</button>
       </div>
       <div id="rq-incomplete-hint" style="display:none;font-size:12px;color:var(--warning);margin-bottom:8px;"></div>
       <div id="rq-task-table"><div class="empty" style="padding:30px 20px;"><p>Noch kein Batch gestartet</p></div></div>
@@ -1379,6 +1388,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
           <button class="btn btn-ghost btn-xs" onclick="aiUsageNav(1)" title="Monat vor">→</button>
         </div>
       </div>
+      <!-- Warnung vom Server, wenn der hinterlegte Schlüssel offensichtlich nicht taugt -->
+      <div id="ai-key-hinweis" style="display:none;font-size:12px;color:var(--warning);border:1px solid var(--warning);background:rgba(245,158,11,.07);border-radius:8px;padding:8px 10px;margin-bottom:12px;"></div>
       <div style="font-size:28px;font-family:var(--font-display);" id="ai-usage-total">€0,0000</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="ai-usage-provider">Anbieter: —</div>
       <div style="font-size:12px;color:var(--warning);margin-top:4px;display:none;" id="ai-usage-provider-hint"></div>
@@ -1443,7 +1454,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="saveAiSettings()">Speichern</button>
+          <button class="btn btn-ghost btn-sm" id="ai-key-test-btn" onclick="testAiKey()">Schlüssel prüfen</button>
           <button class="btn btn-ghost btn-sm" id="ai-deepseek-clear-btn" style="display:none;" onclick="clearDeepseekKey()">Schlüssel entfernen</button>
+        </div>
+        <!-- Ein Testaufruf kostet Bruchteile eines Cents und spart 100 gescheiterte Aufträge -->
+        <div id="ai-key-test-result" style="display:none;font-size:12px;margin-top:8px;"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">
+          Prüft mit einem winzigen Testaufruf, ob der hinterlegte Schlüssel wirklich antwortet. Vor jedem großen Batch empfehlenswert.
         </div>
       </div>
     </div>
@@ -1451,7 +1468,14 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Daten-Backup</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">JSON-Export aller Posts, Städte, Follower-Snapshots und Trending-Daten</div>
-      <a href="/api/backup" class="btn btn-ghost btn-sm">⬇ Backup herunterladen</a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/api/backup" class="btn btn-ghost btn-sm">⬇ Backup herunterladen</a>
+        <a href="/api/backup/db" class="btn btn-ghost btn-sm">⬇ Datenbank sichern</a>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">
+        Der JSON-Export ist für die Inhalte: gut zum Nachlesen, Auswerten und Weiterverarbeiten.<br>
+        Die Datenbank-Kopie ist für den Ernstfall: sie enthält alles und stellt den Stand vollständig wieder her.
+      </div>
     </div>
 
     <div class="card">
@@ -2632,7 +2656,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div id="vorrat-planer-warn" style="display:none;margin-bottom:14px;"></div>
     <div class="form-group">
       <label>Notizen</label>
-      <textarea id="vorrat-notes" rows="2"></textarea>
+      <textarea id="vorrat-notes" rows="2" placeholder="Eigene Notiz zu diesem Beitrag…"></textarea>
+      <!-- Die technischen Angaben der Render-Queue stehen im selben DB-Feld, aber nicht im
+           Eingabefeld – sonst überschreibt jede Notiz das Kennzeichen „Variablen fehlen“. -->
+      <div id="vorrat-meta-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5;"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-vorrat-create')">Abbrechen</button>
@@ -4239,6 +4266,37 @@ function rqModeChanged() {
   const mode = document.querySelector('input[name="rq-mode"]:checked')?.value || 'all';
   document.getElementById('rq-city-list').hidden = mode !== 'list';
 }
+
+// ── Schlüssel-Hinweis vor großen Batches (blockiert nie, weist nur hin) ──
+const RQ_SCHLUESSEL_AB = 20;   // ab dieser Städtezahl lohnt der Testaufruf
+function rqSchluesselHinweisAus() {
+  const el = document.getElementById('rq-key-hinweis');
+  if(el) el.style.display = 'none';
+}
+function rqZeigeSchluesselHinweis(anzahl) {
+  const el = document.getElementById('rq-key-hinweis'); if(!el) return;
+  const txt = document.getElementById('rq-key-hinweis-text');
+  if(txt) txt.textContent = `${anzahl} Städte auf einmal: Erst den Schlüssel prüfen, sonst scheitern alle Aufträge. `;
+  el.style.display = '';
+}
+function rqZuSchluesselPruefung() {
+  showPage('settings');
+  setTimeout(() => document.getElementById('ai-cost-card')?.scrollIntoView({behavior: 'smooth'}), 120);
+}
+// Wie viele Städte trifft dieser Auftrag? Bei 'all'/'with_wiki' zählt erst der Server genau –
+// für den Hinweis reicht die Zahl der aktiven Städte.
+async function rqStadtAnzahl(cityIds) {
+  if(Array.isArray(cityIds)) return cityIds.length;
+  const res = await api('GET', '/api/cities').catch(() => null);
+  const list = Array.isArray(res) ? res : (res && Array.isArray(res.cities) ? res.cities : null);
+  return list ? list.filter(c => c.active !== false).length : 0;
+}
+async function rqSchluesselPruefen(cityIds) {
+  rqSchluesselHinweisAus();
+  if(aiKeyGeprueft()) return;
+  const anzahl = await rqStadtAnzahl(cityIds);
+  if(anzahl > RQ_SCHLUESSEL_AB) rqZeigeSchluesselHinweis(anzahl);
+}
 // Schnellstart über alle Städte: erst Anzahl zeigen und nach den KI-Kosten fragen
 async function rqStartAllCities(preset) {
   let anzahl = null;
@@ -4246,7 +4304,10 @@ async function rqStartAllCities(preset) {
   if (Array.isArray(cities)) anzahl = cities.filter(c => c.active !== false).length;
   const wen = anzahl == null ? 'alle aktiven Städte' : `${anzahl} aktive Stadt${anzahl === 1 ? '' : 'e'}`;
   if (anzahl === 0) { toast('Keine aktive Stadt vorhanden', 'error'); return; }
-  if (!confirm(`Render-Auftrag für ${wen} in die Queue stellen?\n\nDas erzeugt je Stadt eine KI-Generierung und kostet Guthaben.`)) return;
+  // Ungeprüfter Schlüssel + viele Städte = viele gescheiterte Aufträge. Nur ein Hinweis.
+  const keyWarnung = (anzahl > RQ_SCHLUESSEL_AB && !aiKeyGeprueft())
+    ? '\n\nErst den Schlüssel prüfen, sonst scheitern alle Aufträge (Einstellungen → KI-Kosten).' : '';
+  if (!confirm(`Render-Auftrag für ${wen} in die Queue stellen?\n\nDas erzeugt je Stadt eine KI-Generierung und kostet Guthaben.${keyWarnung}`)) return;
   rqStartBatch(preset);
 }
 
@@ -4265,6 +4326,7 @@ async function rqStartBatch(preset) {
     if(Array.isArray(body.city_ids) && !body.city_ids.length) { toast('Mindestens eine Stadt wählen','error'); return; }
     body.skip_recent_days = parseInt(document.getElementById('rq-skip-days').value || 0) || 0;
   }
+  await rqSchluesselPruefen(body.city_ids);
   const r = await api('POST','/api/render/batch', body).catch(() => ({error: 'Render-Queue nicht erreichbar'}));
   if(r.error) { toast(r.error,'error'); return; }
   const skipped = r.skipped || [];
@@ -4331,14 +4393,25 @@ async function rqPoll() {
   if(!_rqBatchId) return;
   const g = await api('GET', `/api/render/batch/${_rqBatchId}`).catch(() => ({error: true}));
   if(g.error) { rqStopPoll(); return; }
-  const c = g.counts, finished = c.done + c.failed + c.cancelled;
+  const c = g.counts;
+  const tasks = g.tasks || [];
+  // Eine Aufgabe mit ausstehender Wiederholung ist nicht erledigt, sondern offen –
+  // sonst meldet die Zeile „3 / 3 fertig“, während der zweite Versuch noch bevorsteht.
+  const wiederholung = Number.isFinite(parseInt(g.retry_pending))
+    ? parseInt(g.retry_pending)
+    : tasks.filter(t => t.retry_pending).length;
+  const endgueltig = Math.max(0, (c.failed || 0) - wiederholung);
+  const finished = (c.done || 0) + (c.cancelled || 0) + endgueltig;
   document.getElementById('rq-progress').hidden = false;
   document.getElementById('rq-progress-text').textContent =
-    `${finished} / ${g.total} fertig · ${c.running} laufen · ${c.pending} wartend` + (c.failed ? ` · ${c.failed} Fehler` : '');
+    `${finished} / ${g.total} fertig · ${c.running} laufen · ${c.pending} wartend`
+    + (wiederholung ? ` · ${wiederholung} Wiederholung${wiederholung === 1 ? '' : 'en'} offen` : '')
+    + (endgueltig ? ` · ${endgueltig} Fehler` : '');
   document.getElementById('rq-progress-fill').style.width = (g.total ? Math.round(finished / g.total * 100) : 0) + '%';
   document.getElementById('rq-batch-label').textContent = g.label || '';
-  rqRenderTasks(g.tasks || []);
-  rqShowIncomplete(g.incomplete, g.total);
+  rqShowRetry(wiederholung);
+  rqRenderTasks(tasks);
+  rqShowIncomplete(g.incomplete, tasks);
   // Warten: _rqPaused/_rqWorkersDead werden hier gesetzt und gleich darunter ausgewertet
   await rqRefreshQueueTile();
   if(g.done) {
@@ -4357,13 +4430,26 @@ async function rqPoll() {
   if(sig === _rqLastCounts) _rqStallTicks++; else { _rqStallTicks = 0; _rqLastCounts = sig; }
   if(_rqStallTicks >= 10) rqStopPoll(_rqPaused ? 'Master-Pause aktiv – Batch wartet' : 'Keine Worker aktiv, Fortschritt angehalten');
 }
-// Zeile über der Task-Tabelle: wie viele Beiträge leere Variablen haben
-function rqShowIncomplete(incomplete, total) {
+// Zeile über der Task-Tabelle: wie viele Beiträge leere Variablen haben.
+// Bezugsgröße sind die tatsächlich erzeugten Beiträge, nicht alle Aufgaben des Batches –
+// sonst passt die Zahl nicht zur Größe, mit der sie verglichen wird.
+function rqShowIncomplete(incomplete, tasks) {
   const el = document.getElementById('rq-incomplete-hint'); if(!el) return;
   const n = parseInt(incomplete) || 0;
   if(!n) { el.style.display = 'none'; el.textContent = ''; return; }
+  const liste = Array.isArray(tasks) ? tasks : [];
+  const erzeugt = liste.filter(t => t.post_id && !t.post_geloescht).length || n;
   el.style.display = '';
-  el.textContent = `${n} von ${total || n} Beiträgen haben leere Variablen – bitte durchsehen`;
+  el.textContent = `${n} von ${erzeugt} erzeugten Beiträgen haben leere Variablen – bitte durchsehen`;
+}
+// Wiederholungs-Zeile im Batch-Kopf: die Aufgaben laufen von selbst noch einmal an
+function rqShowRetry(anzahl) {
+  const box = document.getElementById('rq-retry-hint'); if(!box) return;
+  const n = parseInt(anzahl) || 0;
+  box.style.display = n ? 'flex' : 'none';
+  const txt = document.getElementById('rq-retry-text');
+  if(txt) txt.textContent = n ? (n === 1 ? '1 Auftrag wird automatisch wiederholt'
+                                         : `${n} Aufträge werden automatisch wiederholt`) : '';
 }
 // Knopf „Als Kampagne einplanen“ erscheint erst, wenn der Batch durch ist
 function rqShowCampaignRow(g) {
@@ -4377,13 +4463,23 @@ function rqShowCampaignRow(g) {
 }
 // Qualitäts-Zelle: leer solange der Task nicht fertig ist (oder aus der Zeit vor E2 stammt)
 function rqQualityCell(t) {
+  // Ist der Beitrag gelöscht, gibt es nichts mehr zu bewerten – die Namen der leeren
+  // Variablen standen in seinen notes und sind mit ihm weg (Kennzeichen ohne Tooltip).
+  if(t.post_geloescht) return '';
   const q = t.quality || '';
   if(q === 'ok') return '<span style="color:var(--muted);" title="Alle Variablen gefüllt">✓</span>';
   if(q === 'unvollstaendig') {
-    const namen = Array.isArray(t.missing_vars) ? t.missing_vars.join(', ') : '';
-    return `<span class="badge badge-yellow" style="font-size:10px;" title="Ohne Wert: ${_esc(namen)}">Variablen fehlen</span>`;
+    const namen = (Array.isArray(t.missing_vars) ? t.missing_vars : []).filter(n => String(n).trim());
+    const titel = namen.length ? `Ohne Wert: ${_esc(namen.join(', '))}` : 'Mindestens eine Variable ohne Wert';
+    return `<span class="badge badge-yellow" style="font-size:10px;" title="${titel}">Variablen fehlen</span>`;
   }
   return '';
+}
+// Statuszelle: gelöschte Ergebnisse melden das, statt weiter „Fertig“ zu behaupten
+function rqStatusCell(t, badge) {
+  if(t.post_geloescht)
+    return '<span class="badge badge-gray" style="font-size:10px;color:var(--muted);" title="Der erzeugte Beitrag wurde im Vorrat gelöscht">Ergebnis gelöscht</span>';
+  return `<span class="badge ${badge(t.status)}" style="font-size:10px;">${_esc(t.status_label)}${t.retry_pending ? ' · Wiederholung folgt' : ''}</span>`;
 }
 function rqRenderTasks(tasks) {
   const badge = s => ({done:'badge-green',failed:'badge-red',running:'badge-blue',cancelled:'badge-gray',pending:'badge-yellow'})[s] || 'badge-gray';
@@ -4396,12 +4492,12 @@ function rqRenderTasks(tasks) {
       <tbody>${tasks.map(t=>`
         <tr style="border-top:1px solid var(--border);">
           <td style="padding:6px;font-weight:600;white-space:nowrap;">${_esc(t.city_name)}</td>
-          <td><span class="badge ${badge(t.status)}" style="font-size:10px;">${_esc(t.status_label)}${t.retry_pending ? ' · Wiederholung folgt' : ''}</span></td>
+          <td>${rqStatusCell(t, badge)}</td>
           <td style="white-space:nowrap;">${rqQualityCell(t)}</td>
           <td style="font-weight:700;color:${fitColor(t.fit_score)};">${t.fit_score ?? '–'}</td>
           <td style="color:${t.status==='done' ? 'var(--muted)' : 'var(--danger)'};max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(t.error||'')}">${_esc(t.error||'')}</td>
           <td style="text-align:right;white-space:nowrap;">
-            ${t.post_id ? `<a href="/?tab=vorrat" class="btn btn-ghost btn-xs" style="text-decoration:none;" onclick="rqOpenVorrat(${t.city_id});return false;">Im Vorrat</a>` : ''}
+            ${t.post_id && !t.post_geloescht ? `<a href="/?tab=vorrat" class="btn btn-ghost btn-xs" style="text-decoration:none;" onclick="rqOpenVorrat(${t.city_id});return false;">Im Vorrat</a>` : ''}
             ${t.status==='failed' || t.status==='cancelled' ? `<button class="btn btn-ghost btn-xs" onclick="rqRetry(${t.id})">Erneut</button>` : ''}
           </td>
         </tr>`).join('')}</tbody>
@@ -4452,15 +4548,19 @@ async function rqRefreshQueueTile() {
   const card = document.getElementById('stat-queue-card'); if(!card) return;
   const q = await api('GET','/api/render/queue').catch(() => ({error: true}));
   if(q.error) return;
-  const c = q.counts || {}, open = (c.pending||0) + (c.running||0);
+  const c = q.counts || {};
+  // Aufgaben, die auf ihre automatische Wiederholung warten, sind offen – nicht erledigt
+  const wiederholung = parseInt(q.retry_pending) || 0;
+  const open = (c.pending||0) + (c.running||0) + wiederholung;
   const paused = !!q.paused;
   const dead = !paused && !!((q.workers || q.configured_workers) && !q.alive);
   _rqWorkersDead = dead;
   _rqPaused = paused;
   document.getElementById('stat-queue').textContent = String(open || 0);
+  const wdh = wiederholung ? ` · ${wiederholung} Wiederholung${wiederholung === 1 ? '' : 'en'} offen` : '';
   document.getElementById('stat-queue-label').textContent = paused
-    ? `Queue: ${c.pending||0} wartend · Master-Pause aktiv`
-    : `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + (dead ? ' · Worker tot' : '');
+    ? `Queue: ${c.pending||0} wartend · Master-Pause aktiv` + wdh
+    : `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + wdh + (dead ? ' · Worker tot' : '');
   // Bei Pause leben die Worker – dann kein Alarmzustand, nur der neutrale/aktive Rahmen
   card.className = 'stat-card' + (dead ? ' danger' : (open || paused) ? ' accent' : '');
   const ph = document.getElementById('rq-pause-hint');
@@ -4469,7 +4569,9 @@ async function rqRefreshQueueTile() {
   const box = document.getElementById('rq-queue-incomplete');
   if(box) {
     box.style.display = inc ? '' : 'none';
-    box.textContent = inc ? `${inc} Beiträge mit leeren Variablen` : '';
+    box.textContent = inc
+      ? `${inc} Beitr${inc === 1 ? 'ag' : 'äge'} im Vorrat ${inc === 1 ? 'hat' : 'haben'} leere Variablen`
+      : '';
   }
 }
 
@@ -5521,14 +5623,56 @@ function setVorratFilter(status) {
   loadVorrat();
 }
 
-// notes ist ein JSON-Text der Render-Queue – kann alt, leer oder gar kein JSON sein
-function postQualitaet(item) {
+// Das DB-Feld notes trägt zweierlei: die Metadaten der Render-Queue (JSON) und die Notiz
+// des Nutzers. Der Server liefert das getrennt als p.meta und p.notiz; die beiden Helfer
+// unten rechnen es notfalls selbst aus notes aus (Altbestand, alte Serverfassung).
+function _postMeta(p) {
+  if (p && p.meta && typeof p.meta === 'object' && !Array.isArray(p.meta)) return p.meta;
   try {
-    const n = JSON.parse(item.notes || '{}');
-    if (n && typeof n === 'object' && Array.isArray(n.missing_vars) && n.missing_vars.length)
-      return n.missing_vars;
+    const n = JSON.parse((p && p.notes) || '{}');
+    if (n && typeof n === 'object' && !Array.isArray(n)) {
+      const m = Object.assign({}, n);
+      delete m.notiz;
+      return m;
+    }
   } catch (e) {}
-  return [];
+  return {};
+}
+function _postNotiz(p) {
+  if (p && typeof p.notiz === 'string') return p.notiz;
+  const roh = (p && p.notes) || '';
+  if (!roh.trim()) return '';
+  try {
+    const n = JSON.parse(roh);
+    if (n && typeof n === 'object' && !Array.isArray(n)) return typeof n.notiz === 'string' ? n.notiz : '';
+  } catch (e) {}
+  return roh;   // kein JSON – der ganze Text ist die Notiz
+}
+function postQualitaet(item) {
+  const namen = _postMeta(item).missing_vars;
+  return Array.isArray(namen) ? namen.filter(n => String(n).trim()) : [];
+}
+// Einzeiler unter dem Notizfeld: was die Warteschlange zu diesem Beitrag hinterlegt hat
+function _postMetaZeile(p) {
+  const m = _postMeta(p);
+  const teile = [];
+  if (m.series) teile.push('Serie ' + m.series);
+  else if (m.task_kind === 'single' || m.template) teile.push('Einzelmotiv');
+  if (Array.isArray(m.slides) && m.slides.length) teile.push(`${m.slides.length} Slides`);
+  if (Number.isFinite(m.rendered) && Number.isFinite(m.total) && m.rendered !== m.total)
+    teile.push(`${m.rendered} von ${m.total} gerendert`);
+  const fehlend = postQualitaet(p);
+  if (fehlend.length) teile.push(`${fehlend.length} Variable${fehlend.length === 1 ? '' : 'n'} ohne Wert (${fehlend.join(', ')})`);
+  if (m.fit_score !== null && m.fit_score !== undefined && m.fit_score !== '') teile.push('Fit ' + m.fit_score);
+  if (m.warning) teile.push(String(m.warning));
+  if (!teile.length) return '';
+  return 'Aus der Warteschlange: ' + teile.join(', ');
+}
+function _vorratMetaHint(p) {
+  const el = document.getElementById('vorrat-meta-hint'); if (!el) return;
+  const text = p ? _postMetaZeile(p) : '';
+  el.textContent = text;
+  el.style.display = text ? '' : 'none';
 }
 function _vorratMissingBadge(p) {
   const fehlend = postQualitaet(p);
@@ -5620,6 +5764,7 @@ function openVorratCreateModal() {
   document.getElementById('vorrat-status').value = 'entwurf';
   document.getElementById('vorrat-scheduled-at').value = '';
   document.getElementById('vorrat-notes').value = '';
+  _vorratMetaHint(null);
   document.getElementById('vorrat-caption-btn').style.display = 'none';
   const warn = document.getElementById('vorrat-planer-warn');
   if (warn) { warn.style.display = 'none'; warn.innerHTML = ''; }
@@ -5640,7 +5785,9 @@ async function openVorratEdit(id) {
   document.getElementById('vorrat-hashtags').value  = p.hashtags || '';
   document.getElementById('vorrat-post-type').value = p.post_type || 'feed';
   document.getElementById('vorrat-status').value    = p.status || 'entwurf';
-  document.getElementById('vorrat-notes').value     = p.notes || '';
+  // Nur der lesbare Teil ins Feld – die Queue-Metadaten stehen darunter als Text
+  document.getElementById('vorrat-notes').value     = _postNotiz(p);
+  _vorratMetaHint(p);
   if (p.scheduled_at) {
     document.getElementById('vorrat-scheduled-at').value = p.scheduled_at.substring(0,16);
   }
@@ -5680,7 +5827,9 @@ async function saveVorratPost() {
     hashtags:     document.getElementById('vorrat-hashtags').value,
     post_type:    document.getElementById('vorrat-post-type').value,
     status:       document.getElementById('vorrat-status').value,
-    notes:        document.getElementById('vorrat-notes').value,
+    // 'notiz' statt 'notes': der Server ersetzt damit nur den lesbaren Teil und lässt die
+    // Queue-Metadaten (missing_vars, Serie, Slides) stehen.
+    notiz:        document.getElementById('vorrat-notes').value,
     scheduled_at: scheduled || null,
   };
   if (editId) {
@@ -7902,6 +8051,8 @@ function renderAiSettings(d) {
   if (hint) { hint.textContent = d.ai_provider_hinweis || ''; hint.style.display = d.ai_provider_hinweis ? '' : 'none'; }
   const bh = document.getElementById('ai-usage-budget-hint');
   if (bh) { bh.textContent = d.ai_budget_hinweis || ''; bh.style.display = d.ai_budget_reached ? '' : 'none'; }
+  const kh = document.getElementById('ai-key-hinweis');
+  if (kh) { kh.textContent = d.ai_key_hinweis || ''; kh.style.display = d.ai_key_hinweis ? '' : 'none'; }
   const prov = document.getElementById('ai-usage-provider');
   if (prov) prov.textContent = 'Anbieter: ' + (d.ai_provider_aktiv === 'deepseek'
     ? `DeepSeek (${d.deepseek_model || 'deepseek-chat'})`
@@ -7913,6 +8064,37 @@ function aiProviderChanged() {
   const sel = document.getElementById('ai-provider-select');
   const box = document.getElementById('ai-deepseek-fields');
   if (box) box.style.display = (sel && sel.value === 'deepseek') ? '' : 'none';
+}
+
+// ── Schlüssel prüfen: ein Testaufruf, bevor 100 Städte ins Leere laufen ──
+// Merkt sich das Ergebnis nur für diese Sitzung: nach einem Neustart wird lieber
+// einmal zu viel gewarnt als einmal zu wenig.
+function aiKeyGeprueft() {
+  try { return sessionStorage.getItem('memeos_ai_key_test') === 'ok'; } catch (e) { return false; }
+}
+function _aiKeyMerken(ok) {
+  try { sessionStorage.setItem('memeos_ai_key_test', ok ? 'ok' : 'fehler'); } catch (e) {}
+}
+async function testAiKey() {
+  const out = document.getElementById('ai-key-test-result');
+  const btn = document.getElementById('ai-key-test-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Prüfe…'; }
+  if (out) { out.style.display = ''; out.style.color = 'var(--muted)'; out.textContent = 'Testaufruf läuft…'; }
+  const r = await api('POST', '/api/settings/ai-test').catch(() => ({error: 'Nicht erreichbar'}));
+  if (btn) { btn.disabled = false; btn.textContent = 'Schlüssel prüfen'; }
+  const ok = !!(r && r.ok);
+  _aiKeyMerken(ok);
+  const text = (r && (r.detail || r.error)) || (ok ? 'Schlüssel antwortet' : 'Kein Ergebnis vom Server');
+  if (out) {
+    out.style.display = '';
+    out.style.color = ok ? 'var(--success)' : 'var(--danger)';
+    out.textContent = (ok ? '✓ ' : '✕ ') + text;
+  }
+  // Beim erfolgreichen Test verschwindet eine alte Warnung, sonst bleibt sie stehen
+  const kh = document.getElementById('ai-key-hinweis');
+  if (kh && ok) { kh.textContent = ''; kh.style.display = 'none'; }
+  toast(ok ? 'Schlüssel antwortet' : text, ok ? 'success' : 'error');
+  if (ok) rqSchluesselHinweisAus();
 }
 
 async function aiUsageNav(dir) {

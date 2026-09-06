@@ -65,6 +65,26 @@ _DEFAULT_SECRETS = {
     'memeos', 'memeos-secret', 'memeos-dev-secret', 'supersecret', 'geheim', 'password', 'test',
 }
 
+# Werte, die wörtlich in .env.example stehen: gesetzt, aber wertlos. Genau diese
+# Konstellation (ANTHROPIC_API_KEY=sk-ant-…) hat jeden Renderauftrag mit 401 scheitern
+# lassen, während der Selbsttest „gesetzt“ meldete.
+_BEISPIELWERTE = {
+    'sk-ant-...',
+    'cloudinary://API_KEY:API_SECRET@CLOUD_NAME',
+    'dein-geheimer-schluessel',
+    'sicheres-passwort',
+    'optional-api-key',
+}
+PLATZHALTER_TEXT = 'Beispielwert aus .env.example, nicht der echte Schlüssel'
+# Echte Anthropic-Schlüssel sind deutlich länger; alles darunter ist ein Rest aus der Beispieldatei.
+_AI_KEY_MINDESTLAENGE = 40
+
+# Einstellungsschlüssel, unter denen eine App-Sicherung ihren Zeitpunkt hinterlegen könnte
+_BACKUP_KEYS = ('last_backup_at', 'letzte_sicherung', 'backup_last_at', 'backup_at', 'last_backup')
+
+# Ab dieser Größe lohnt das Aufräumen verwaister Renderdateien (darunter nur zur Kenntnis)
+ORPHAN_RENDER_WARN_MB = 50
+
 _MIGRATION_COLUMNS = [
     ('memo_inspiration_source', 'city_id'),
     ('meme_template', 'preview_url'),
@@ -142,6 +162,46 @@ def _setting(key, default=''):
 
 def _truthy(v):
     return str(v or '').strip().lower() in ('1', 'true', 'ja', 'yes', 'on', 'an')
+
+
+def _ai_key_plausibel(wert):
+    """app._ai_key_plausibel() nutzen, falls vorhanden: True/False – None, wenn es sie nicht gibt."""
+    mod = _appmod()
+    fn = getattr(mod, '_ai_key_plausibel', None) if mod else None
+    if not callable(fn):
+        return None
+    try:
+        return bool(fn(wert))
+    except Exception:
+        return None
+
+
+def _platzhalter_grund(name, wert):
+    """Warum der Wert nichts taugt: 'beispiel' (steht so in .env.example – drei Punkte,
+    bekannter Beispielwert, zu kurzer Anthropic-Schlüssel), 'unplausibel' (nur
+    app._ai_key_plausibel() lehnt ihn ab, etwa wegen fehlendem sk-ant-) oder None."""
+    wert = (wert or '').strip() if isinstance(wert, str) else ''
+    if not wert:
+        return None
+    if '...' in wert or wert in _BEISPIELWERTE:
+        return 'beispiel'
+    if name == 'ANTHROPIC_API_KEY':
+        if len(wert) < _AI_KEY_MINDESTLAENGE:
+            return 'beispiel'
+        if _ai_key_plausibel(wert) is False:
+            return 'unplausibel'
+    return None
+
+
+def _ist_platzhalter(name, wert):
+    """True, wenn der Wert nur der Beispielwert aus .env.example ist (bzw. der
+    Anthropic-Schlüssel die Formprüfung aus app.py nicht besteht)."""
+    return _platzhalter_grund(name, wert) is not None
+
+
+def _platzhalter_namen(*paare):
+    """Aus (Name, Wert)-Paaren die Namen, deren Wert nur ein Beispielwert ist."""
+    return [name for name, wert in paare if _ist_platzhalter(name, wert)]
 
 
 def _check(cid, name, ok, detail, severity='warn'):
@@ -339,18 +399,33 @@ def check_config(flask_app):
     mod = _appmod()
 
     ai_key = _env_or_attr('ANTHROPIC_API_KEY')
-    checks.append(_check('cfg_anthropic', 'Konfiguration: Anthropic-Key', bool(ai_key),
-                         'gesetzt' if ai_key else 'ANTHROPIC_API_KEY fehlt – KI-Funktionen aus', 'warn'))
+    if not ai_key:
+        ai_detail, ai_ok = 'ANTHROPIC_API_KEY fehlt – KI-Funktionen aus', False
+    elif _platzhalter_grund('ANTHROPIC_API_KEY', ai_key) == 'beispiel':
+        ai_detail, ai_ok = (f'ANTHROPIC_API_KEY: {PLATZHALTER_TEXT} – jeder KI-Aufruf '
+                            'antwortet mit 401, Renderaufträge scheitern reihenweise'), False
+    elif _ist_platzhalter('ANTHROPIC_API_KEY', ai_key):
+        ai_detail, ai_ok = ('ANTHROPIC_API_KEY: unplausible Form (erwartet wird sk-ant-… mit '
+                            'mindestens 40 Zeichen) – KI-Aufrufe antworten mit 401'), False
+    else:
+        ai_detail, ai_ok = 'gesetzt', True
+    checks.append(_check('cfg_anthropic', 'Konfiguration: Anthropic-Key', ai_ok, ai_detail, 'warn'))
 
-    cloud = bool(os.getenv('CLOUDINARY_URL', '').strip())
+    cloud_raw = _env_or_attr('CLOUDINARY_URL')
+    cloud = bool(cloud_raw)
     if mod is not None and hasattr(mod, '_cloudinary_connected'):
         try:
             cloud = bool(mod._cloudinary_connected())
         except Exception:
             pass
-    checks.append(_check('cfg_cloudinary', 'Konfiguration: Cloudinary', cloud,
-                         'verbunden' if cloud else 'CLOUDINARY_URL fehlt – Bilder nur lokal (gehen beim Deploy verloren)',
-                         'warn'))
+    if _ist_platzhalter('CLOUDINARY_URL', cloud_raw):
+        cloud_detail, cloud_ok = f'CLOUDINARY_URL: {PLATZHALTER_TEXT}', False
+    elif cloud:
+        cloud_detail, cloud_ok = 'verbunden', True
+    else:
+        cloud_detail, cloud_ok = ('CLOUDINARY_URL fehlt – Bilder nur lokal '
+                                  '(gehen beim Deploy verloren)'), False
+    checks.append(_check('cfg_cloudinary', 'Konfiguration: Cloudinary', cloud_ok, cloud_detail, 'warn'))
 
     tg_token = _setting('telegram_token').strip() or os.getenv('TELEGRAM_BOT_TOKEN', '').strip() \
         or os.getenv('TELEGRAM_TOKEN', '').strip()
@@ -366,12 +441,30 @@ def check_config(flask_app):
             canva = bool(mod._canva_is_connected())
         except Exception:
             canva = False
-    checks.append(_check('cfg_canva', 'Konfiguration: Canva', canva,
-                         'verbunden' if canva else 'nicht verbunden (nur für Template-Import nötig)', 'info'))
+    canva_platzhalter = _platzhalter_namen(
+        ('CANVA_CLIENT_ID', _env_or_attr('CANVA_CLIENT_ID')),
+        ('CANVA_CLIENT_SECRET', _env_or_attr('CANVA_CLIENT_SECRET')),
+        ('CANVA_REFRESH_TOKEN', _env_or_attr('CANVA_REFRESH_TOKEN')),
+    )
+    if canva_platzhalter:
+        checks.append(_check('cfg_canva', 'Konfiguration: Canva', False,
+                             ', '.join(canva_platzhalter) + f': {PLATZHALTER_TEXT}', 'warn'))
+    else:
+        checks.append(_check('cfg_canva', 'Konfiguration: Canva', canva,
+                             'verbunden' if canva else 'nicht verbunden (nur für Template-Import nötig)', 'info'))
 
     rapid = os.getenv('RAPIDAPI_KEY', '').strip() or _setting('rapidapi_key').strip()
     checks.append(_check('cfg_rapidapi', 'Konfiguration: RapidAPI', bool(rapid),
                          'gesetzt' if rapid else 'RAPIDAPI_KEY fehlt (nur für Trending/Instagram-Abfragen)', 'info'))
+
+    cos_key = _env_or_attr('CONTENT_OS_KEY')
+    if _ist_platzhalter('CONTENT_OS_KEY', cos_key):
+        checks.append(_check('cfg_contentos', 'Konfiguration: ContentOS-Key', False,
+                             f'CONTENT_OS_KEY: {PLATZHALTER_TEXT}', 'warn'))
+    else:
+        checks.append(_check('cfg_contentos', 'Konfiguration: ContentOS-Key', True,
+                             'gesetzt' if cos_key else 'nicht gesetzt (die Brücke sendet dann ohne Schlüssel)',
+                             'info'))
 
     secret = flask_app.secret_key
     secret_str = secret.decode('utf-8', 'ignore') if isinstance(secret, bytes) else str(secret or '')
@@ -381,6 +474,7 @@ def check_config(flask_app):
                          'crit'))
 
     admin_pw = _env_or_attr('ADMIN_PASSWORD')
+    admin_pw_beispiel = _ist_platzhalter('ADMIN_PASSWORD', admin_pw)
     try:
         db_users = User.query.filter_by(active=True).count()
     except Exception:
@@ -388,11 +482,17 @@ def check_config(flask_app):
     login_ok = bool(admin_pw) or db_users > 0
     if login_ok:
         detail = ', '.join(p for p in (
-            'ADMIN_PASSWORD gesetzt' if admin_pw else '',
+            ('ADMIN_PASSWORD ist ein Beispielwert' if admin_pw_beispiel else 'ADMIN_PASSWORD gesetzt')
+            if admin_pw else '',
             f'{db_users} aktive DB-Benutzer' if db_users else '') if p)
     else:
         detail = 'weder ADMIN_PASSWORD noch aktiver DB-Benutzer – niemand kann sich anmelden'
     checks.append(_check('cfg_login', 'Konfiguration: Anmeldung', login_ok, detail, 'crit'))
+
+    if admin_pw_beispiel:
+        checks.append(_check('cfg_admin_pw', 'Konfiguration: Admin-Passwort', False,
+                             f'ADMIN_PASSWORD: {PLATZHALTER_TEXT} – dieses Passwort steht '
+                             'öffentlich in .env.example', 'warn'))
     return checks
 
 
@@ -720,6 +820,122 @@ def check_render_probe():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 7e. Datensicherung
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _lesbares_datum(roh):
+    """ISO-Zeitstempel als 'TT.MM.JJJJ HH:MM' – notfalls der Rohwert."""
+    text = str(roh or '').strip()
+    if not text:
+        return ''
+    try:
+        dt = datetime.fromisoformat(text.replace('Z', '').replace('T', ' ').strip())
+    except Exception:
+        return text
+    tage = (datetime.utcnow() - dt).days
+    if tage >= 2:
+        alter = f' (vor {tage} Tagen)'
+    elif tage == 1:
+        alter = ' (vor 1 Tag)'
+    else:
+        alter = ' (heute)'
+    return f'{dt:%d.%m.%Y %H:%M}{alter}'
+
+
+def check_backup():
+    """Hält die App einen Sicherungszeitpunkt fest, wird er gemeldet; sonst der Hinweis,
+    dass es keine automatische Sicherung gibt. Zieht selbst keine Sicherung und ruft nichts auf."""
+    for key in _BACKUP_KEYS:
+        roh = (_setting(key) or '').strip()
+        if roh:
+            return _check('backup', 'Datensicherung', True,
+                          f'letzte Sicherung: {_lesbares_datum(roh)} (Schlüssel {key})', 'info')
+    return _check('backup', 'Datensicherung', False,
+                  'keine automatische Sicherung eingerichtet – die Daten liegen nur in der '
+                  'Datenbank; Sicherung von Hand über Einstellungen → Daten-Backup ziehen',
+                  'warn')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7f. Verwaiste Renderdateien
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _dateiname(wert):
+    """Dateiname aus Pfad oder URL (ohne Query) – leer, wenn nichts brauchbar drinsteht."""
+    roh = str(wert or '').strip()
+    if not roh:
+        return ''
+    return os.path.basename(roh.split('?')[0].split('#')[0].rstrip('/'))
+
+
+def _verlinkte_renderdateien():
+    """Alle Dateinamen, auf die ein MemePost (image_path, carousel_paths, image_url) oder
+    ein RenderJob zeigt. Im Zweifel großzügig: lieber ein Bild zu viel als verwaist melden."""
+    namen = set()
+
+    def merken(wert):
+        name = _dateiname(wert)
+        if name:
+            namen.add(name)
+
+    for pfad, url, karussell in db.session.query(
+            MemePost.image_path, MemePost.image_url, MemePost.carousel_paths).all():
+        merken(pfad)
+        merken(url)
+        try:
+            eintraege = json.loads(karussell or '[]')
+        except Exception:
+            eintraege = []
+        if isinstance(eintraege, list):
+            for eintrag in eintraege:
+                if isinstance(eintrag, dict):
+                    merken(eintrag.get('path') or eintrag.get('url') or eintrag.get('file'))
+                else:
+                    merken(eintrag)
+
+    for url, dateiname in db.session.query(RenderJob.image_url, RenderJob.image_filename).all():
+        merken(url)
+        merken(dateiname)
+    return namen
+
+
+def check_orphan_renders():
+    """Renderdateien zählen, auf die kein Post und kein Auftrag mehr zeigt. Löscht nichts."""
+    ordner = os.path.join(_data_root(), 'renders')
+    if not os.path.isdir(ordner):
+        return _check('renders_orphan', 'Verwaiste Renderdateien', True,
+                      f'{ordner}: Ordner fehlt', 'info')
+    verlinkt = _verlinkte_renderdateien()
+    gesamt, anzahl, bytes_gesamt, beispiele = 0, 0, 0, []
+    for dateiname in sorted(os.listdir(ordner)):
+        pfad = os.path.join(ordner, dateiname)
+        if dateiname.startswith('.') or not os.path.isfile(pfad):
+            continue
+        gesamt += 1
+        if dateiname in verlinkt:
+            continue
+        try:
+            groesse = os.path.getsize(pfad)
+        except OSError:
+            groesse = 0
+        anzahl += 1
+        bytes_gesamt += groesse
+        if len(beispiele) < 5:
+            beispiele.append(dateiname)
+    if not anzahl:
+        return _check('renders_orphan', 'Verwaiste Renderdateien', True,
+                      f'{gesamt} Dateien in renders/, alle noch verlinkt', 'info')
+    mb = bytes_gesamt / (1024.0 * 1024.0)
+    detail = (f'{anzahl} von {gesamt} Dateien in renders/ ohne Post oder Auftrag, {mb:.1f} MB: '
+              + ', '.join(beispiele) + (' …' if anzahl > len(beispiele) else '')
+              + ' – nichts gelöscht')
+    if mb > ORPHAN_RENDER_WARN_MB:
+        return _check('renders_orphan', 'Verwaiste Renderdateien', False,
+                      detail + f', über {ORPHAN_RENDER_WARN_MB} MB – aufräumen einplanen', 'warn')
+    return _check('renders_orphan', 'Verwaiste Renderdateien', True, detail, 'info')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 8. Migrationen
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -760,6 +976,8 @@ def run_checks(flask_app, quick=False, skip=()):
         ('studio',      'Studio',        lambda: check_studio(flask_app),     'warn', False),
         ('disk',        'Speicherplatz', check_disk,                          'warn', True),
         ('render_probe', 'Render-Probe', check_render_probe,                  'warn', False),
+        ('backup',      'Datensicherung', check_backup,                      'warn', False),
+        ('renders_orphan', 'Verwaiste Renderdateien', check_orphan_renders,  'warn', False),
         ('migrations',  'Migrationen',   check_migrations,                    'warn', False),
     ]
     checks = []
