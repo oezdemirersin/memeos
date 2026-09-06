@@ -387,7 +387,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .tlib-type-cell{width:70px;flex-shrink:0;}
 .tlib-rating-cell{width:90px;flex-shrink:0;font-size:13px;color:#f59e0b;cursor:pointer;letter-spacing:1px;}
 .tlib-uses-cell{width:50px;flex-shrink:0;text-align:right;font-size:12px;color:var(--muted);}
-.tlib-actions-cell{width:230px;flex-shrink:0;display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;}
+.tlib-actions-cell{width:280px;flex-shrink:0;display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;}
 /* Carousel upload */
 .hl-carousel-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0;}
 .hl-carousel-strip .hl-slide{position:relative;flex-shrink:0;width:70px;height:70px;border-radius:6px;overflow:hidden;border:2px solid var(--border);}
@@ -431,7 +431,6 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <button class="nav-item" onclick="showPage('bulk')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
       Bulk-Generator
-      <span class="nav-badge warn" id="nav-bulk-badge" style="display:none"></span>
     </button>
     <button class="nav-item" onclick="showPage('review')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -526,6 +525,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div class="dot {{ 'green' if ai_cost_month < 5 else 'yellow' }}"></div>
       <span>KI: €{{ "%.3f"|format(ai_cost_month) }} / Monat</span>
     </div>
+    <div class="sidebar-status" style="margin-top:2px;cursor:pointer;" onclick="showPage('settings')" title="Selbsttest öffnen">
+      <div class="dot" id="selftest-dot" style="background:var(--muted)"></div>
+      <span id="selftest-dot-text">System: prüft …</span>
+    </div>
     <button class="btn-logout" onclick="location.href='/logout'">Ausloggen</button>
   </div>
 </aside>
@@ -549,6 +552,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="stat-card warn"><div class="stat-val" id="stat-review">{{ stats.review }}</div><div class="stat-label">Im Review</div></div>
     <div class="stat-card success"><div class="stat-val" id="stat-done">{{ stats.done }}</div><div class="stat-label">Freigegeben</div></div>
     <div class="stat-card"><div class="stat-val" id="stat-news">{{ stats.news }}</div><div class="stat-label">News bewertet</div></div>
+    <div class="stat-card" id="stat-queue-card" style="cursor:pointer;" onclick="showPage('bulk')" title="Render-Queue öffnen">
+      <div class="stat-val" id="stat-queue">–</div>
+      <div class="stat-label" id="stat-queue-label">Queue</div>
+    </div>
   </div>
 
   <!-- City-Pages Grid -->
@@ -722,6 +729,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="page-title">TEMPLATE <span>BIBLIOTHEK</span></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="openCategoryManager()">⚙ Kategorien</button>
+      <button class="btn btn-ghost btn-sm" onclick="openImportModal()" title="Template aus Canva-Design, PPTX-Datei oder Bild anlegen">Importieren</button>
       <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">+ Template</button>
     </div>
   </div>
@@ -861,31 +869,40 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-bulk">
   <div class="page-header">
     <div class="page-title">BULK <span>GENERATOR</span></div>
+    <div style="font-size:12px;color:var(--muted);">Render-Queue: Aufträge laufen im Hintergrund, Ergebnisse landen als Entwurf im Vorrat</div>
   </div>
 
   <div class="grid-2" style="gap:20px;align-items:start;">
     <div class="card">
-      <div class="form-group">
-        <label>Template</label>
-        <select id="bulk-template">
-          <option value="">— Template wählen —</option>
-          {% for t in templates %}
-          <option value="{{ t.id }}" data-render-type="{{ t.render_type or 'pil' }}">{{ t.name }} · {% if t.render_type == 'manual' %}Manuell{% elif t.render_type == 'pil' or not t.render_type %}PIL{% else %}{{ t.render_type }}{% endif %}</option>
-          {% endfor %}
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Template</label>
+          <select id="rq-template" onchange="if(this.value) document.getElementById('rq-series').value=''">
+            <option value="">— Template wählen —</option>
+            {% for t in templates %}
+            <option value="{{ t.id }}">{{ t.name }} · {% if t.render_type == 'manual' %}Manuell{% else %}PIL{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>oder Serie (Karussell)</label>
+          <select id="rq-series" onchange="if(this.value) document.getElementById('rq-template').value=''">
+            <option value="">— Serie wählen —</option>
+          </select>
+        </div>
       </div>
 
       <div class="form-group">
-        <label>Städte auswählen</label>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <button class="btn btn-ghost btn-xs" onclick="selectAllCities()">Alle</button>
-          <button class="btn btn-ghost btn-xs" onclick="selectNoCities()">Keine</button>
-          <button class="btn btn-ghost btn-xs" onclick="selectActiveCities()">Aktive (mit Wiki)</button>
+        <label>Städte</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;"><input type="radio" name="rq-mode" value="all" checked onchange="rqModeChanged()"> Alle aktiven</label>
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;"><input type="radio" name="rq-mode" value="with_wiki" onchange="rqModeChanged()"> Mit Wiki</label>
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;"><input type="radio" name="rq-mode" value="list" onchange="rqModeChanged()"> Auswahl</label>
         </div>
-        <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;" id="bulk-city-list">
+        <div id="rq-city-list" hidden style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
           {% for city in cities %}
-          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font-size:13px;" class="bulk-city-row" data-kc="{{ city.knowledge_count() }}">
-            <input type="checkbox" class="bulk-city-cb" value="{{ city.id }}">
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;font-size:13px;">
+            <input type="checkbox" class="rq-city-cb" value="{{ city.id }}">
             <span style="flex:1;">{{ city.name }}</span>
             <span style="font-size:11px;color:var(--muted);">{{ city.knowledge_count() }} Wiki</span>
           </label>
@@ -893,26 +910,34 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </div>
       </div>
 
-      <div id="bulk-selection-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+      <div class="form-group">
+        <label>Städte überspringen, die das in den letzten … Tagen schon bekommen haben (0 = nie überspringen)</label>
+        <input type="number" id="rq-skip-days" value="30" min="0" max="365" style="max-width:120px;">
+      </div>
 
-      <button class="btn btn-primary" style="width:100%;" onclick="startBulk()">
-        📦 Bulk generieren
-      </button>
+      <button class="btn btn-primary" style="width:100%;" onclick="rqStartBatch()">▶ In die Render-Queue stellen</button>
 
-      <div id="bulk-progress" style="display:none;margin-top:16px;">
-        <div style="font-size:13px;margin-bottom:6px;" id="bulk-progress-text"></div>
-        <div class="progress-bar"><div class="progress-fill" id="bulk-progress-fill" style="width:0%"></div></div>
+      <div id="rq-progress" hidden style="margin-top:16px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
+          <span id="rq-progress-text"></span>
+          <span><a href="#" onclick="rqCancel();return false;" style="color:var(--muted);">Wartende abbrechen</a> · <a href="#" onclick="rqOpenVorrat();return false;">Im Vorrat öffnen →</a></span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="rq-progress-fill" style="width:0%"></div></div>
       </div>
     </div>
 
     <div class="card">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Laufende Jobs</div>
-      <div id="bulk-jobs-list">
-        <div class="empty" style="padding:30px 20px;"><p>Keine aktiven Jobs</p></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;">
+        <div style="font-size:14px;font-weight:600;">Batch</div>
+        <div id="rq-batch-label" style="font-size:12px;color:var(--muted);text-align:right;"></div>
       </div>
+      <div id="rq-task-table"><div class="empty" style="padding:30px 20px;"><p>Noch kein Batch gestartet</p></div></div>
+      <div id="rq-skipped" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+      <div id="rq-recent" style="margin-top:14px;"></div>
     </div>
   </div>
 </div>
+
 
 <!-- ─── REVIEW ─── -->
 <div class="page" id="page-review">
@@ -1064,6 +1089,23 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </div>
     </div>
 
+    <!-- ── Selbsttest (B8) ── -->
+    <div class="card" id="selftest-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:600;">Selbsttest</div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" onclick="runSelftest(this, true)">Schnelltest</button>
+          <button class="btn btn-primary btn-sm" onclick="runSelftest(this, false)">Selbsttest starten</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">
+        Prüft Routen, Datenpfad, Templates, Schriften, Konfiguration, Hintergrunddienste, Daten und Migrationen.
+        Keine externen Aufrufe, keine Kosten.
+      </div>
+      <div id="selftest-summary" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+      <div id="selftest-result" style="display:flex;flex-direction:column;gap:4px;"></div>
+    </div>
+
     <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:16px;">ContentOS Bridge</div>
       <div class="form-group">
@@ -1088,7 +1130,67 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
         <button class="btn btn-primary btn-sm" onclick="saveTelegramSettings()">Speichern</button>
         <button class="btn btn-ghost btn-sm" onclick="testTelegram(this)">🔔 Test-Nachricht</button>
+        <button class="btn btn-ghost btn-sm" onclick="showDigestPreview()" title="Zeigt, was der Tages-Digest heute senden würde (sendet nichts)">Digest-Vorschau</button>
         <span id="telegram-test-result" style="font-size:12px;"></span>
+      </div>
+      <div id="digest-preview" style="display:none;margin-top:10px;font-size:12px;"></div>
+    </div>
+
+    <!-- ── Automatik (B5) ── -->
+    <div class="card" id="automation-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:600;">Automatik</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="auto-alive" class="badge" style="font-size:10px;">Scheduler: prüfe …</span>
+          <button class="btn btn-sm" id="auto-pause-btn" onclick="toggleMasterPause()">…</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+        Tagesjobs laufen einmal pro Tag zur eingestellten Uhrzeit (Europe/Berlin). Master-Pause hält alle Tagesjobs an;
+        die Telegram-Rückmeldungen laufen weiter. Telegram in der Card darüber konfigurieren.
+      </div>
+      <div id="auto-tg-hint" style="display:none;font-size:12px;color:var(--warning);margin-bottom:10px;">
+        Telegram ist nicht konfiguriert – Digest, Event-Erinnerung, Warnungen und Rückmeldungen bleiben still.
+      </div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;" id="auto-jobs">
+        <thead>
+          <tr style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em;">
+            <th style="text-align:left;padding:6px 4px;">An</th>
+            <th style="text-align:left;padding:6px 4px;">Job</th>
+            <th style="text-align:left;padding:6px 4px;">Uhrzeit</th>
+            <th style="text-align:left;padding:6px 4px;">Letzter Lauf</th>
+            <th style="text-align:right;padding:6px 4px;"></th>
+          </tr>
+        </thead>
+        <tbody id="auto-jobs-body"><tr><td colspan="5" style="padding:8px 4px;color:var(--muted);">Wird geladen …</td></tr></tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- ── Integrationen (B7) ── -->
+    <div class="card" id="integrations-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Integrationen</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">RapidAPI wird für die Inspiration-Abholung von Instagram genutzt (Instagram-Scraper abonnieren, Key aus dem RapidAPI-Dashboard).</div>
+      <div class="form-group">
+        <label>RapidAPI-Key</label>
+        <input type="password" id="settings-rapidapi-key" placeholder="RapidAPI-Key" autocomplete="off">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="settings-rapidapi-hint">Leer lassen, um den gespeicherten Key zu behalten.</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Beiträge pro Abruf</label>
+          <input type="number" id="settings-inspo-limit" min="1" max="500" value="50" style="width:100px;">
+        </div>
+        <div class="form-group">
+          <label>RapidAPI-Aufrufe diesen Monat</label>
+          <div style="font-size:20px;font-family:'Bebas Neue',sans-serif;letter-spacing:.5px;padding-top:4px;"><span id="settings-rapidapi-calls">0</span> <span style="font-size:12px;color:var(--muted);font-family:'DM Sans',sans-serif;" id="settings-rapidapi-month"></span></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="saveIntegrationSettings()">Speichern</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearRapidApiKey()" title="Gespeicherten RapidAPI-Key löschen">Key löschen</button>
+        <span id="settings-rapidapi-status" style="font-size:12px;color:var(--muted);"></span>
       </div>
     </div>
 
@@ -1610,6 +1712,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <option value="irrelevant">❌ KI: Nicht relevant</option>
       </select>
       <button class="btn btn-ghost btn-sm" id="inspo-ai-sort-btn" onclick="runInspoAiSort()">🤖 KI sortieren</button>
+      <button class="btn btn-primary btn-sm" id="inspo-fetch-all-btn" onclick="fetchAllInspo(this)" title="Neue Beiträge aller beobachteten Seiten über RapidAPI holen">Alle abholen</button>
     </div>
   </div>
 
@@ -2792,6 +2895,90 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- Template-Import (Canva-Link / PPTX / Bild) -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal modal-lg" style="max-height:90vh;overflow-y:auto;">
+    <div class="modal-header">
+      <div class="modal-title">TEMPLATE IMPORTIEREN</div>
+      <button class="modal-close" onclick="closeModal('import-modal')">×</button>
+    </div>
+
+    <div style="display:flex;gap:6px;margin-bottom:16px;">
+      <button type="button" class="btn btn-ghost btn-sm" id="import-tab-btn-canva" onclick="switchImportTab('canva')">Canva-Link</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="import-tab-btn-pptx" onclick="switchImportTab('pptx')">PPTX-Datei</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="import-tab-btn-bild" onclick="switchImportTab('bild')">Bild</button>
+    </div>
+
+    <div class="form-row-3">
+      <div class="form-group"><label>Name</label><input type="text" id="import-name" placeholder="leer = Dateiname / Design-ID"></div>
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="import-category">
+          {% for k, label, emoji, group in template_categories %}
+          <option value="{{ k }}"{% if k == 'allgemein' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="import-series-group"><label>Serie</label><input type="text" id="import-series" placeholder="leer = Name (nur bei mehreren Folien)"></div>
+    </div>
+
+    <div id="import-tab-canva">
+      <div class="form-group">
+        <label>Canva-Design</label>
+        <input type="url" id="import-canva-url" placeholder="https://www.canva.com/design/…/edit oder canva.link/…">
+      </div>
+      <div id="import-canva-on" style="font-size:12px;color:var(--muted);">Das Design muss im verbundenen Canva-Konto liegen. Export dauert 10–60 s.</div>
+      <div id="import-canva-off" style="display:none;font-size:12px;color:var(--warning);">Canva nicht verbunden. <a href="/canva/connect" style="color:var(--accent);">Einstellungen → Canva verbinden</a> – oder das Design als PPTX herunterladen und im Reiter „PPTX-Datei“ hochladen.</div>
+    </div>
+
+    <div id="import-tab-pptx" style="display:none;">
+      <div class="form-group">
+        <label>PPTX-Datei</label>
+        <input type="file" id="import-file" accept=".pptx">
+      </div>
+      <div style="font-size:12px;color:var(--muted);">In Canva: Teilen → Herunterladen → Dateityp PPTX.</div>
+    </div>
+
+    <div id="import-tab-bild" style="display:none;">
+      <div class="form-group">
+        <label>Bilddatei (PNG, JPG, WebP)</label>
+        <input type="file" id="import-image-file" accept=".png,.jpg,.jpeg,.webp">
+      </div>
+      <div class="form-group">
+        <label>Stadt im Bild</label>
+        <input type="text" id="import-image-city" list="import-image-city-list" placeholder="z. B. Darmstadt – der Stadtname, der im Meme steht">
+        <datalist id="import-image-city-list"></datalist>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="import-image-analyze" checked style="width:auto;margin:0;">
+        <label for="import-image-analyze" style="margin:0;">Textzeilen mit KI erkennen</label>
+        <span id="import-image-ai-note" style="font-size:11px;color:var(--muted);"></span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);">
+        Stadtspezifische Zeilen (Ortsnamen, Stadtteile, Vereine, Lokale, Straßen, Schulen) werden abgedeckt und
+        durch Textboxen mit Variablen ersetzt. Meme-Format-Text wie „POV:“ bleibt fest im Bild.
+      </div>
+    </div>
+
+    <details id="import-help-details" style="margin-top:14px;font-size:12px;">
+      <summary style="cursor:pointer;color:var(--muted2);">Platzhalter-Anleitung</summary>
+      <div id="import-help-text" style="margin:8px 0;color:var(--muted);white-space:pre-line;"></div>
+      <div id="import-help-vars" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;"></div>
+      <ul id="import-help-hints" style="margin:0;padding-left:18px;color:var(--muted);"></ul>
+    </details>
+
+    <div id="import-error" style="color:var(--danger);font-size:12px;margin-top:10px;"></div>
+    <div id="import-busy" style="display:none;color:var(--muted);font-size:12px;margin-top:10px;"></div>
+    <div id="import-result"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('import-modal')">Schließen</button>
+      <button class="btn btn-ghost" id="import-dry-btn" onclick="runImport(true)" title="Nur analysieren, nichts speichern">Vorher analysieren</button>
+      <button class="btn btn-primary" id="import-run-btn" onclick="runImport(false)">Importieren</button>
+    </div>
+  </div>
+</div>
+
 <!-- User Modal -->
 <div class="modal-overlay" id="modal-user">
   <div class="modal">
@@ -2823,8 +3010,7 @@ function _esc(s) {
 let _selectedCityId = null;
 let _selectedSurveyId = null;
 let _allTemplates = [];
-let _bulkJobIds = [];
-let _bulkPollInterval = null;
+let _rqBatchId = null, _rqPoll = null;
 
 // ── CSRF META ──
 document.head.insertAdjacentHTML('beforeend','<meta name="csrf-token" content="{{ csrf_token }}">');
@@ -2841,9 +3027,9 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); loadIntegrationSettings(); }
   if(name==='templates') loadTemplates();
-  if(name==='bulk') updateBulkSelection();
+  if(name==='bulk') { rqLoadSeries(); rqRefreshQueueTile(); rqLoadRecent(); }
   if(name==='hochladen') hlGoToPhase1();
   if(name==='staedte') loadStaedte();
   if(name==='trending') loadTrending();
@@ -2889,6 +3075,7 @@ async function refreshStats() {
   else document.getElementById('nav-review-badge').style.display='none';
   if(s.news > 0) { document.getElementById('nav-news-badge').textContent = s.news; document.getElementById('nav-news-badge').style.display=''; }
   else document.getElementById('nav-news-badge').style.display='none';
+  rqRefreshQueueTile();
 }
 
 // ── CITIES ──
@@ -3153,6 +3340,7 @@ function _renderTemplateCard(t) {
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="openGeneratorWith(${t.id})" title="Generieren">⚡</button>
       <button class="btn btn-ghost btn-xs" onclick="openStudio(${t.id})" title="Template-Studio öffnen">Studio</button>
+      <button class="btn btn-ghost btn-xs" onclick="rqStartBatch({template_id:${t.id}, city_ids:'all', skip_recent_days:30})" title="Dieses Template für alle aktiven Städte in die Render-Queue stellen">Alle Städte</button>
       ${canvaBtn}
       <button class="btn btn-ghost btn-xs" onclick="openTemplateModal(${t.id})" title="Bearbeiten">✏️</button>
       <button class="btn btn-xs" style="background:var(--surface3);color:var(--muted);" onclick="deleteTemplate(${t.id})" title="Löschen">✕</button>
@@ -3250,6 +3438,7 @@ function _renderSeriesGroup(sname, templates) {
     <div class="tlib-actions-cell">
       <button class="btn btn-primary btn-xs" onclick="event.stopPropagation();openGeneratorWith(${first.id})" title="Erste Slide generieren">⚡</button>
       <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();openCarouselModal(this.dataset.series)" title="Alle Slides dieser Serie für eine Stadt rendern">Karussell rendern</button>
+      <button class="btn btn-ghost btn-xs" data-series="${_esc(sname)}" onclick="event.stopPropagation();rqStartBatch({series:this.dataset.series, city_ids:'all', skip_recent_days:30})" title="Karussell dieser Serie für alle aktiven Städte in die Render-Queue stellen">Alle Städte</button>
       <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openTemplateModal(${first.id})" title="Erste Slide bearbeiten">✏️</button>
     </div>
   </div>`;
@@ -3640,12 +3829,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try { vars = JSON.parse(opt.dataset.vars || '[]'); } catch(e) {}
     document.getElementById('gen-template-vars').innerHTML = vars.map(v=>`<span class="badge badge-blue">${v}</span>`).join('');
   });
-  document.querySelectorAll('.bulk-city-cb').forEach(cb => {
-    cb.addEventListener('change', updateBulkSelection);
-  });
   loadTemplates();
   refreshStats();
   loadEventsBadge();
+  loadSelftestQuick();
   _loadWissenBadge();
   // Brand preview live-update
   ['city-brand-bg','city-brand-bg-hex','city-brand-text','city-brand-text-hex','city-brand-font',
@@ -3788,69 +3975,361 @@ async function rejectJob(id) {
   loadReviewJobs();
 }
 
-// ── BULK ──
-function updateBulkSelection() {
-  const checked = document.querySelectorAll('.bulk-city-cb:checked').length;
-  const total   = document.querySelectorAll('.bulk-city-cb').length;
-  const infoEl  = document.getElementById('bulk-selection-info');
-  if(infoEl) infoEl.textContent = `${checked} von ${total} Städten ausgewählt`;
-  const badgeEl = document.getElementById('nav-bulk-badge');
-  if(badgeEl) { if(checked>0){badgeEl.textContent=checked;badgeEl.style.display='';}else{badgeEl.style.display='none';} }
+// ── BULK / RENDER-QUEUE (B4) ──
+async function rqLoadSeries() {
+  const sel = document.getElementById('rq-series'); if(!sel) return;
+  const cur = sel.value;
+  const rows = await api('GET','/api/templates/series').catch(() => []);
+  const list = Array.isArray(rows) ? rows : [];
+  sel.innerHTML = '<option value="">— Serie wählen —</option>' +
+    list.map(r=>`<option value="${_esc(r.series)}">${_esc(r.series)} (${r.template_count} Slides)</option>`).join('');
+  sel.value = cur;
 }
-
-function selectAllCities() { document.querySelectorAll('.bulk-city-cb').forEach(cb=>cb.checked=true); updateBulkSelection(); }
-function selectNoCities() { document.querySelectorAll('.bulk-city-cb').forEach(cb=>cb.checked=false); updateBulkSelection(); }
-function selectActiveCities() {
-  document.querySelectorAll('.bulk-city-row').forEach(row => {
-    const kc = parseInt(row.dataset.kc || 0);
-    row.querySelector('.bulk-city-cb').checked = kc > 0;
-  });
-  updateBulkSelection();
+function rqModeChanged() {
+  const mode = document.querySelector('input[name="rq-mode"]:checked')?.value || 'all';
+  document.getElementById('rq-city-list').hidden = mode !== 'list';
 }
-
-async function startBulk() {
-  const tId = document.getElementById('bulk-template').value;
-  if(!tId) { toast('Template wählen!','error'); return; }
-  const cityIds = [...document.querySelectorAll('.bulk-city-cb:checked')].map(cb => parseInt(cb.value));
-  if(!cityIds.length) { toast('Mindestens eine Stadt auswählen!','error'); return; }
-
-  const r = await api('POST','/api/generate/bulk',{template_id:parseInt(tId),city_ids:cityIds});
+// preset (optional): {template_id | series, city_ids: [ids]|'all'|'with_wiki', skip_recent_days}
+async function rqStartBatch(preset) {
+  const body = preset ? Object.assign({}, preset) : {};
+  if(!preset) {
+    const tId = document.getElementById('rq-template').value;
+    const series = document.getElementById('rq-series').value;
+    if(!tId && !series) { toast('Template oder Serie wählen','error'); return; }
+    if(tId) body.template_id = parseInt(tId); else body.series = series;
+    const mode = document.querySelector('input[name="rq-mode"]:checked')?.value || 'all';
+    body.city_ids = mode === 'list'
+      ? [...document.querySelectorAll('.rq-city-cb:checked')].map(cb=>parseInt(cb.value))
+      : mode;
+    if(Array.isArray(body.city_ids) && !body.city_ids.length) { toast('Mindestens eine Stadt wählen','error'); return; }
+    body.skip_recent_days = parseInt(document.getElementById('rq-skip-days').value || 0) || 0;
+  }
+  const r = await api('POST','/api/render/batch', body).catch(() => ({error: 'Render-Queue nicht erreichbar'}));
   if(r.error) { toast(r.error,'error'); return; }
-  toast(`${r.count} Jobs gestartet!`,'success');
-  _bulkJobIds = r.job_ids;
-
-  const prog = document.getElementById('bulk-progress');
-  prog.style.display='';
-  pollBulkJobs(r.job_ids);
+  const skipped = r.skipped || [];
+  toast(`${r.created} Aufträge in der Queue` + (skipped.length ? `, ${skipped.length} übersprungen` : ''), r.created ? 'success' : 'info');
+  if(!r.created) {
+    if(body.city_ids === 'with_wiki' && !skipped.length) toast('Keine Stadt mit aktivem Wiki-Eintrag gefunden','info');
+    showPage('bulk'); rqShowSkipped(skipped); return;
+  }
+  _rqBatchId = r.batch_id;
+  showPage('bulk');
+  document.getElementById('rq-progress').hidden = false;
+  rqShowSkipped(skipped);
+  rqPoll();
+  if(_rqPoll) clearInterval(_rqPoll);
+  _rqPoll = setInterval(rqPoll, 3000);
+}
+function rqShowSkipped(skipped) {
+  const el = document.getElementById('rq-skipped'); if(!el) return;
+  el.textContent = skipped && skipped.length
+    ? 'Übersprungen: ' + skipped.map(s=>`${s.city} (${s.reason})`).join(', ') : '';
+}
+async function rqPoll() {
+  if(!_rqBatchId) return;
+  const g = await api('GET', `/api/render/batch/${_rqBatchId}`).catch(() => ({error: true}));
+  if(g.error) { if(_rqPoll) clearInterval(_rqPoll); _rqPoll = null; return; }
+  const c = g.counts, finished = c.done + c.failed + c.cancelled;
+  document.getElementById('rq-progress').hidden = false;
+  document.getElementById('rq-progress-text').textContent =
+    `${finished} / ${g.total} fertig · ${c.running} laufen · ${c.pending} wartend` + (c.failed ? ` · ${c.failed} Fehler` : '');
+  document.getElementById('rq-progress-fill').style.width = (g.total ? Math.round(finished / g.total * 100) : 0) + '%';
+  document.getElementById('rq-batch-label').textContent = g.label || '';
+  rqRenderTasks(g.tasks || []);
+  rqRefreshQueueTile();
+  if(g.done && _rqPoll) { clearInterval(_rqPoll); _rqPoll = null; toast('Batch abgeschlossen – Ergebnisse liegen im Vorrat','success'); rqLoadRecent(); }
+}
+function rqRenderTasks(tasks) {
+  const badge = s => ({done:'badge-green',failed:'badge-red',running:'badge-blue',cancelled:'badge-gray',pending:'badge-yellow'})[s] || 'badge-gray';
+  const fitColor = f => f==null ? 'var(--muted)' : f>=70 ? '#22c55e' : f>=40 ? '#f59e0b' : '#ef4444';
+  if(!tasks.length) { document.getElementById('rq-task-table').innerHTML = '<div class="empty" style="padding:30px 20px;"><p>Keine Aufträge in diesem Batch</p></div>'; return; }
+  document.getElementById('rq-task-table').innerHTML = `
+    <div style="overflow-x:auto;">
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead><tr style="color:var(--muted);text-align:left;"><th style="padding:4px 6px;">Stadt</th><th>Status</th><th>Fit</th><th>Hinweis</th><th></th></tr></thead>
+      <tbody>${tasks.map(t=>`
+        <tr style="border-top:1px solid var(--border);">
+          <td style="padding:6px;font-weight:600;white-space:nowrap;">${_esc(t.city_name)}</td>
+          <td><span class="badge ${badge(t.status)}" style="font-size:10px;">${_esc(t.status_label)}${t.retry_pending ? ' · Wiederholung folgt' : ''}</span></td>
+          <td style="font-weight:700;color:${fitColor(t.fit_score)};">${t.fit_score ?? '–'}</td>
+          <td style="color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(t.error||'')}">${_esc(t.error||'')}</td>
+          <td style="text-align:right;white-space:nowrap;">
+            ${t.post_id ? `<a href="/?tab=vorrat" class="btn btn-ghost btn-xs" style="text-decoration:none;" onclick="rqOpenVorrat(${t.city_id});return false;">Im Vorrat</a>` : ''}
+            ${t.status==='failed' || t.status==='cancelled' ? `<button class="btn btn-ghost btn-xs" onclick="rqRetry(${t.id})">Erneut</button>` : ''}
+          </td>
+        </tr>`).join('')}</tbody>
+    </table>
+    </div>`;
+}
+async function rqRetry(id) {
+  const r = await api('POST', `/api/render/task/${id}/retry`).catch(() => ({error: 'Nicht erreichbar'}));
+  if(r.error) toast(r.error,'error'); else { toast('Auftrag wieder in der Queue','info'); if(!_rqPoll) _rqPoll = setInterval(rqPoll, 3000); rqPoll(); }
+}
+async function rqCancel() {
+  if(!_rqBatchId) return;
+  const r = await api('POST', `/api/render/batch/${_rqBatchId}/cancel`).catch(() => ({}));
+  toast(`${r.cancelled||0} wartende Aufträge abgebrochen`,'info'); rqPoll();
+}
+function rqOpenVorrat(cityId) {
+  const st = document.getElementById('vorrat-status-filter'); if(st) st.value = 'entwurf';
+  const cf = document.getElementById('vorrat-city-filter'); if(cf) cf.value = cityId ? String(cityId) : '';
+  _vorratPage = 1;
+  showPage('vorrat');   // ruft loadVorrat()
+}
+function rqOpenBatch(batchId) {
+  _rqBatchId = batchId;
+  rqPoll();
+  if(_rqPoll) clearInterval(_rqPoll);
+  _rqPoll = setInterval(rqPoll, 3000);
+}
+async function rqLoadRecent() {
+  const box = document.getElementById('rq-recent'); if(!box) return;
+  const q = await api('GET','/api/render/queue').catch(() => ({error: true}));
+  if(q.error) { box.innerHTML = ''; return; }
+  const rows = q.recent_batches || [];
+  if(!rows.length) { box.innerHTML = ''; return; }
+  const fmt = d => d ? new Date(d).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+  box.innerHTML = `<div style="font-size:11px;color:var(--muted2);font-weight:600;margin-bottom:6px;">LETZTE BATCHES</div>` +
+    rows.map(b => {
+      const c = b.counts || {}; const open = (c.pending||0) + (c.running||0);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border);font-size:12px;cursor:pointer;" onclick="rqOpenBatch('${_esc(b.batch_id)}')" title="Batch anzeigen">
+        <span style="color:var(--muted);width:82px;flex-shrink:0;">${fmt(b.created_at)}</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_esc(b.label||b.kind||'')}</span>
+        <span style="color:var(--muted);white-space:nowrap;">${c.done||0} fertig${c.failed ? ` · ${c.failed} Fehler` : ''}${open ? ` · ${open} offen` : ''}</span>
+      </div>`;
+    }).join('');
+  if(!_rqBatchId && rows.length && ((rows[0].counts||{}).pending || (rows[0].counts||{}).running)) rqOpenBatch(rows[0].batch_id);
+}
+async function rqRefreshQueueTile() {
+  const card = document.getElementById('stat-queue-card'); if(!card) return;
+  const q = await api('GET','/api/render/queue').catch(() => ({error: true}));
+  if(q.error) return;
+  const c = q.counts || {}, open = (c.pending||0) + (c.running||0);
+  const dead = q.workers && !q.alive;
+  document.getElementById('stat-queue').textContent = String(open || 0);
+  document.getElementById('stat-queue-label').textContent =
+    `Queue: ${c.pending||0} wartend, ${c.running||0} laufen` + (dead ? ' · Worker tot' : '');
+  card.className = 'stat-card' + (dead ? ' danger' : open ? ' accent' : '');
 }
 
-async function pollBulkJobs(jobIds) {
-  if(_bulkPollInterval) clearInterval(_bulkPollInterval);
-  _bulkPollInterval = setInterval(async () => {
-    const jobs = await api('GET', `/api/jobs?status=pending,running,done,failed,approved,rejected`);
-    const myJobs = jobs.filter(j => jobIds.includes(j.id));
-    const done = myJobs.filter(j => !['pending','running'].includes(j.status)).length;
-    const pct  = Math.round(done / jobIds.length * 100);
-    document.getElementById('bulk-progress-text').textContent = `${done} / ${jobIds.length} Jobs fertig`;
-    document.getElementById('bulk-progress-fill').style.width = pct + '%';
-    renderBulkJobs(myJobs);
-    if(done >= jobIds.length) {
-      clearInterval(_bulkPollInterval);
-      toast('Alle Bulk-Jobs abgeschlossen!','success');
-      refreshStats();
+// ── TEMPLATE-IMPORT (B3 Canva/PPTX + B6 Bild) ──
+let _importHelp = null, _importImageHelp = null, _importTab = 'canva', _importCitiesLoaded = false;
+async function openImportModal() {
+  document.getElementById('import-error').textContent = '';
+  document.getElementById('import-result').innerHTML = '';
+  setImportBusy(false);
+  if (!_importHelp) {
+    const h = await api('GET', '/api/templates/import/help').catch(() => null);
+    if (h && !h.error) {
+      _importHelp = h;
+      document.getElementById('import-help-text').textContent = h.anleitung || '';
+      const labels = h.labels || {};
+      document.getElementById('import-help-vars').innerHTML = (h.variables || []).map(v =>
+        `<span class="badge badge-blue" style="cursor:pointer;" title="${_esc(labels[v] || v)} – Klick kopiert {${_esc(v)}}" onclick="copyImportVar('${_esc(v)}')">{${_esc(v)}}</span>`).join('');
+      document.getElementById('import-help-hints').innerHTML = (h.hinweise || []).map(x => `<li>${_esc(x)}</li>`).join('');
     }
-  }, 4000);
+  }
+  const canvaOk = !!(_importHelp && _importHelp.canva_verbunden);
+  document.getElementById('import-canva-url').disabled = !canvaOk;
+  document.getElementById('import-canva-on').style.display = canvaOk ? '' : 'none';
+  document.getElementById('import-canva-off').style.display = canvaOk ? 'none' : '';
+  switchImportTab(canvaOk ? 'canva' : 'pptx');
+  openModal('import-modal');
+}
+function copyImportVar(v) {
+  if (!navigator.clipboard) return;
+  navigator.clipboard.writeText('{' + v + '}').then(() => toast(`{${v}} kopiert`, 'info')).catch(() => {});
+}
+async function switchImportTab(tab) {
+  _importTab = tab;
+  ['canva','pptx','bild'].forEach(t => {
+    document.getElementById('import-tab-' + t).style.display = t === tab ? '' : 'none';
+    document.getElementById('import-tab-btn-' + t).className = 'btn btn-sm ' + (t === tab ? 'btn-primary' : 'btn-ghost');
+  });
+  document.getElementById('import-series-group').style.visibility = tab === 'bild' ? 'hidden' : '';
+  document.getElementById('import-dry-btn').style.display = tab === 'bild' ? 'none' : '';
+  document.getElementById('import-help-details').style.display = tab === 'bild' ? 'none' : '';
+  document.getElementById('import-error').textContent = '';
+  if (tab === 'bild') await _prepareImageImportTab();
+}
+async function _prepareImageImportTab() {
+  if (!_importCitiesLoaded) {
+    const res = await api('GET', '/api/cities').catch(() => []);
+    const cities = Array.isArray(res) ? res : (res && Array.isArray(res.cities) ? res.cities : []);
+    document.getElementById('import-image-city-list').innerHTML = cities.map(c => `<option value="${_esc(c.name)}">`).join('');
+    _importCitiesLoaded = true;
+  }
+  if (!_importImageHelp) _importImageHelp = await api('GET', '/api/templates/import/image/help').catch(() => null);
+  const cb = document.getElementById('import-image-analyze'), note = document.getElementById('import-image-ai-note');
+  if (_importImageHelp && _importImageHelp.ai_available === false) {
+    cb.checked = false; cb.disabled = true;
+    note.textContent = 'Kein Anthropic-Key: Boxen werden im Studio von Hand gesetzt';
+  } else { cb.disabled = false; note.textContent = ''; }
+}
+function setImportBusy(on, text) {
+  const b = document.getElementById('import-busy');
+  b.style.display = on ? '' : 'none'; b.textContent = on ? (text || 'Bitte warten …') : '';
+  document.getElementById('import-run-btn').disabled = !!on;
+  document.getElementById('import-dry-btn').disabled = !!on;
+}
+async function runImport(dryRun) {
+  const name = document.getElementById('import-name').value.trim();
+  const category = document.getElementById('import-category').value || 'allgemein';
+  const series = document.getElementById('import-series').value.trim();
+  const errEl = document.getElementById('import-error'); errEl.textContent = '';
+  const csrf = {'X-CSRF-Token': '{{ csrf_token }}'};
+  let res;
+  try {
+    if (_importTab === 'canva') {
+      const url = document.getElementById('import-canva-url').value.trim();
+      if (!url) { errEl.textContent = 'Bitte einen Canva-Link eingeben'; return; }
+      setImportBusy(true, 'Canva exportiert … (bis zu 60 s)');
+      res = await fetch('/api/templates/import/canva', {method: 'POST',
+        headers: Object.assign({'Content-Type': 'application/json'}, csrf),
+        body: JSON.stringify({design_url: url, name, category, series, dry_run: dryRun})});
+    } else if (_importTab === 'pptx') {
+      const f = document.getElementById('import-file').files[0];
+      if (!f) { errEl.textContent = 'Bitte eine .pptx-Datei wählen'; return; }
+      const fd = new FormData();
+      fd.append('file', f); fd.append('name', name); fd.append('category', category);
+      fd.append('series', series); fd.append('dry_run', dryRun ? '1' : '0');
+      setImportBusy(true, 'Analysiere …');
+      res = await fetch('/api/templates/import/pptx', {method: 'POST', headers: csrf, body: fd});
+    } else {
+      const f = document.getElementById('import-image-file').files[0];
+      if (!f) { errEl.textContent = 'Bitte eine Bilddatei wählen'; return; }
+      const fd = new FormData();
+      fd.append('file', f); fd.append('name', name); fd.append('category', category);
+      fd.append('city_hint', document.getElementById('import-image-city').value.trim());
+      fd.append('analyze', document.getElementById('import-image-analyze').checked ? '1' : '0');
+      setImportBusy(true, document.getElementById('import-image-analyze').checked ? 'Bild wird analysiert …' : 'Bild wird importiert …');
+      res = await fetch('/api/templates/import/image', {method: 'POST', headers: csrf, body: fd});
+    }
+    let j = null;
+    try { j = await res.json(); } catch (e) { j = {error: `Antwort nicht lesbar (HTTP ${res.status})`}; }
+    if (!res.ok) { errEl.textContent = j.error || 'Import fehlgeschlagen'; return; }
+    if (_importTab === 'bild') renderImageImportResult(j); else renderImportResult(j);
+    if (!j.dry_run) loadTemplates();
+  } catch (e) {
+    errEl.textContent = 'Import fehlgeschlagen: ' + e;
+  } finally { setImportBusy(false); }
+}
+function renderImportResult(j) {
+  let html = `<div style="margin-top:14px;font-size:13px;font-weight:600;">${j.dry_run ? 'Analyse (nichts gespeichert)' : 'Importiert'}${j.series ? ` · Serie: ${_esc(j.series)}` : ''}</div>`;
+  if (j.warnings && j.warnings.length) html += `<ul style="margin:6px 0;padding-left:18px;color:var(--warning);font-size:12px;">${j.warnings.map(w => `<li>! ${_esc(w)}</li>`).join('')}</ul>`;
+  (j.templates || []).forEach(t => {
+    const vars = (t.variables || []).map(v => (t.unknown_variables || []).includes(v)
+      ? `<span class="badge" style="background:rgba(245,158,11,.15);color:var(--warning);" title="keine Registry-Kategorie – KI formuliert frei">{${_esc(v)}}</span>`
+      : `<span class="badge badge-blue">{${_esc(v)}}</span>`).join(' ');
+    const els = (t.elements || []).map(e => {
+      const what = e.var ? `{${_esc(e.var)}}` : _esc((e.text || '').length > 40 ? (e.text || '').slice(0, 40) + '…' : (e.text || ''));
+      return `<div>${_esc(e.type)} · ${what}${e.font ? ` · ${_esc(e.font)}` : ''}${e.max_size ? ` · ${e.max_size} px` : ''}</div>`;
+    }).join('');
+    html += `<div class="card" style="margin-top:10px;padding:12px;display:flex;gap:12px;align-items:flex-start;">
+      ${t.preview_url ? `<img src="${_esc(t.preview_url)}" style="width:120px;border-radius:6px;flex-shrink:0;" alt="">` : ''}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;">${_esc(t.name)} <span style="color:var(--muted);font-weight:400;">· ${t.canvas ? `${t.canvas.width}×${t.canvas.height}` : ''} · ${t.elements_count} Elemente</span></div>
+        <div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:4px;">${vars || '<span style="color:var(--muted);font-size:12px;">keine Variablen</span>'}</div>
+        <div style="font-size:12px;color:var(--muted);">${els}</div>
+        ${t.warnings && t.warnings.length ? `<ul style="margin:6px 0 0;padding-left:18px;color:var(--warning);font-size:12px;">${t.warnings.map(w => `<li>! ${_esc(w)}</li>`).join('')}</ul>` : ''}
+        <div style="margin-top:8px;">${t.studio_url
+          ? `<a class="btn btn-sm btn-primary" href="${_esc(t.studio_url)}" target="_blank" style="text-decoration:none;">Im Studio öffnen</a>`
+          : '<span style="font-size:12px;color:var(--muted);">Zum Speichern „Importieren“ drücken</span>'}</div>
+      </div>
+    </div>`;
+  });
+  if (!(j.templates || []).length) html += '<div style="color:var(--muted);font-size:12px;margin-top:8px;">Keine Folien gefunden.</div>';
+  document.getElementById('import-result').innerHTML = html;
+}
+function renderImageImportResult(r) {
+  let html = `<div class="card" style="margin-top:12px;padding:12px;">
+    <div style="font-size:13px;margin-bottom:8px;">${_esc(r.hint || '')}</div>`;
+  if (r.analysis) {
+    html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+    (r.analysis.text_blocks || []).forEach(b => {
+      const badge = b.city_specific
+        ? `<span class="badge badge-blue">stadtspezifisch → {${_esc(b.suggested_var)}}</span>`
+        : `<span class="badge badge-gray">fest im Bild</span>`;
+      html += `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+        <span style="font-size:13px;">„${_esc(b.text)}“</span>${badge}</div>`;
+    });
+    const counts = r.analysis.counts || {};
+    html += `</div><div style="font-size:11px;color:var(--muted);margin-top:8px;">
+      Hintergrund: ${_esc(r.analysis.background_kind)} · ${counts.total ?? 0} Zeilen, ${counts.city_specific ?? 0} stadtspezifisch</div>`;
+  }
+  html += `<div style="display:flex;gap:8px;margin-top:12px;">
+    <a class="btn btn-primary btn-sm" href="${_esc(r.studio_url)}" target="_blank" style="text-decoration:none;">Im Studio öffnen</a>
+    <button class="btn btn-ghost btn-sm" onclick="reanalyzeImportedTemplate(${r.id})">Erneut analysieren</button>
+  </div></div>`;
+  document.getElementById('import-result').innerHTML = html;
+}
+async function reanalyzeImportedTemplate(id) {
+  const city = document.getElementById('import-image-city').value.trim();
+  setImportBusy(true, 'Bild wird analysiert …');
+  try {
+    const r = await api('POST', `/api/templates/${id}/analyze`, {city_hint: city, force: true});
+    if (r.error) { toast(r.error + (r.hint ? ' – ' + r.hint : ''), 'error'); return; }
+    renderImageImportResult(r);
+    loadTemplates();
+  } finally { setImportBusy(false); }
 }
 
-function renderBulkJobs(jobs) {
-  const el = document.getElementById('bulk-jobs-list');
-  if(!jobs.length) { el.innerHTML='<div class="empty" style="padding:20px;"><p>Keine Jobs</p></div>'; return; }
-  el.innerHTML = jobs.map(j=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-      <div style="flex:1;font-size:12px;font-weight:600;">${j.city_name}</div>
-      <div style="font-size:12px;color:${j.fit_color||'var(--muted)'};font-weight:700;">${j.fit_score ?? '–'}</div>
-      <span class="badge ${j.status==='done'||j.status==='approved'?'badge-green':j.status==='failed'||j.status==='rejected'?'badge-red':j.status==='running'?'badge-blue':'badge-gray'}" style="font-size:10px;" title="${j.status==='failed' ? _esc(j.error_message||'') : ''}">${j.status_label}</span>
-    </div>`).join('');
+// ── SELBSTTEST (B8) ──
+const SELFTEST_COLORS = { crit: 'var(--danger)', warn: 'var(--warning)', info: 'var(--muted2)' };
+async function runSelftest(btn, quick) {
+  const box = document.getElementById('selftest-result');
+  const sum = document.getElementById('selftest-summary');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Läuft …';
+  box.innerHTML = ''; sum.textContent = '';
+  try {
+    const r = await fetch(quick ? '/api/selftest/quick' : '/api/selftest');
+    if (r.status === 401) { location.href = '/login'; return; }
+    const d = await r.json();
+    renderSelftest(d);
+    updateSelftestDot(d);
+  } catch (e) {
+    sum.textContent = 'Selbsttest nicht erreichbar: ' + e;
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+function renderSelftest(d) {
+  const box = document.getElementById('selftest-result');
+  const sum = document.getElementById('selftest-summary');
+  const s = d.summary || {};
+  sum.innerHTML = `<span style="color:${d.ok ? 'var(--success)' : 'var(--danger)'};font-weight:600;">${d.ok ? '✓ Alles Wesentliche in Ordnung' : '✕ Kritische Fehler'}</span>
+    · ${s.passed}/${s.total} bestanden · ${s.crit} kritisch · ${s.warn} Warnungen · ${s.info} Hinweise · ${d.duration_ms} ms${d.quick ? ' · Schnelltest' : ''}`;
+  const order = { crit: 0, warn: 1, info: 2 };
+  const checks = [...(d.checks || [])].sort((a, b) => (a.ok - b.ok) || (order[a.severity] - order[b.severity]) || a.name.localeCompare(b.name));
+  box.innerHTML = checks.map(c => {
+    const color = c.ok ? 'var(--success)' : (SELFTEST_COLORS[c.severity] || 'var(--muted2)');
+    const mark  = c.ok ? '✓' : (c.severity === 'info' ? '●' : '✕');
+    return `<div style="display:flex;gap:10px;padding:6px 8px;border-radius:6px;background:var(--surface2);font-size:12px;">
+      <span style="color:${color};font-weight:700;width:12px;flex-shrink:0;">${mark}</span>
+      <div style="min-width:0;">
+        <div style="font-weight:600;">${_esc(c.name)} <span class="badge ${c.severity==='crit'?'badge-red':c.severity==='warn'?'badge-yellow':'badge-gray'}" style="margin-left:4px;">${_esc(c.severity)}</span></div>
+        <div style="color:var(--muted2);word-break:break-word;">${_esc(c.detail || '')}</div>
+      </div></div>`;
+  }).join('');
+}
+function updateSelftestDot(d) {
+  const dot = document.getElementById('selftest-dot');
+  const txt = document.getElementById('selftest-dot-text');
+  if (!dot || !txt || !d || !d.summary) return;
+  const s = d.summary;
+  dot.style.background = '';
+  dot.className = 'dot ' + (s.crit > 0 ? 'red' : s.warn > 0 ? 'yellow' : 'green');
+  txt.textContent = s.crit > 0 ? `System: ${s.crit} kritisch`
+                  : s.warn > 0 ? `System: ${s.warn} Warnung${s.warn > 1 ? 'en' : ''}`
+                  : 'System ok';
+}
+async function loadSelftestQuick() {
+  try {
+    const r = await fetch('/api/selftest/quick');
+    if (!r.ok) return;
+    updateSelftestDot(await r.json());
+  } catch (e) { /* Sidebar-Punkt bleibt grau */ }
 }
 
 // ── REVIEW ──
@@ -4159,6 +4638,8 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 
 // ── Auto-refresh stats every 30s ──
 setInterval(refreshStats, 30000);
+// Selbsttest-Punkt in der Sidebar alle 5 Minuten (nur Schnelltest, ohne externe Aufrufe)
+setInterval(loadSelftestQuick, 300000);
 
 // ══════════════════════════════════════════
 // HOCHLADEN & EINPLANEN
@@ -6168,14 +6649,20 @@ async function loadInspoSources() {
       ? `<span style="color:var(--text);">${_esc(s.city_name)}</span>`
       : `<span style="color:var(--warning);">keine Stadt</span>`;
     const platform = INSPO_PLATFORM_LABEL[s.platform] || 'Instagram';
+    const canFetch = (s.platform || 'instagram') === 'instagram';
     return `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;">${_esc(s.username)}</div>
         <div style="font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
-          <span>${s.post_count||0} Posts</span><span>·</span><span>${platform}</span><span>·</span>
+          <span>${s.post_count||0} Posts</span><span>·</span><span>${platform}</span>
+          ${s.last_fetch ? `<span>·</span><span title="letzter Abruf">${new Date(s.last_fetch).toLocaleDateString('de-DE')}</span>` : ''}<span>·</span>
           <span id="inspo-src-city-${s.id}" onclick="editInspoSourceCity(${s.id})" title="Stadt ändern" style="cursor:pointer;text-decoration:underline dotted;">${cityLabel}</span>
         </div>
+        ${canFetch ? `<div style="display:flex;gap:4px;margin-top:5px;">
+          <button class="btn btn-xs btn-ghost" title="Beiträge dieser Seite abholen (RapidAPI)" onclick="fetchInspoSource(${s.id}, null, this)">Abholen</button>
+          <button class="btn btn-xs btn-ghost" title="Nur 3 Beiträge holen (Probe)" onclick="fetchInspoSource(${s.id}, 'test', this)">Test (3)</button>
+        </div>` : ''}
       </div>
       <button class="btn btn-xs btn-ghost" onclick="deleteInspoSource(${s.id})">✕</button>
     </div>`;
@@ -6228,6 +6715,41 @@ async function deleteInspoSource(id) {
   if (!confirm('Quelle und alle Posts löschen?')) return;
   await api('DELETE', `/api/inspiration/sources/${id}`);
   toast('Quelle gelöscht', 'success');
+  loadInspoSources();
+  loadInspoPosts();
+}
+
+// ── Inspiration-Abholung über RapidAPI (B7). limit: null (Einstellung) oder 'test' (3 Beiträge)
+async function fetchInspoSource(id, limit, btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const body = limit ? { limit } : {};
+  const r = await api('POST', `/api/inspiration/sources/${id}/fetch`, body).catch(() => null);
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+  if (!r || !r.ok) {
+    const msg = (r && r.error) || 'Abruf fehlgeschlagen';
+    toast(msg, 'error');
+    if (msg.startsWith('Kein RapidAPI-Key')) showPage('settings');
+    return;
+  }
+  toast(`${r.new} neu, ${r.skipped} bekannt (${r.api_used || 'RapidAPI'})`, r.new ? 'success' : 'info');
+  loadInspoSources();
+  loadInspoPosts();
+}
+async function fetchAllInspo(btn) {
+  if (!_inspoSources.length) { toast('Keine Quellen angelegt', 'info'); return; }
+  if (!confirm(`${_inspoSources.length} Quelle(n) abholen? Das kann eine Weile dauern und verbraucht RapidAPI-Kontingent.`)) return;
+  btn.disabled = true; btn.textContent = 'Läuft …';
+  const r = await api('POST', '/api/inspiration/fetch-all', {}).catch(() => null);
+  btn.disabled = false; btn.textContent = 'Alle abholen';
+  if (!r || !r.ok) {
+    const msg = (r && r.error) || 'Abruf fehlgeschlagen';
+    toast(msg, 'error');
+    if (msg.startsWith('Kein RapidAPI-Key')) showPage('settings');
+    return;
+  }
+  toast(r.message, r.failed ? 'info' : 'success');
+  (r.results || []).filter(x => !x.ok).forEach(x => toast(`@${x.username}: ${x.error}`, 'error'));
   loadInspoSources();
   loadInspoPosts();
 }
@@ -6548,6 +7070,7 @@ async function loadSettingsPage() {
   if (aDay   && d.alert_threshold_days) aDay.value = d.alert_threshold_days;
   const cosUrl = document.getElementById('settings-content-os-url');
   if (cosUrl && d.content_os_url) cosUrl.value = d.content_os_url;
+  loadAutomation();
 }
 
 async function saveTelegramSettings() {
@@ -6559,6 +7082,125 @@ async function saveTelegramSettings() {
   const r = await api('POST', '/api/settings', body);
   toast(r.ok ? 'Telegram-Einstellungen gespeichert' : 'Fehler beim Speichern', r.ok ? 'success' : 'error');
   if (r.ok) loadSettingsPage();
+}
+
+// ── Automatik (B5, GET/POST /api/automation) ──
+let _autoState = null;
+async function loadAutomation() {
+  const body = document.getElementById('auto-jobs-body');
+  const d = await api('GET', '/api/automation').catch(() => null);
+  if (!d || d.error) {
+    if (body) body.innerHTML = '<tr><td colspan="5" style="padding:8px 4px;color:var(--danger);">Automatik nicht erreichbar (Modul scheduler.py nicht geladen?)</td></tr>';
+    return;
+  }
+  _autoState = d;
+  const hint = document.getElementById('auto-tg-hint');
+  if (hint) hint.style.display = d.telegram_configured ? 'none' : '';
+  const alive = document.getElementById('auto-alive');
+  if (alive) {
+    alive.textContent = d.scheduler_alive ? 'Scheduler läuft' : 'Scheduler steht';
+    alive.style.background = d.scheduler_alive ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
+    alive.style.color = d.scheduler_alive ? 'var(--success)' : 'var(--danger)';
+    alive.title = d.scheduler_alive ? 'Heartbeat in den letzten 2 Minuten' : 'Kein Heartbeat – MEMEOS_SCHEDULER=1 gesetzt? (lokal normal, wenn der Thread aus ist)';
+  }
+  const btn = document.getElementById('auto-pause-btn');
+  if (btn) {
+    btn.textContent = d.master_pause ? '● Master-Pause AKTIV – fortsetzen' : '● Läuft – Master-Pause';
+    btn.style.background = d.master_pause ? 'var(--danger)' : 'var(--success)';
+    btn.style.color = '#fff';
+  }
+  if (!body) return;
+  body.innerHTML = (d.jobs || []).map(j => {
+    const last = j.last_run ? new Date(j.last_run).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const res  = j.last_result ? _esc(j.last_result) : '';
+    const bad  = j.last_result && j.last_result.startsWith('Fehler');
+    const tags = (j.costs_ai ? '<span class="badge badge-yellow" style="font-size:9px;margin-left:6px;">KI-Kosten</span>' : '')
+               + (j.needs_telegram ? '<span class="badge badge-gray" style="font-size:9px;margin-left:6px;">Telegram</span>' : '');
+    return `<tr style="border-top:1px solid var(--border);">
+      <td style="padding:8px 4px;"><input type="checkbox" style="width:auto;" ${j.enabled?'checked':''} onchange="saveAutomationJob('${_esc(j.key)}', {enabled:this.checked})"></td>
+      <td style="padding:8px 4px;"><div style="font-weight:600;">${_esc(j.label)}${tags}</div>
+          <div style="color:var(--muted);font-size:11px;">${_esc(j.description)}</div></td>
+      <td style="padding:8px 4px;">${j.time !== null && j.time !== undefined
+          ? `<input type="time" value="${_esc(j.time)}" style="width:96px;" onchange="saveAutomationJob('${_esc(j.key)}', {time:this.value})">`
+          : '<span style="color:var(--muted);">alle 30 s</span>'}</td>
+      <td style="padding:8px 4px;"><div>${last}</div>
+          <div style="font-size:11px;color:${bad?'var(--danger)':'var(--muted)'};max-width:260px;" title="${res}">${res}</div></td>
+      <td style="padding:8px 4px;text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-xs" onclick="runAutomationJob('${_esc(j.key)}', this)">▶ Jetzt ausführen</button></td>
+    </tr>`;
+  }).join('');
+}
+async function saveAutomationJob(key, cfg) {
+  const r = await api('POST', '/api/automation', {jobs: {[key]: cfg}}).catch(() => ({error: 'Nicht erreichbar'}));
+  if (r.error) { toast(r.error, 'error'); } else { toast('Automatik gespeichert', 'success'); }
+  loadAutomation();
+}
+async function toggleMasterPause() {
+  if (!_autoState) return;
+  const r = await api('POST', '/api/automation', {master_pause: !_autoState.master_pause}).catch(() => ({error: 'Nicht erreichbar'}));
+  if (r.error) { toast(r.error, 'error'); loadAutomation(); return; }
+  toast(r.master_pause ? 'Master-Pause aktiv – alle Tagesjobs angehalten' : 'Automatik läuft wieder', r.master_pause ? 'error' : 'success');
+  loadAutomation();
+}
+async function runAutomationJob(key, btn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = 'läuft …';
+  try {
+    const r = await api('POST', `/api/automation/run/${key}`).catch(() => ({error: 'Nicht erreichbar'}));
+    toast(`${key}: ${r.result || r.error}`, r.ok ? 'success' : 'error');
+  } finally { btn.disabled = false; btn.textContent = old; loadAutomation(); }
+}
+async function showDigestPreview() {
+  const box = document.getElementById('digest-preview');
+  const d = await api('POST', '/api/automation/digest/preview').catch(() => ({error: 'Nicht erreichbar'}));
+  box.style.display = '';
+  if (d.error) { box.innerHTML = `<span style="color:var(--danger);">${_esc(d.error)}</span>`; return; }
+  if (!d.count) { box.innerHTML = `<span style="color:var(--muted);">Heute (${_esc(d.date)}) keine geplanten Posts – der Digest um ${_esc(d.digest_time)} würde nichts senden.</span>`; return; }
+  box.innerHTML = `<div style="font-weight:600;margin-bottom:6px;">Digest ${_esc(d.date)} um ${_esc(d.digest_time)}: ${d.count} Post${d.count>1?'s':''}</div>` +
+    (d.posts || []).map(p => `<div style="display:flex;gap:8px;padding:4px 0;border-top:1px solid var(--border);">
+      <span style="width:44px;color:var(--muted);">${_esc(p.time||'—')}</span>
+      <span style="flex:1;"><b>${_esc(p.city)}</b> · ${_esc(p.title||'(ohne Titel)')} <span style="color:var(--muted);">${_esc(p.post_type)}${p.slide_count>1?`, ${p.slide_count} Slides`:''}</span></span>
+      <span style="color:${p.has_image?'var(--success)':'var(--warning)'};">${p.has_image?'Bild ✓':'kein Bild'}</span>
+    </div>`).join('') +
+    (d.telegram_configured ? '' : '<div style="color:var(--warning);margin-top:6px;">Telegram nicht konfiguriert – würde nicht gesendet.</div>');
+}
+
+// ── Integrationen (B7, GET/POST /api/settings/integrations) ──
+async function loadIntegrationSettings() {
+  const d = await api('GET', '/api/settings/integrations').catch(() => null);
+  const st = document.getElementById('settings-rapidapi-status');
+  if (!d || d.error) { if (st) st.textContent = 'Integrationen nicht erreichbar'; return; }
+  const key = document.getElementById('settings-rapidapi-key');
+  if (key) {
+    key.value = '';
+    key.placeholder = d.rapidapi_key_set ? `gesetzt (…${d.rapidapi_hint || ''})` : 'RapidAPI-Key';
+  }
+  const hint = document.getElementById('settings-rapidapi-hint');
+  if (hint) hint.textContent = d.rapidapi_key_source === 'env'
+    ? 'Key kommt aus der Umgebungsvariable RAPIDAPI_KEY. Ein hier gespeicherter Key hat Vorrang.'
+    : 'Leer lassen, um den gespeicherten Key zu behalten.';
+  const lim = document.getElementById('settings-inspo-limit');
+  if (lim) lim.value = d.inspo_fetch_limit || 50;
+  const calls = document.getElementById('settings-rapidapi-calls');
+  if (calls) calls.textContent = d.rapidapi_calls_month || 0;
+  const month = document.getElementById('settings-rapidapi-month');
+  if (month) month.textContent = d.month ? `(${d.month})` : '';
+  if (st) st.textContent = d.rapidapi_key_set ? '' : 'Kein Key gesetzt – Abholung deaktiviert';
+}
+async function saveIntegrationSettings() {
+  const key = document.getElementById('settings-rapidapi-key')?.value.trim();
+  const lim = parseInt(document.getElementById('settings-inspo-limit')?.value);
+  const body = {};
+  if (key) body.rapidapi_key = key;                   // leer = gespeicherten behalten
+  if (lim && lim >= 1) body.inspo_fetch_limit = lim;
+  const r = await api('POST', '/api/settings/integrations', body).catch(() => null);
+  if (r && r.ok) { toast('Integrationen gespeichert', 'success'); loadIntegrationSettings(); }
+  else toast((r && r.error) || 'Fehler beim Speichern', 'error');
+}
+async function clearRapidApiKey() {
+  if (!confirm('Gespeicherten RapidAPI-Key löschen?')) return;
+  const r = await api('POST', '/api/settings/integrations', {rapidapi_key_clear: true}).catch(() => null);
+  if (r && r.ok) { toast('RapidAPI-Key gelöscht', 'success'); loadIntegrationSettings(); }
+  else toast((r && r.error) || 'Fehler beim Löschen', 'error');
 }
 
 // ── Kategorie-Zielmix (GET/POST /api/settings/category-mix, {'mix': {key: prozent}}) ──
@@ -6678,7 +7320,7 @@ function _renderEventRow(e) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);${e.active?'':'opacity:.45;'}">
     <span style="font-size:20px;width:32px;text-align:center;">${e.emoji||'📅'}</span>
     <div style="flex:1;min-width:0;">
-      <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${_esc(e.name)}${e.active_now ? '<span class="badge badge-green" style="font-size:9px;padding:1px 6px;">läuft</span>' : ''}</div>
+      <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${_esc(e.name)}${e.active_now ? '<span class="badge badge-green" style="font-size:9px;padding:1px 6px;">läuft</span>' : ''}${(e.notes||'').startsWith('automatisch erkannt') ? '<span class="badge" style="font-size:9px;padding:1px 6px;background:rgba(56,189,248,.15);color:#38bdf8;" title="Vom Wetter-Job aus der Open-Meteo-Vorhersage angelegt">automatisch</span>' : ''}</div>
       <div style="font-size:11px;color:${tc};">${e.event_type}${e.recurring?' · jährlich':''}</div>
     </div>
     <div style="width:90px;font-size:12px;">${e.date_from||'—'}</div>

@@ -4,7 +4,9 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 2 --timeout 120
+    # Genau EIN Gunicorn-Prozess: Render-Queue-Worker und Scheduler dürfen nur einmal laufen
+    # (--threads hält die App reaktionsfähig, während Jobs/Renders laufen)
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180
     envVars:
       - key: SECRET_KEY
         generateValue: true
@@ -31,6 +33,15 @@ services:
       # Uploads/Renders/Exports/Fonts liegen auf der gemounteten Disk (überleben Deploys)
       - key: MEMEOS_DATA_ROOT
         value: /opt/render/project/src/instance
+      # Render-Queue: Anzahl Worker-Threads im Prozess (0 = aus, dann POST /api/render/run-once)
+      - key: MEMEOS_WORKERS
+        value: "3"
+      # Automatik-Thread (RSS/Events/Wetter/Digest/Telegram-Poll); 0 = aus
+      - key: MEMEOS_SCHEDULER
+        value: "1"
+      # RapidAPI (Inspiration-Abholung von Instagram); alternativ im Dashboard unter Einstellungen → Integrationen
+      - key: RAPIDAPI_KEY
+        sync: false
     disk:
       name: memeos-data
       mountPath: /opt/render/project/src/instance

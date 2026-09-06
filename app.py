@@ -11,6 +11,10 @@ import uuid
 import shutil
 import requests
 import feedparser
+try:
+    import memeos_render   # Phase B (B1): Element-Renderer, kein app-Import
+except ImportError:   # pragma: no cover – Fallback auf die alte Pillow-Implementierung
+    memeos_render = None
 
 try:
     from dotenv import load_dotenv
@@ -90,10 +94,19 @@ def _migrate_static_files():
 _migrate_static_files()
 
 
+# Platzhalter, die nie als SECRET_KEY gelten dürfen (Beispielwerte aus .env.example u. ä.)
+_SECRET_KEY_PLACEHOLDERS = {'dein-geheimer-schluessel', 'changeme', 'change-me', 'change_me', 'secret', 'dev'}
+
+
 def _load_secret_key():
     """SECRET_KEY aus der Umgebung; sonst aus <DATA_ROOT>/secret_key lesen oder dort einmalig
     erzeugen. Damit überleben Sessions Neustarts, ohne dass ein Standardwert im Code steht."""
     env_key = os.getenv('SECRET_KEY', '').strip()
+    if env_key and env_key.lower() in _SECRET_KEY_PLACEHOLDERS:
+        # Beispielwert aus .env.example wurde übernommen – nie als echten Schlüssel verwenden
+        log.warning('SECRET_KEY hat den Beispielwert aus .env.example – wird ignoriert, '
+                    'stattdessen <DATA_ROOT>/secret_key verwendet/erzeugt')
+        env_key = ''
     if env_key:
         return env_key
     path = os.path.join(_DATA_ROOT, 'secret_key')
@@ -774,6 +787,22 @@ Denke an bekannte Memes, Klischees, tatsächliche Problemorte etc."""
 # TEMPLATE API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _validate_pil_config(cfg):
+    """Prüft eine pil_config (dict oder JSON-Text) über memeos_render.validate_config.
+    Liefert eine Liste deutscher Fehlertexte; leer = ok. Ohne memeos_render nur JSON-Syntaxprüfung."""
+    if memeos_render is None:
+        if isinstance(cfg, str):
+            try:
+                json.loads(cfg)
+            except Exception as ex:
+                return [f'pil_config ist kein gültiges JSON: {ex}']
+        return []
+    try:
+        return list(memeos_render.validate_config(cfg) or [])
+    except Exception as ex:
+        return [f'pil_config nicht prüfbar: {ex}']
+
+
 def _tmpl_dict(t):
     cat_row = TemplateCategory.query.filter_by(key=t.category).first()
     cat_info = (cat_row.label, cat_row.emoji, cat_row.group) if cat_row else TEMPLATE_CAT_MAP.get(t.category, (t.category, '', ''))
@@ -818,6 +847,10 @@ def api_template_create():
     render_type = d.get('render_type') or 'pil'
     if render_type not in ('pil', 'manual'):
         return jsonify({'error': "render_type muss 'pil' oder 'manual' sein"}), 400
+    if d.get('pil_config'):
+        errors = _validate_pil_config(d['pil_config'])
+        if errors:
+            return jsonify({'error': 'pil_config ungültig', 'details': errors}), 400
     t = MemeTemplate(
         name=d['name'].strip(),
         description=d.get('description', ''),
@@ -835,6 +868,8 @@ def api_template_create():
         series=d.get('series', '') or None,
         series_position=int(d['series_position']) if d.get('series_position') else None,
     )
+    if d.get('pil_config'):
+        t.pil_config = json.dumps(d['pil_config']) if isinstance(d['pil_config'], dict) else d['pil_config']
     db.session.add(t)
     db.session.commit()
     return jsonify({'id': t.id, 'template': _tmpl_dict(t)}), 201
@@ -857,6 +892,9 @@ def api_template_update(tmpl_id):
     if 'tags' in d:
         t.tags = json.dumps(d['tags'])
     if 'pil_config' in d:
+        errors = _validate_pil_config(d['pil_config'])
+        if errors:
+            return jsonify({'error': 'pil_config ungültig', 'details': errors}), 400
         t.pil_config = json.dumps(d['pil_config']) if isinstance(d['pil_config'], dict) else d['pil_config']
     db.session.commit()
     return jsonify({'ok': True, 'template': _tmpl_dict(t)})
@@ -1169,7 +1207,7 @@ def _run_generate_job(flask_app, job_id):
                     png_bytes = None
                     render_error = None
                     if _template_bg_path(template):
-                        png_bytes = _pil_render(template, result.get('vars') or {})
+                        png_bytes = _pil_render(template, result.get('vars') or {}, city=city)
                         if not png_bytes:
                             render_error = 'PIL-Rendering fehlgeschlagen — nur Brief verfügbar'
                     else:
@@ -1250,7 +1288,7 @@ def _generate_carousel(flask_app, post_id, series=None, category=None):
                     render_type = template.render_type if template.render_type in ('pil', 'manual') else 'pil'
                     png_bytes = None
                     if render_type == 'pil' and _template_bg_path(template):
-                        png_bytes = _pil_render(template, result.get('vars') or {})
+                        png_bytes = _pil_render(template, result.get('vars') or {}, city=city)
                     if png_bytes:
                         filename = f'carousel_{post.id}_{template.id}_{int(time.time())}.png'
                         _save_render(png_bytes, filename)
@@ -1698,8 +1736,29 @@ def _city_brand(city):
     }
 
 
-def _pil_render(template, vars_dict):
-    """Rendert ein Template lokal mit Pillow, ohne Canva.
+def _pil_render(template, vars_dict, city=None):
+    """Rendert ein Template lokal mit Pillow. Delegiert an memeos_render (Phase B, Element-Renderer
+    mit text/image/cover/rect, brand:-Farben); ohne das Modul greift die alte Implementierung.
+    Rückgabe: PNG-Bytes oder None (kein Hintergrund)."""
+    if memeos_render is None:
+        return _pil_render_legacy(template, vars_dict)
+    src_path = _template_bg_path(template)
+    if not src_path:
+        return None
+    try:
+        config = json.loads(template.pil_config or '{}')
+    except Exception:
+        config = {}
+    try:
+        return memeos_render.render(src_path, config, vars_dict or {},
+                                    brand=_city_brand(city) if city else None)
+    except FileNotFoundError as ex:
+        log.warning(f'PIL Render Template {template.id}: {ex}')
+        return None
+
+
+def _pil_render_legacy(template, vars_dict):
+    """Alte Pillow-Implementierung (nur Text/Bild-Elemente); Fallback ohne memeos_render.
 
     pil_config-Format:
     {
@@ -2595,6 +2654,8 @@ with app.app_context():
         'ALTER TABLE memo_inspiration_source ADD COLUMN city_id INTEGER REFERENCES city(id)',
         'ALTER TABLE memo_inspiration_source ADD COLUMN platform VARCHAR(20) DEFAULT \'instagram\'',
         'CREATE INDEX IF NOT EXISTS ix_memo_inspiration_source_city_id ON memo_inspiration_source (city_id)',
+        'ALTER TABLE city ADD COLUMN lat FLOAT',   # B5 Wetter-Events (Open-Meteo); models.City.lat
+        'ALTER TABLE city ADD COLUMN lon FLOAT',   # B5
     ]:
         try:
             db.session.execute(db.text(_col_sql))
@@ -4690,10 +4751,35 @@ with app.app_context():
 
 
 # ── ERWEITERUNGEN (Phase B) ────────────────────────
-# register_extensions(app) wird hier eingehängt: Scheduler, Blueprints, Queue-System.
-# In Phase A bewusst leer – keine neuen Blueprints, kein Scheduler.
+# register_extensions(app) hängt die Phase-B-Module ein. Jedes Modul ist eine eigene Datei mit
+# init_app(flask_app); ein defektes Modul darf die App nicht killen (try/except + log.error).
+# Threads (Render-Worker, Scheduler) starten nur, wenn TESTING falsch ist und MEMEOS_WORKERS bzw.
+# MEMEOS_SCHEDULER nicht '0' sind – das entscheiden die Module selbst.
+# Reihenfolge: memeos_render (nur Import, oben), studio, pptx_import, vision_import,
+# inspiration_fetch, render_queue, scheduler, selftest (als letztes: sieht alle Routen).
+_EXTENSION_MODULES = (
+    'studio_bp',              # B2 Template-Studio (/studio/<id>, /api/studio/…)
+    'pptx_import_bp',         # B3 Template-Import aus Canva/PPTX
+    'vision_import_bp',       # B6 Bild-Import mit KI-Erkennung
+    'inspiration_fetch_bp',   # B7 Inspiration-Abholung über RapidAPI
+    'render_queue',           # B4 persistente Render-Queue → Vorrat
+    'scheduler',              # B5 Automatik (RSS/Events/Wetter/Digest/Telegram-Poll)
+    'selftest_bp',            # B8 Selbsttest
+)
+_loaded_extensions = []
+
 def register_extensions(flask_app):
-    pass
+    import importlib
+    if memeos_render is None:
+        log.error('memeos_render nicht importierbar – Rendern läuft mit der alten Pillow-Implementierung')
+    for mod_name in _EXTENSION_MODULES:
+        try:
+            mod = importlib.import_module(mod_name)
+            mod.init_app(flask_app)
+            _loaded_extensions.append(mod_name)
+        except Exception as ex:
+            log.error(f'Erweiterung {mod_name} nicht geladen: {ex}', exc_info=True)
+    log.info('Erweiterungen geladen: ' + (', '.join(_loaded_extensions) or 'keine'))
 
 register_extensions(app)
 

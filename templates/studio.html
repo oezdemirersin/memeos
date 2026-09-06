@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Template-Studio – {{ template_name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#080b12; --surface:#0f1420; --surface2:#161c2d; --surface3:#1e2640;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.12);
+  --accent:#3b82f6; --accent2:#60a5fa; --accent-dim:rgba(59,130,246,0.15);
+  --success:#22c55e; --warning:#f59e0b; --danger:#ef4444; --purple:#8b5cf6;
+  --text:#e2e8f0; --muted:#64748b; --muted2:#94a3b8;
+  --font-display:'Bebas Neue',sans-serif; --font-body:'DM Sans',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:13px;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+button{font-family:var(--font-body);}
+
+/* ── Buttons / Badges / Formulare (Design-System) ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-primary{background:var(--accent);color:white;}
+.btn-primary:hover:not(:disabled){background:#2563eb;}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-ghost:hover:not(:disabled){background:var(--surface3);border-color:var(--border2);}
+.btn-danger{background:var(--danger);color:white;}
+.btn-sm{padding:5px 12px;font-size:12px;}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:5px;}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;gap:4px;}
+.badge-blue{background:rgba(59,130,246,.15);color:#60a5fa;}
+.badge-green{background:rgba(34,197,94,.15);color:#4ade80;}
+.badge-yellow{background:rgba(245,158,11,.15);color:#fbbf24;}
+.badge-red{background:rgba(239,68,68,.15);color:#f87171;}
+.badge-purple{background:rgba(139,92,246,.15);color:#a78bfa;}
+.badge-gray{background:rgba(100,116,139,.15);color:#94a3b8;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.form-group{margin-bottom:10px;}
+.form-group label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:500;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+input[type=text],input[type=number],input[type=url],select,textarea{
+  width:100%;padding:7px 9px;border-radius:7px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);font-family:var(--font-body);font-size:12px;
+  outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+textarea{resize:vertical;min-height:60px;}
+select option{background:var(--surface2);}
+input[type=color]{width:34px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;}
+input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;}
+.muted{color:var(--muted);}
+.small{font-size:11px;}
+
+/* ── Kopfzeile ── */
+.topbar{display:flex;align-items:center;gap:12px;padding:0 16px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
+.topbar .brand{font-family:var(--font-display);font-size:20px;letter-spacing:2px;color:white;white-space:nowrap;}
+.topbar .brand span{color:var(--accent);}
+.topbar .back{color:var(--muted2);text-decoration:none;font-size:12px;white-space:nowrap;padding:6px 10px;border-radius:7px;border:1px solid var(--border);}
+.topbar .back:hover{color:var(--text);background:var(--surface2);}
+.topbar .name-input{font-family:var(--font-body);font-size:15px;font-weight:600;background:transparent;border:1px solid transparent;color:var(--text);padding:6px 10px;border-radius:7px;min-width:240px;flex:1;max-width:520px;}
+.topbar .name-input:hover{border-color:var(--border);}
+.topbar .name-input:focus{border-color:var(--accent);background:var(--surface2);}
+.topbar .series-wrap{display:flex;align-items:center;gap:6px;}
+.topbar .series-wrap input{width:150px;}
+.topbar .series-wrap input.pos{width:60px;}
+.topbar .grow{flex:1;}
+.save-state{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap;}
+.save-state.clean{background:rgba(34,197,94,.15);color:#4ade80;}
+.save-state.dirty{background:rgba(245,158,11,.15);color:#fbbf24;}
+.save-state.busy{background:var(--accent-dim);color:var(--accent2);}
+.chips{display:flex;gap:4px;flex-wrap:wrap;max-width:360px;}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;border:1px solid var(--border);background:var(--surface2);color:var(--muted2);white-space:nowrap;}
+.chip.knowledge{border-color:rgba(59,130,246,.35);color:var(--accent2);}
+.chip.city{border-color:rgba(34,197,94,.35);color:#4ade80;}
+.chip.free{border-color:rgba(245,158,11,.35);color:#fbbf24;}
+
+/* ── Hilfe ── */
+.help-box{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;font-size:12px;color:var(--muted2);line-height:1.55;flex-shrink:0;}
+.help-box strong{color:var(--text);}
+.help-box kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px;padding:0 5px;font-family:var(--font-body);font-size:11px;color:var(--text);}
+.errors-box{background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.3);padding:8px 20px;font-size:12px;color:#f87171;flex-shrink:0;}
+.errors-box ul{margin:4px 0 0 16px;}
+
+/* ── Arbeitsfläche ── */
+.workspace{flex:1;display:grid;grid-template-columns:240px 1fr 310px;min-height:0;}
+.panel{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;min-height:0;}
+.panel.right{border-right:none;border-left:1px solid var(--border);}
+.panel-title{font-family:var(--font-display);font-size:15px;letter-spacing:1.5px;color:var(--muted2);padding:12px 14px 6px;}
+.panel-body{padding:0 12px 14px;}
+
+/* Ebenen */
+.layer{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;}
+.layer:hover{background:var(--surface2);}
+.layer.selected{background:var(--accent-dim);border-color:rgba(59,130,246,.35);}
+.layer .glyph{width:20px;height:20px;border-radius:5px;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted2);flex-shrink:0;}
+.layer .lname{flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.layer .lname.hiddenel{color:var(--muted);text-decoration:line-through;}
+.layer .ltype{font-size:10px;color:var(--muted);}
+.layer .lerr{width:7px;height:7px;border-radius:50%;background:var(--danger);flex-shrink:0;}
+.layer .lbtns{display:none;gap:1px;}
+.layer:hover .lbtns,.layer.selected .lbtns{display:flex;}
+.ibtn{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:4px;line-height:1;}
+.ibtn:hover{background:var(--surface3);color:var(--text);}
+.ibtn:disabled{opacity:.3;cursor:default;}
+.empty-hint{color:var(--muted);font-size:12px;padding:10px 8px;line-height:1.5;}
+
+/* Bühne */
+.center{display:flex;flex-direction:column;min-height:0;min-width:0;}
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0;}
+.toolbar .sep{width:1px;height:20px;background:var(--border2);margin:0 4px;}
+.toolbar select{width:auto;padding:5px 8px;}
+.stage-wrap{flex:1;overflow:auto;background:#05070c;position:relative;display:flex;align-items:flex-start;justify-content:center;padding:24px;background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:18px 18px;}
+.stage{position:relative;background:#222;box-shadow:0 10px 40px rgba(0,0,0,.6);flex-shrink:0;user-select:none;touch-action:none;}
+.stage-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;display:block;}
+.stage-nobg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;padding:20px;background:repeating-linear-gradient(45deg,#141a29 0 14px,#0f1420 14px 28px);}
+.el{position:absolute;cursor:move;outline:1px dashed rgba(255,255,255,0);transition:outline-color .1s;}
+.el:hover{outline-color:rgba(255,255,255,.4);}
+.el.selected{outline:1px solid var(--accent2);outline-offset:0;}
+.el.is-hidden{opacity:.25;}
+.el .txt{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;white-space:pre;}
+.el .txt div{display:block;}
+.el .cover{position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(239,68,68,.35) 0 6px,rgba(239,68,68,.12) 6px 12px);border:1px dashed rgba(239,68,68,.7);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fecaca;text-shadow:0 1px 2px #000;}
+.el .cover.solid{background:none;border-color:rgba(255,255,255,.4);}
+.el .img{position:absolute;inset:0;background:rgba(139,92,246,.18);border:1px dashed rgba(139,92,246,.8);display:flex;align-items:center;justify-content:center;font-size:11px;color:#ddd6fe;overflow:hidden;text-shadow:0 1px 2px #000;}
+.el .img img{width:100%;height:100%;display:block;}
+.el .rct{position:absolute;inset:0;}
+.handle{position:absolute;width:9px;height:9px;background:white;border:1px solid var(--accent);border-radius:2px;z-index:5;}
+.handle[data-h=nw]{left:-5px;top:-5px;cursor:nwse-resize;}
+.handle[data-h=n]{left:calc(50% - 5px);top:-5px;cursor:ns-resize;}
+.handle[data-h=ne]{right:-5px;top:-5px;cursor:nesw-resize;}
+.handle[data-h=e]{right:-5px;top:calc(50% - 5px);cursor:ew-resize;}
+.handle[data-h=se]{right:-5px;bottom:-5px;cursor:nwse-resize;}
+.handle[data-h=s]{left:calc(50% - 5px);bottom:-5px;cursor:ns-resize;}
+.handle[data-h=sw]{left:-5px;bottom:-5px;cursor:nesw-resize;}
+.handle[data-h=w]{left:-5px;top:calc(50% - 5px);cursor:ew-resize;}
+.stage-info{position:absolute;left:12px;bottom:8px;font-size:11px;color:var(--muted);pointer-events:none;}
+
+/* Eigenschaften */
+.prop-section{border-top:1px solid var(--border);padding:10px 0 4px;}
+.prop-section h4{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600;}
+.seg{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:2px;}
+.seg button{flex:1;background:none;border:none;color:var(--muted2);padding:5px 4px;border-radius:5px;cursor:pointer;font-size:12px;}
+.seg button.on{background:var(--accent-dim);color:var(--accent2);}
+.color-field{display:flex;align-items:center;gap:6px;}
+.color-field input[type=text]{flex:1;font-family:ui-monospace,monospace;font-size:11px;}
+.brand-btns{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;}
+.brand-btns button{font-size:10px;padding:3px 7px;}
+.brand-btns .sw{width:9px;height:9px;border-radius:2px;border:1px solid rgba(255,255,255,.3);display:inline-block;}
+.check-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted2);padding:4px 0;cursor:pointer;}
+.kv{font-size:12px;color:var(--muted2);line-height:1.6;}
+.kv b{color:var(--text);font-weight:600;}
+
+/* Vorschau-Panel */
+.preview-panel{height:250px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:height .15s;}
+.preview-panel.collapsed{height:44px;}
+.preview-panel.collapsed .preview-body{display:none;}
+.preview-head{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.preview-head select{width:180px;padding:5px 8px;}
+.preview-body{flex:1;display:flex;gap:14px;padding:10px 14px;min-height:0;}
+.preview-imgs{display:flex;gap:10px;flex:1;min-width:0;overflow-x:auto;}
+.preview-imgs figure{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;}
+.preview-imgs img{height:150px;border-radius:6px;border:1px solid var(--border2);background:#000;}
+.preview-imgs figcaption{font-size:11px;color:var(--muted2);}
+.preview-empty{color:var(--muted);font-size:12px;display:flex;align-items:center;}
+.ai-info{width:340px;flex-shrink:0;overflow-y:auto;font-size:12px;color:var(--muted2);line-height:1.5;}
+.ai-info table{width:100%;border-collapse:collapse;margin-top:4px;}
+.ai-info td{padding:2px 4px;border-bottom:1px solid var(--border);vertical-align:top;}
+.ai-info td:first-child{color:var(--accent2);white-space:nowrap;font-family:ui-monospace,monospace;font-size:11px;}
+.pv-status{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border2);border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* Toast */
+#toast-container{position:fixed;top:64px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 24px rgba(0,0,0,.4);animation:slideIn .2s ease;max-width:420px;}
+.toast.success{border-left:3px solid var(--success);}
+.toast.error{border-left:3px solid var(--danger);}
+.toast.info{border-left:3px solid var(--accent);}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0;}to{transform:none;opacity:1;}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">MEME<span>OS</span></div>
+  <a class="back" href="/?tab=templates">← Zurück zur Bibliothek</a>
+  <input type="text" class="name-input" id="tpl-name" placeholder="Template-Name" title="Template-Name (wird beim Speichern übernommen)">
+  <div class="series-wrap">
+    <input type="text" id="tpl-series" placeholder="Serie" title="Serienname">
+    <input type="number" id="tpl-series-pos" class="pos" placeholder="Pos." min="1" title="Position in der Serie">
+  </div>
+  <div class="chips" id="required-chips" title="Variablen, die der Renderer braucht"></div>
+  <div class="grow"></div>
+  <span class="save-state clean" id="save-state">gespeichert</span>
+  <button class="btn btn-ghost btn-sm" id="btn-help" type="button">Hilfe</button>
+  <button class="btn btn-ghost btn-sm" id="btn-duplicate" type="button" title="Template kopieren">Duplizieren</button>
+  <button class="btn btn-primary btn-sm" id="btn-save" type="button" title="Strg+S">Speichern</button>
+</header>
+
+<div class="help-box" id="help-box" hidden>
+  <strong>So funktioniert es:</strong> Box aufziehen, Variable wählen, Schrift und Farbe setzen. Variablen kommen beim Rendern aus dem Stadtwissen.
+  Feste Texte bleiben in jeder Stadt gleich. Abdeckungen verstecken alte Schrift auf fertigen Meme-Bildern.<br>
+  Bühne: Klick wählt aus, Ziehen bewegt, die acht Griffe ändern die Größe. <kbd>Pfeiltasten</kbd> verschieben um 1 px (<kbd>Shift</kbd> 10 px),
+  <kbd>Entf</kbd> löscht, <kbd>Strg+D</kbd> dupliziert, <kbd>Strg+Z</kbd>/<kbd>Strg+Y</kbd> Rückgängig/Wiederholen, <kbd>Strg+S</kbd> speichert, <kbd>Esc</kbd> hebt die Auswahl auf.
+  Die Textdarstellung in der Bühne ist eine Annäherung – verbindlich ist die Vorschau unten (vom Server gerendert).
+  Ebenen weiter unten in der Liste liegen hinten, weiter oben vorne.
+</div>
+<div class="errors-box" id="errors-box" hidden></div>
+
+<div class="workspace">
+  <aside class="panel">
+    <div class="panel-title">EBENEN</div>
+    <div class="panel-body" id="layers"></div>
+  </aside>
+
+  <section class="center">
+    <div class="toolbar">
+      <button class="btn btn-ghost btn-sm" type="button" data-add="text">+ Text</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-add="cover">+ Abdeckung</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-add="image">+ Bild</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-add="rect">+ Rechteck</button>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-bg">Hintergrund ersetzen</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-font">Schrift hochladen</button>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-undo" title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-redo" title="Wiederholen (Strg+Y)">↷ Wiederholen</button>
+      <span class="sep"></span>
+      <label class="small muted">Zoom</label>
+      <select id="zoom">
+        <option value="fit">Anpassen</option>
+        <option value="0.5">50 %</option>
+        <option value="0.75">75 %</option>
+        <option value="1">100 %</option>
+      </select>
+    </div>
+    <div class="stage-wrap" id="stage-wrap">
+      <div class="stage" id="stage"></div>
+      <div class="stage-info" id="stage-info"></div>
+    </div>
+  </section>
+
+  <aside class="panel right">
+    <div class="panel-title">EIGENSCHAFTEN</div>
+    <div class="panel-body" id="props"></div>
+  </aside>
+</div>
+
+<footer class="preview-panel" id="preview-panel">
+  <div class="preview-head">
+    <button class="ibtn" id="btn-pv-toggle" type="button" title="Vorschau ein-/ausklappen">▾</button>
+    <span class="panel-title" style="padding:0 6px 0 0;">VORSCHAU</span>
+    <select id="pv-city"></select>
+    <button class="btn btn-ghost btn-sm" id="btn-preview" type="button">Vorschau rendern</button>
+    <button class="btn btn-ghost btn-sm" id="btn-ai" type="button" title="Echte Werte per KI holen und rendern">KI-Werte</button>
+    <button class="btn btn-ghost btn-sm" id="btn-three" type="button" title="Drei zufällige Städte nebeneinander">Drei Städte</button>
+    <label class="check-row"><input type="checkbox" id="pv-auto" checked> Auto-Vorschau</label>
+    <span class="pv-status" id="pv-status"></span>
+  </div>
+  <div class="preview-body">
+    <div class="preview-imgs" id="pv-imgs"><div class="preview-empty">Noch keine Vorschau. „Vorschau rendern“ klicken oder eine Änderung machen.</div></div>
+    <div class="ai-info" id="ai-info" hidden></div>
+  </div>
+</footer>
+
+<input type="file" id="bg-file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
+<input type="file" id="font-file" accept=".ttf,.otf,font/ttf,font/otf" hidden>
+<div id="toast-container"></div>
+
+<script>
+'use strict';
+const TID = {{ template_id|tojson }};
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const KNOWN_TYPES = ['text', 'image', 'cover', 'rect'];
+const TYPE_LABEL = {text: 'Text', image: 'Bild', cover: 'Abdeckung', rect: 'Rechteck'};
+const TYPE_GLYPH = {text: 'T', image: '▣', cover: '▤', rect: '▭'};
+// Canva-Schriftnamen -> eingebaute Keys (Spiegel von CANVA_FONT_MAP im Renderer, nur für die Bühne)
+const FONT_ALIAS = {'bebasneue': 'anton', 'impact': 'anton', 'leaguegothic': 'anton', 'oswald': 'bold', 'oswaldbold': 'bold',
+  'arialblack': 'bold', 'montserrat': 'bold', 'arialroundedmtbold': 'arial_rounded_bold', 'arialroundedbold': 'arial_rounded_bold'};
+
+// ── Zustand ───────────────────────────────────────────────────────────────────
+const S = {
+  template: null, config: {elements: []}, canvas: {width: 1080, height: 1350}, imageSize: null,
+  bgUrl: null, fonts: [], variables: [], cities: [], brand: {bg: '#ffffff', text: '#000000', accent: '#3b82f6', font: 'Arial'},
+  aiAvailable: false, selectedId: null, zoom: 'fit', scale: 1, saved: '', saving: false,
+  undo: [], redo: [], propsKey: '', focusSnap: false, arrowSnapAt: 0,
+};
+const measureCtx = document.createElement('canvas').getContext('2d');
+const registeredFonts = new Set();
+let previewTimer = null, previewAbort = null, previewUrls = [];
+
+// ── Helfer ────────────────────────────────────────────────────────────────────
+function toast(msg, type) {
+  const c = $('#toast-container'); const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info'); t.textContent = msg; c.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, type === 'error' ? 6000 : 3200);
+}
+async function api(method, url, body, opts) {
+  opts = opts || {};
+  const init = {method, headers: {}, signal: opts.signal};
+  if (body instanceof FormData) init.body = body;
+  else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+  const r = await fetch(url, init);
+  if (r.status === 401) { window.location.href = '/login'; throw new Error('Nicht angemeldet'); }
+  const ct = r.headers.get('Content-Type') || '';
+  if (opts.blob) {
+    if (!r.ok) { let e = 'Fehler ' + r.status; try { e = (await r.json()).error || e; } catch (_) {} throw new Error(e); }
+    return await r.blob();
+  }
+  const data = ct.includes('json') ? await r.json() : {error: await r.text()};
+  if (!r.ok) { const err = new Error(data.error || (data.errors || []).join('; ') || ('Fehler ' + r.status)); err.data = data; throw err; }
+  return data;
+}
+function num(v, d) { const n = parseFloat(v); return isFinite(n) ? n : d; }
+function isNum(v) { return v !== null && v !== '' && isFinite(parseFloat(v)); }
+function selected() { return S.config.elements.find(e => e.id === S.selectedId) || null; }
+function newId() {
+  let n = S.config.elements.length + 1;
+  while (S.config.elements.some(e => e.id === 'el' + n)) n++;
+  return 'el' + n;
+}
+function resolveColor(c, fallback) {
+  if (c == null || c === '') return fallback || 'transparent';
+  c = String(c);
+  if (c.startsWith('brand:')) return S.brand[c.slice(6)] || fallback || '#000';
+  return c;
+}
+function fontEntry(key) {
+  if (!key || key === 'brand') return null;
+  const norm = String(key).toLowerCase().replace(/\.(ttf|otf)$/, '').replace(/[\s\-_]+/g, '');
+  return S.fonts.find(f => f.key === key)
+      || S.fonts.find(f => f.key.replace(/[\s\-_]+/g, '').toLowerCase() === norm || String(f.label).toLowerCase().replace(/[\s\-_]+/g, '') === norm)
+      || (FONT_ALIAS[norm] ? S.fonts.find(f => f.key === FONT_ALIAS[norm]) : null)
+      || null;
+}
+function fontCss(key) {
+  if (key === 'brand') return `"${S.brand.font}", "mf_anton", Impact, sans-serif`;
+  const f = fontEntry(key) || S.fonts.find(f => f.key === 'anton') || S.fonts[0];
+  return f ? `"mf_${f.key}", Impact, sans-serif` : 'Impact, sans-serif';
+}
+function varLabel(key) { const v = S.variables.find(v => v.key === key); return v ? v.label : key; }
+function collectVars(cfg, includeHidden) {
+  const out = new Set();
+  for (const el of (cfg || S.config).elements) {
+    if (!includeHidden && el.hidden) continue;
+    if (el.type !== 'text' && el.type !== 'image') continue;
+    if (el.var && String(el.var).trim()) out.add(String(el.var).trim());
+    if (el.type === 'text' && el.text) for (const m of String(el.text).matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) out.add(m[1]);
+  }
+  return Array.from(out).sort();
+}
+function varKind(key) { const v = S.variables.find(v => v.key === key); return v ? v.kind : 'free'; }
+function ensureVariable(key) {
+  if (!S.variables.some(v => v.key === key)) S.variables.push({key, label: key, kind: 'free'});
+}
+function quickErrors(el) {
+  const errs = [];
+  if (!KNOWN_TYPES.includes(el.type)) errs.push('unbekannter Typ');
+  if (!(num(el.width, 0) > 0)) errs.push('Breite fehlt');
+  if (el.type !== 'text' && !(num(el.height, 0) > 0)) errs.push('Höhe fehlt');
+  if (el.type === 'text' && !el.var && !(el.text && String(el.text).trim()) && !(el.fallback && String(el.fallback).trim())) errs.push('Variable oder Text fehlt');
+  if (el.type === 'image' && !el.var && !el.src) errs.push('Quelle fehlt');
+  if (el.type === 'rect' && !el.fill && !el.stroke) errs.push('Füllung oder Kontur fehlt');
+  if (el.type === 'text' && isNum(el.max_size) && isNum(el.min_size) && num(el.min_size) > num(el.max_size)) errs.push('min. Größe größer als max.');
+  return errs;
+}
+function serialize() {
+  return JSON.stringify({config: S.config, name: $('#tpl-name').value, series: $('#tpl-series').value, pos: $('#tpl-series-pos').value});
+}
+function isDirty() { return serialize() !== S.saved; }
+function updateSaveState(state) {
+  const el = $('#save-state');
+  if (state === 'busy') { el.className = 'save-state busy'; el.textContent = 'speichert …'; return; }
+  const dirty = isDirty();
+  el.className = 'save-state ' + (dirty ? 'dirty' : 'clean');
+  el.textContent = dirty ? 'ungespeichert' : 'gespeichert';
+  document.title = (dirty ? '● ' : '') + 'Template-Studio – ' + ($('#tpl-name').value || '');
+}
+function stageValues() {
+  const city = currentCity();
+  const vals = {};
+  for (const v of collectVars(S.config, true)) vals[v] = '[' + v + ']';
+  vals.city_name = city ? city.name : '[city_name]';
+  return vals;
+}
+function textValue(el, vals) {
+  if (el.var) { const v = vals[el.var]; return v != null && String(v).trim() ? String(v) : (el.fallback || null); }
+  if (el.text != null && el.text !== '') {
+    const out = String(el.text).replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, k) => vals[k] != null ? vals[k] : '');
+    return out.trim() ? out : (el.fallback || null);
+  }
+  return el.fallback || null;
+}
+function currentCity() {
+  const id = parseInt($('#pv-city').value, 10);
+  return S.cities.find(c => c.id === id) || S.cities[0] || null;
+}
+
+// ── Undo / Redo ────────────────────────────────────────────────────────────────
+function snapshot() {
+  S.undo.push(JSON.stringify(S.config));
+  if (S.undo.length > 50) S.undo.shift();
+  S.redo.length = 0;
+  updateUndoButtons();
+}
+function undo() {
+  if (!S.undo.length) return;
+  S.redo.push(JSON.stringify(S.config));
+  S.config = JSON.parse(S.undo.pop());
+  afterStructuralChange();
+}
+function redo() {
+  if (!S.redo.length) return;
+  S.undo.push(JSON.stringify(S.config));
+  S.config = JSON.parse(S.redo.pop());
+  afterStructuralChange();
+}
+function updateUndoButtons() {
+  $('#btn-undo').disabled = !S.undo.length;
+  $('#btn-redo').disabled = !S.redo.length;
+}
+function afterStructuralChange() {
+  if (S.selectedId && !selected()) S.selectedId = null;
+  S.propsKey = '';
+  renderAll();
+  updateUndoButtons();
+}
+
+// ── Änderungen anwenden ────────────────────────────────────────────────────────
+function commit(opts) {
+  opts = opts || {};
+  renderLayers();
+  renderStage();
+  if (!opts.keepProps) renderProps(true);
+  else syncPropsGeometry();
+  renderChips();
+  updateSaveState();
+  schedulePreview();
+}
+function renderAll() { renderLayers(); renderStage(); renderProps(true); renderChips(); updateSaveState(); schedulePreview(); }
+
+// ── Laden ──────────────────────────────────────────────────────────────────────
+async function load() {
+  let d;
+  try { d = await api('GET', `/api/studio/${TID}`); }
+  catch (e) { toast('Laden fehlgeschlagen: ' + e.message, 'error'); return; }
+  S.template = d.template; S.config = d.config || {elements: []};
+  if (!Array.isArray(S.config.elements)) S.config.elements = [];
+  S.config.elements.forEach((el, i) => { if (!el.id) el.id = 'el' + (i + 1); if (!el.type) el.type = 'text'; });
+  S.imageSize = d.image_size || null;
+  S.canvas = d.canvas || S.imageSize || (S.config.canvas || {width: 1080, height: 1350});
+  S.bgUrl = d.background_url;
+  S.fonts = d.fonts || []; S.variables = d.variables || []; S.cities = d.cities || [];
+  S.brand = d.brand_example || S.brand; S.aiAvailable = !!d.ai_available;
+  $('#tpl-name').value = d.template.name || '';
+  $('#tpl-series').value = d.template.series || '';
+  $('#tpl-series-pos').value = d.template.series_position || '';
+  const sel = $('#pv-city'); sel.innerHTML = S.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (!S.cities.length) sel.innerHTML = '<option value="">Keine Stadt</option>';
+  $('#btn-ai').title = S.aiAvailable ? 'Echte Werte per KI holen und rendern' : 'Kein Anthropic-Key hinterlegt';
+  S.saved = serialize();
+  try { const a = localStorage.getItem('studio_auto_preview'); if (a !== null) $('#pv-auto').checked = a === '1'; } catch (_) {}
+  try { const z = localStorage.getItem('studio_zoom'); if (z) { S.zoom = z; $('#zoom').value = z; } } catch (_) {}
+  renderAll();
+  registerFonts();
+  if (!S.bgUrl) toast('Dieses Template hat noch kein Hintergrundbild – „Hintergrund ersetzen“ klicken.', 'info');
+}
+async function registerFonts() {
+  let changed = false;
+  for (const f of S.fonts) {
+    if (registeredFonts.has(f.key)) continue;
+    registeredFonts.add(f.key);
+    try {
+      const ff = new FontFace('mf_' + f.key, `url(/api/studio/fonts/${encodeURIComponent(f.key)}/file)`);
+      await ff.load(); document.fonts.add(ff); changed = true;
+    } catch (e) { /* Bühne nutzt dann die Ersatzschrift */ }
+  }
+  if (changed) renderStage();
+}
+
+// ── Ebenen ─────────────────────────────────────────────────────────────────────
+function layerName(el) {
+  if (el.type === 'text') return el.var ? '{' + el.var + '}' : (el.text ? String(el.text).replace(/\s+/g, ' ').slice(0, 28) : el.id);
+  if (el.type === 'image') return el.var ? '{' + el.var + '}' : (el.src ? String(el.src).split('/').pop().slice(0, 28) : el.id);
+  if (el.type === 'cover') return 'Abdeckung ' + (el.fill && el.fill !== 'auto' ? el.fill : 'auto');
+  return el.fill ? 'Rechteck ' + el.fill : el.id;
+}
+function renderLayers() {
+  const box = $('#layers'); const els = S.config.elements;
+  if (!els.length) { box.innerHTML = '<div class="empty-hint">Noch keine Ebenen. Oben „+ Text“ klicken, um die erste Box anzulegen.</div>'; return; }
+  const rows = [];
+  for (let i = els.length - 1; i >= 0; i--) {
+    const el = els[i]; const errs = quickErrors(el);
+    rows.push(`<div class="layer ${el.id === S.selectedId ? 'selected' : ''}" data-id="${esc(el.id)}" title="${esc(errs.join(', ') || el.id)}">
+      <span class="glyph">${TYPE_GLYPH[el.type] || '?'}</span>
+      <span class="lname ${el.hidden ? 'hiddenel' : ''}">${esc(layerName(el))}</span>
+      ${errs.length ? '<span class="lerr"></span>' : ''}
+      <span class="lbtns">
+        <button class="ibtn" data-act="up" title="Nach vorne" ${i === els.length - 1 ? 'disabled' : ''}>↑</button>
+        <button class="ibtn" data-act="down" title="Nach hinten" ${i === 0 ? 'disabled' : ''}>↓</button>
+        <button class="ibtn" data-act="eye" title="${el.hidden ? 'Einblenden' : 'Ausblenden'}">${el.hidden ? '◌' : '◉'}</button>
+        <button class="ibtn" data-act="dup" title="Duplizieren">⧉</button>
+        <button class="ibtn" data-act="del" title="Löschen">✕</button>
+      </span></div>`);
+  }
+  box.innerHTML = rows.join('');
+}
+$('#layers').addEventListener('click', e => {
+  const row = e.target.closest('.layer'); if (!row) return;
+  const id = row.dataset.id; const act = e.target.closest('[data-act]');
+  if (!act) { select(id); return; }
+  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
+  const a = act.dataset.act;
+  if (a === 'up' || a === 'down') moveElement(idx, a === 'up' ? 1 : -1);
+  else if (a === 'eye') { snapshot(); S.config.elements[idx].hidden = !S.config.elements[idx].hidden; if (!S.config.elements[idx].hidden) delete S.config.elements[idx].hidden; commit(); }
+  else if (a === 'dup') duplicateElement(id);
+  else if (a === 'del') deleteElement(id);
+});
+function moveElement(idx, dir) {
+  const els = S.config.elements; const j = idx + dir;
+  if (j < 0 || j >= els.length) return;
+  snapshot(); [els[idx], els[j]] = [els[j], els[idx]]; commit();
+}
+function duplicateElement(id) {
+  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
+  snapshot();
+  const copy = JSON.parse(JSON.stringify(S.config.elements[idx]));
+  copy.id = newId(); copy.x = num(copy.x, 0) + 20; copy.y = num(copy.y, 0) + 20;
+  S.config.elements.splice(idx + 1, 0, copy);
+  S.selectedId = copy.id; S.propsKey = ''; commit();
+}
+function deleteElement(id) {
+  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
+  snapshot(); S.config.elements.splice(idx, 1);
+  if (S.selectedId === id) S.selectedId = null;
+  S.propsKey = ''; commit();
+}
+function select(id) {
+  if (S.selectedId === id) return;
+  S.selectedId = id; S.propsKey = '';
+  renderLayers(); renderStage(); renderProps(true);
+}
+
+// ── Elemente anlegen ───────────────────────────────────────────────────────────
+function addElement(type) {
+  const W = S.canvas.width, H = S.canvas.height;
+  const base = {id: newId(), type, x: Math.round(W * 0.08), y: Math.round(H * 0.08), width: Math.round(W * 0.84), height: Math.round(H * 0.14)};
+  if (type === 'text') Object.assign(base, {text: 'Neuer Text', font: 'anton', max_size: Math.round(W / 12), min_size: Math.round(W / 36),
+    color: '#ffffff', stroke: '#000000', stroke_width: Math.max(2, Math.round(W / 270)), align: 'center', valign: 'middle', uppercase: false});
+  else if (type === 'cover') Object.assign(base, {fill: 'auto', feather: 6});
+  else if (type === 'image') Object.assign(base, {width: Math.round(W * 0.3), height: Math.round(W * 0.3), fit: 'contain', radius: 0, src: ''});
+  else if (type === 'rect') Object.assign(base, {fill: 'brand:accent', radius: 0});
+  // gestapelt einfügen, damit neue Boxen nicht exakt übereinander liegen
+  const n = S.config.elements.length; base.x += (n % 5) * 12; base.y += (n % 5) * 12;
+  snapshot(); S.config.elements.push(base); S.selectedId = base.id; S.propsKey = ''; commit();
+}
+$$('[data-add]').forEach(b => b.addEventListener('click', () => addElement(b.dataset.add)));
+
+// ── Bühne ──────────────────────────────────────────────────────────────────────
+function computeScale() {
+  if (S.zoom !== 'fit') return parseFloat(S.zoom) || 1;
+  const wrap = $('#stage-wrap'); const pad = 48;
+  const sw = (wrap.clientWidth - pad) / S.canvas.width, sh = (wrap.clientHeight - pad) / S.canvas.height;
+  return clamp(Math.min(sw, sh), 0.05, 2);
+}
+function fitTextLines(text, css, maxSize, minSize, maxWidth, maxHeight, maxLines, lh, ls) {
+  maxSize = Math.max(4, Math.round(num(maxSize, 48))); minSize = clamp(Math.round(num(minSize, 12)), 4, maxSize);
+  const paras = String(text).split('\n');
+  const width = s => { measureCtx.font = css; return measureCtx.measureText(s).width + Math.max(0, s.length - 1) * ls; };
+  const wrap = (p, size) => {
+    const words = p.split(/\s+/).filter(Boolean); const lines = []; let cur = '';
+    if (!words.length) return [''];
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (width(test) <= maxWidth || !cur) cur = test; else { lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  const step = Math.max(1, Math.round(maxSize / 40));
+  const sizes = []; for (let s = maxSize; s > minSize; s -= step) sizes.push(s); sizes.push(minSize);
+  let last = null;
+  for (const size of sizes) {
+    measureCtx.font = `${size}px ${css}`;
+    const lines = paras.flatMap(p => wrap(p, size));
+    last = {size, lines};
+    const h = lines.length * size * lh;
+    const wideOk = lines.every(l => width(l) <= maxWidth * 1.02);
+    if (wideOk && (!maxLines || lines.length <= maxLines) && (!maxHeight || h <= maxHeight)) return last;
+  }
+  let limit = maxLines || Infinity;
+  if (maxHeight) limit = Math.min(limit, Math.max(1, Math.floor(maxHeight / (last.size * lh))));
+  if (last.lines.length > limit) { last.lines = last.lines.slice(0, limit); last.lines[last.lines.length - 1] = last.lines[last.lines.length - 1].replace(/\s*$/, '') + '…'; }
+  return last;
+}
+function renderStage() {
+  const stage = $('#stage'); S.scale = computeScale(); const sc = S.scale;
+  stage.style.width = (S.canvas.width * sc) + 'px'; stage.style.height = (S.canvas.height * sc) + 'px';
+  const parts = [];
+  if (S.bgUrl) parts.push(`<img class="stage-bg" src="${esc(S.bgUrl)}" alt="">`);
+  else parts.push(`<div class="stage-nobg">Kein Hintergrundbild<br><span class="small">„Hintergrund ersetzen“ in der Werkzeugleiste</span></div>`);
+  const vals = stageValues();
+  S.config.elements.forEach(el => {
+    const x = num(el.x, 0) * sc, y = num(el.y, 0) * sc, w = Math.max(4, num(el.width, 100) * sc);
+    let h = num(el.height, 0) * sc;
+    const op = el.opacity == null ? 1 : clamp(num(el.opacity, 1), 0, 1);
+    const isSel = el.id === S.selectedId;
+    if (el.hidden && !isSel) return;
+    let inner = '';
+    if (el.type === 'text') {
+      const value = textValue(el, vals);
+      const css = fontCss(el.font || 'anton');
+      let txt = value == null ? '' : (el.uppercase ? value.toUpperCase() : value);
+      const lh = num(el.line_height, 1.15), ls = num(el.letter_spacing, 0);
+      const fit = fitTextLines(txt, css, el.max_size, el.min_size, num(el.width, 100), isNum(el.height) ? num(el.height) : null, el.max_lines ? parseInt(el.max_lines, 10) : null, lh, ls);
+      if (!h) h = Math.max(fit.size * lh * Math.max(1, fit.lines.length) * sc, 12);
+      const justify = {top: 'flex-start', middle: 'center', bottom: 'flex-end'}[el.valign || 'top'] || 'flex-start';
+      const sw = num(el.stroke_width, 0); const stroke = sw > 0 && el.stroke ? `-webkit-text-stroke:${(sw * 2 * sc).toFixed(2)}px ${esc(resolveColor(el.stroke))};paint-order:stroke fill;` : '';
+      let shadow = '';
+      if (el.shadow && typeof el.shadow === 'object') shadow = `text-shadow:${num(el.shadow.dx, 2) * sc}px ${num(el.shadow.dy, 2) * sc}px ${num(el.shadow.blur, 0) * sc}px ${esc(resolveColor(el.shadow.color, '#000'))};`;
+      const lines = fit.lines.map(l => `<div>${esc(l) || '&nbsp;'}</div>`).join('');
+      inner = `<div class="txt" style="justify-content:${justify};text-align:${esc(el.align || 'left')};font-family:${esc(css)};font-size:${(fit.size * sc).toFixed(2)}px;line-height:${lh};letter-spacing:${(ls * sc).toFixed(2)}px;color:${esc(resolveColor(el.color, '#fff'))};${stroke}${shadow}${value == null ? 'opacity:.35;font-style:italic;' : ''}">${value == null ? '<div>(leer – kein Wert)</div>' : lines}</div>`;
+    } else if (el.type === 'cover') {
+      const solid = el.fill && el.fill !== 'auto' && el.fill !== 'inpaint';
+      inner = `<div class="cover ${solid ? 'solid' : ''}" style="${solid ? 'background:' + esc(resolveColor(el.fill)) + ';' : ''}">${solid ? '' : 'Abdeckung ' + esc(el.fill || 'auto')}</div>`;
+    } else if (el.type === 'image') {
+      const src = el.src && /^(https?:\/\/|\/|data:)/.test(el.src) ? el.src : null;
+      inner = `<div class="img" style="border-radius:${num(el.radius, 0) * sc}px;">${src ? `<img src="${esc(src)}" style="object-fit:${el.fit === 'cover' ? 'cover' : 'contain'};" alt="">` : 'Bild ' + esc(el.var ? '{' + el.var + '}' : (el.src || '(keine Quelle)'))}</div>`;
+    } else if (el.type === 'rect') {
+      const swd = num(el.stroke_width, el.stroke ? 2 : 0);
+      inner = `<div class="rct" style="background:${esc(resolveColor(el.fill, 'transparent'))};border-radius:${num(el.radius, 0) * sc}px;${el.stroke ? `box-shadow:inset 0 0 0 ${(swd * sc).toFixed(2)}px ${esc(resolveColor(el.stroke))};` : ''}"></div>`;
+    }
+    const handles = isSel ? ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(hd => `<div class="handle" data-h="${hd}"></div>`).join('') : '';
+    parts.push(`<div class="el ${isSel ? 'selected' : ''} ${el.hidden ? 'is-hidden' : ''}" data-id="${esc(el.id)}" style="left:${x}px;top:${y}px;width:${w}px;height:${Math.max(4, h)}px;opacity:${op};">${inner}${handles}</div>`);
+  });
+  stage.innerHTML = parts.join('');
+  $('#stage-info').textContent = `${S.canvas.width} × ${S.canvas.height} px · ${Math.round(sc * 100)} %` + (S.imageSize && (S.imageSize.width !== S.canvas.width || S.imageSize.height !== S.canvas.height) ? ` · Bild ${S.imageSize.width} × ${S.imageSize.height} wird eingepasst` : '');
+}
+function positionElementDom(el) {
+  const d = $(`#stage .el[data-id="${CSS.escape(el.id)}"]`); if (!d) return;
+  const sc = S.scale;
+  d.style.left = (num(el.x, 0) * sc) + 'px'; d.style.top = (num(el.y, 0) * sc) + 'px';
+  d.style.width = (Math.max(4, num(el.width, 4)) * sc) + 'px';
+  if (isNum(el.height)) d.style.height = (Math.max(4, num(el.height, 4)) * sc) + 'px';
+}
+
+// Drag & Resize
+(function () {
+  const stage = $('#stage'); let drag = null;
+  stage.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const handle = e.target.closest('.handle'); const elDiv = e.target.closest('.el');
+    if (!elDiv) { select(null); return; }
+    const id = elDiv.dataset.id; const el = S.config.elements.find(x => x.id === id); if (!el) return;
+    if (id !== S.selectedId) select(id);
+    if (!isNum(el.height)) el.height = Math.round(parseFloat(elDiv.style.height) / S.scale);
+    drag = {id, mode: handle ? 'resize' : 'move', h: handle ? handle.dataset.h : null, sx: e.clientX, sy: e.clientY,
+            start: {x: num(el.x, 0), y: num(el.y, 0), w: num(el.width, 10), h: num(el.height, 10)}, moved: false};
+    stage.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const el = S.config.elements.find(x => x.id === drag.id); if (!el) return;
+    const dx = (e.clientX - drag.sx) / S.scale, dy = (e.clientY - drag.sy) / S.scale;
+    if (!drag.moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) { drag.moved = true; snapshot(); }
+    if (!drag.moved) return;
+    const s = drag.start; const W = S.canvas.width, H = S.canvas.height;
+    if (drag.mode === 'move') {
+      el.x = Math.round(clamp(s.x + dx, -s.w + 10, W - 10)); el.y = Math.round(clamp(s.y + dy, -s.h + 10, H - 10));
+    } else {
+      let x = s.x, y = s.y, w = s.w, h = s.h; const hd = drag.h;
+      if (hd.includes('e')) w = s.w + dx;
+      if (hd.includes('s')) h = s.h + dy;
+      if (hd.includes('w')) { w = s.w - dx; x = s.x + dx; }
+      if (hd.includes('n')) { h = s.h - dy; y = s.y + dy; }
+      if (w < 8) { if (hd.includes('w')) x = s.x + s.w - 8; w = 8; }
+      if (h < 8) { if (hd.includes('n')) y = s.y + s.h - 8; h = 8; }
+      el.x = Math.round(x); el.y = Math.round(y); el.width = Math.round(w); el.height = Math.round(h);
+    }
+    positionElementDom(el); syncPropsGeometry();
+  });
+  const end = e => {
+    if (!drag) return;
+    const moved = drag.moved; drag = null;
+    try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (moved) commit({keepProps: true});
+  };
+  stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+})();
+$('#zoom').addEventListener('change', e => { S.zoom = e.target.value; try { localStorage.setItem('studio_zoom', S.zoom); } catch (_) {} renderStage(); });
+window.addEventListener('resize', () => { if (S.zoom === 'fit') renderStage(); });
+
+// ── Eigenschaften ──────────────────────────────────────────────────────────────
+function colorField(prop, value, opts) {
+  opts = opts || {};
+  const v = value == null ? '' : String(value);
+  const isBrand = v.startsWith('brand:');
+  const shown = isBrand ? (S.brand[v.slice(6)] || '#000000') : (/^#[0-9a-fA-F]{6}$/.test(v) ? v : (/^#[0-9a-fA-F]{3}$/.test(v) ? '#' + v.slice(1).split('').map(c => c + c).join('') : '#000000'));
+  const brandBtn = (k, label) => `<button type="button" class="btn btn-ghost btn-xs" data-brand="${k}" data-target="${esc(prop)}" title="${label} der Stadt (brand:${k})"><span class="sw" style="background:${esc(S.brand[k])}"></span>${label}</button>`;
+  return `<div class="color-field">
+      <input type="color" value="${shown}" data-colorpick="${esc(prop)}" title="Farbe wählen">
+      <input type="text" value="${esc(v)}" data-prop="${esc(prop)}" data-kind="color" placeholder="${opts.optional ? 'keine' : '#rrggbb'}" title="Hex-Farbe oder brand:accent / brand:text / brand:bg">
+      ${opts.optional ? `<button type="button" class="ibtn" data-clear="${esc(prop)}" title="Farbe entfernen">✕</button>` : ''}
+    </div>
+    <div class="brand-btns">${brandBtn('accent', 'Stadt-Akzent')}${brandBtn('text', 'Stadt-Text')}${brandBtn('bg', 'Stadt-Hintergrund')}${isBrand ? `<span class="badge badge-blue">${esc(v)}</span>` : ''}</div>`;
+}
+function numField(label, prop, value, attrs) {
+  return `<div class="form-group"><label>${label}</label><input type="number" data-prop="${prop}" data-kind="${(attrs || '').includes('step="1"') || !(attrs || '').includes('step') ? 'int' : 'num'}" value="${value == null ? '' : esc(value)}" ${attrs || ''}></div>`;
+}
+function segField(prop, value, options) {
+  return `<div class="seg" data-seg="${prop}">${options.map(o => `<button type="button" data-val="${o.v}" class="${(value || options[0].v) === o.v ? 'on' : ''}" title="${esc(o.t || o.l)}">${o.l}</button>`).join('')}</div>`;
+}
+function variableOptions(current, fixedLabel, fixedValue) {
+  const groups = {city: [], knowledge: [], free: []};
+  S.variables.forEach(v => (groups[v.kind] || groups.free).push(v));
+  const opt = v => `<option value="${esc(v.key)}" ${current === v.key ? 'selected' : ''}>${esc(v.label)}${v.kind === 'free' ? '' : ' (' + esc(v.key) + ')'}</option>`;
+  let html = `<option value="${fixedValue}" ${!current ? 'selected' : ''}>${fixedLabel}</option>`;
+  html += `<optgroup label="Stadt">${groups.city.map(opt).join('')}</optgroup>`;
+  html += `<optgroup label="Stadtwissen">${groups.knowledge.map(opt).join('')}</optgroup>`;
+  if (groups.free.length) html += `<optgroup label="Eigene Variablen">${groups.free.map(opt).join('')}</optgroup>`;
+  html += `<option value="__custom__">Eigene Variable …</option>`;
+  return html;
+}
+function renderProps(force) {
+  const box = $('#props'); const el = selected();
+  const key = el ? el.id + '|' + el.type + '|' + (el.var ? 'v' : 't') + '|' + (el.shadow ? 's' : '') + '|' + S.fonts.length : 'canvas';
+  if (!force && key === S.propsKey) { syncPropsGeometry(); return; }
+  S.propsKey = key;
+  if (!el) { box.innerHTML = canvasProps(); return; }
+  const geo = `<div class="prop-section"><h4>${TYPE_LABEL[el.type] || el.type} · ${esc(el.id)}</h4>
+    <div class="form-row">${numField('X', 'x', el.x)}${numField('Y', 'y', el.y)}</div>
+    <div class="form-row">${numField('Breite', 'width', el.width, 'min="1"')}${numField('Höhe', 'height', el.height, 'min="1"')}</div>
+    <div class="form-row">${numField('Deckkraft (0–1)', 'opacity', el.opacity == null ? 1 : el.opacity, 'min="0" max="1" step="0.05"')}
+      <div class="form-group"><label>Sichtbar</label><label class="check-row"><input type="checkbox" data-prop="hidden" data-kind="bool-inv" ${el.hidden ? '' : 'checked'}> in Renderings zeigen</label></div></div>
+  </div>`;
+  let body = '';
+  if (el.type === 'text') {
+    body += `<div class="prop-section"><h4>Inhalt</h4>
+      <div class="form-group"><label>Variable oder fester Text</label><select data-varsel="var">${variableOptions(el.var, 'Fester Text (in jeder Stadt gleich)', '__text__')}</select></div>
+      ${el.var ? `<div class="kv small">Wert kommt beim Rendern aus dem Stadtwissen (<b>${esc(varLabel(el.var))}</b>).</div>`
+               : `<div class="form-group"><label>Fester Text ({variable} wird ersetzt)</label><textarea data-prop="text" data-kind="str" rows="3">${esc(el.text || '')}</textarea></div>`}
+      <div class="form-group"><label>Ersatztext, wenn der Wert fehlt (leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}"></div>
+    </div>
+    <div class="prop-section"><h4>Schrift</h4>
+      <div class="form-group"><label>Schriftart</label><select data-prop="font" data-kind="str">${fontSelectOptions(el.font)}</select></div>
+      <div class="form-row">${numField('Max. Größe', 'max_size', el.max_size, 'min="4"')}${numField('Min. Größe', 'min_size', el.min_size, 'min="4"')}</div>
+      <div class="form-row">${numField('Max. Zeilen (0 = beliebig)', 'max_lines', el.max_lines || '', 'min="0"')}${numField('Zeilenhöhe', 'line_height', el.line_height == null ? 1.15 : el.line_height, 'min="0.5" step="0.05"')}</div>
+      <div class="form-row">${numField('Buchstabenabstand (px)', 'letter_spacing', el.letter_spacing == null ? 0 : el.letter_spacing, 'step="0.5"')}
+        <div class="form-group"><label>Großschreibung</label><label class="check-row"><input type="checkbox" data-prop="uppercase" data-kind="bool" ${el.uppercase ? 'checked' : ''}> alles groß</label></div></div>
+      <div class="form-row"><div class="form-group"><label>Ausrichtung</label>${segField('align', el.align || 'left', [{v: 'left', l: '⇤', t: 'links'}, {v: 'center', l: '↔', t: 'zentriert'}, {v: 'right', l: '⇥', t: 'rechts'}])}</div>
+        <div class="form-group"><label>Vertikal</label>${segField('valign', el.valign || 'top', [{v: 'top', l: '⤒', t: 'oben'}, {v: 'middle', l: '↕', t: 'mittig'}, {v: 'bottom', l: '⤓', t: 'unten'}])}</div></div>
+    </div>
+    <div class="prop-section"><h4>Farbe</h4>${colorField('color', el.color || '#ffffff')}</div>
+    <div class="prop-section"><h4>Kontur</h4>${colorField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>
+    <div class="prop-section"><h4>Schatten</h4>
+      <label class="check-row"><input type="checkbox" data-toggle-shadow ${el.shadow ? 'checked' : ''}> Schatten aktiv</label>
+      ${el.shadow ? `<div class="form-row-3">${numField('dx', 'shadow.dx', el.shadow.dx == null ? 2 : el.shadow.dx)}${numField('dy', 'shadow.dy', el.shadow.dy == null ? 2 : el.shadow.dy)}${numField('Weichzeichnen', 'shadow.blur', el.shadow.blur == null ? 0 : el.shadow.blur, 'min="0"')}</div>${colorField('shadow.color', el.shadow.color || '#000000')}` : ''}
+    </div>`;
+  } else if (el.type === 'image') {
+    body += `<div class="prop-section"><h4>Quelle</h4>
+      <div class="form-group"><label>Variable oder feste Quelle</label><select data-varsel="var">${variableOptions(el.var, 'Feste Quelle (URL oder Pfad)', '__src__')}</select></div>
+      ${el.var ? `<div class="kv small">Der Wert der Variable muss ein Bildpfad oder eine URL sein.</div>` : `<div class="form-group"><label>URL oder Dateipfad</label><input type="url" data-prop="src" data-kind="str" value="${esc(el.src || '')}" placeholder="https://… oder /uploads/…"></div>`}
+      <div class="form-group"><label>Einpassen</label>${segField('fit', el.fit || 'contain', [{v: 'contain', l: 'Einpassen', t: 'ganz sichtbar'}, {v: 'cover', l: 'Füllen', t: 'Box füllen, ggf. beschneiden'}])}</div>
+      ${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}
+    </div>`;
+  } else if (el.type === 'cover') {
+    const mode = !el.fill || el.fill === 'auto' ? 'auto' : (el.fill === 'inpaint' ? 'inpaint' : 'color');
+    body += `<div class="prop-section"><h4>Füllung</h4>
+      ${segField('coverfill', mode, [{v: 'auto', l: 'Auto', t: 'Randfarbe der Box (Median)'}, {v: 'inpaint', l: 'Inpaint', t: 'Umgebung fortsetzen (cv2, sonst Auto)'}, {v: 'color', l: 'Farbe', t: 'feste Farbe'}])}
+      ${mode === 'color' ? `<div style="margin-top:8px;">${colorField('fill', el.fill)}</div>` : '<div class="kv small" style="margin-top:6px;">Auto nimmt die häufigste Randfarbe der Box, Inpaint setzt die Umgebung fort (braucht cv2, sonst wie Auto).</div>'}
+      ${numField('Weiche Kante (px)', 'feather', el.feather == null ? 0 : el.feather, 'min="0"')}
+    </div>`;
+  } else if (el.type === 'rect') {
+    body += `<div class="prop-section"><h4>Füllung</h4>${colorField('fill', el.fill, {optional: true})}</div>
+      <div class="prop-section"><h4>Kontur</h4>${colorField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>
+      <div class="prop-section">${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}</div>`;
+  }
+  const errs = quickErrors(el);
+  box.innerHTML = (errs.length ? `<div class="badge badge-red" style="margin:8px 0;">${esc(errs.join(' · '))}</div>` : '') + geo + body +
+    `<div class="prop-section" style="display:flex;gap:6px;"><button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button><button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button></div>`;
+}
+function fontSelectOptions(current) {
+  const cur = current || 'anton'; const entry = fontEntry(cur);
+  let html = `<option value="brand" ${cur === 'brand' ? 'selected' : ''}>Stadt-Schrift (brand)</option>`;
+  const groups = {builtin: 'Eingebaut', user: 'Hochgeladen'};
+  for (const src of ['builtin', 'user']) {
+    const fs = S.fonts.filter(f => f.source === src); if (!fs.length) continue;
+    html += `<optgroup label="${groups[src]}">${fs.map(f => `<option value="${esc(f.key)}" ${(entry ? entry.key : '') === f.key ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</optgroup>`;
+  }
+  if (cur !== 'brand' && !entry) html += `<option value="${esc(cur)}" selected>${esc(cur)} (unbekannt → Anton)</option>`;
+  return html;
+}
+function canvasProps() {
+  const t = S.template || {}; const img = S.imageSize;
+  const differs = img && (img.width !== S.canvas.width || img.height !== S.canvas.height);
+  return `<div class="empty-hint">Kein Element ausgewählt. Auf eine Box in der Bühne oder in der Ebenenliste klicken.</div>
+    <div class="prop-section"><h4>Canvas</h4>
+      <div class="form-row">${numField('Breite', '__canvas_w', S.canvas.width, 'min="10"')}${numField('Höhe', '__canvas_h', S.canvas.height, 'min="10"')}</div>
+      <div class="kv small">${img ? `Hintergrundbild: <b>${img.width} × ${img.height}</b>${differs ? ' – wird beim Rendern auf den Canvas eingepasst (mittig beschnitten).' : ''}` : 'Noch kein Hintergrundbild.'}</div>
+      ${differs ? `<button type="button" class="btn btn-ghost btn-xs" id="btn-canvas-img" style="margin-top:6px;">Canvas auf Bildgröße setzen</button>` : ''}
+    </div>
+    <div class="prop-section"><h4>Template</h4>
+      <div class="kv">Kategorie: <b>${esc(t.category || '–')}</b><br>Render-Typ: <b>${esc(t.render_type || 'pil')}</b><br>Gespeicherte Variablen: <b>${esc((t.required_vars || []).join(', ') || '–')}</b></div>
+      ${t.example_text ? `<div class="kv small" style="margin-top:6px;">Beispiel: ${esc(t.example_text)}</div>` : ''}
+    </div>`;
+}
+function syncPropsGeometry() {
+  const el = selected(); if (!el) return;
+  for (const k of ['x', 'y', 'width', 'height']) {
+    const inp = $(`#props [data-prop="${k}"]`); if (inp && document.activeElement !== inp) inp.value = el[k] == null ? '' : el[k];
+  }
+}
+function setNested(el, prop, value) {
+  const parts = prop.split('.');
+  if (parts.length === 1) { if (value === undefined) delete el[prop]; else el[prop] = value; return; }
+  if (!el[parts[0]] || typeof el[parts[0]] !== 'object') el[parts[0]] = {};
+  if (value === undefined) delete el[parts[0]][parts[1]]; else el[parts[0]][parts[1]] = value;
+}
+function applyProp(el, prop, kind, raw, checked) {
+  if (prop === '__canvas_w' || prop === '__canvas_h') {
+    const v = Math.round(num(raw, 0)); if (v < 10) return;
+    S.config.canvas = {width: prop === '__canvas_w' ? v : S.canvas.width, height: prop === '__canvas_h' ? v : S.canvas.height};
+    S.canvas = {...S.config.canvas}; return;
+  }
+  if (kind === 'bool') { setNested(el, prop, checked ? true : undefined); return; }
+  if (kind === 'bool-inv') { setNested(el, prop, checked ? undefined : true); return; }
+  if (kind === 'int' || kind === 'num') {
+    if (raw === '' || raw == null) { setNested(el, prop, undefined); return; }
+    const v = kind === 'int' ? Math.round(num(raw, 0)) : num(raw, 0);
+    if (prop === 'max_lines' && v <= 0) { setNested(el, prop, undefined); return; }
+    setNested(el, prop, v); return;
+  }
+  if (kind === 'color') { const v = String(raw || '').trim(); setNested(el, prop, v === '' ? undefined : v); return; }
+  setNested(el, prop, raw === '' ? undefined : raw);
+}
+const props = $('#props');
+props.addEventListener('focusin', e => { if (e.target.matches('[data-prop],[data-colorpick]') && !S.focusSnap) { snapshot(); S.focusSnap = true; } });
+props.addEventListener('focusout', () => { S.focusSnap = false; });
+props.addEventListener('input', e => {
+  const t = e.target; const el = selected();
+  if (t.matches('[data-colorpick]')) {
+    const prop = t.dataset.colorpick; if (!el) return;
+    applyProp(el, prop, 'color', t.value); const txt = $(`#props [data-prop="${prop}"]`); if (txt) txt.value = t.value;
+    renderStage(); renderLayers(); updateSaveState(); schedulePreview(); return;
+  }
+  if (!t.matches('[data-prop]')) return;
+  if (!el && !t.dataset.prop.startsWith('__canvas')) return;
+  if (t.type === 'checkbox') return; // wird über change behandelt
+  applyProp(el || {}, t.dataset.prop, t.dataset.kind, t.value, t.checked);
+  if (t.dataset.prop.startsWith('__canvas')) { renderStage(); updateSaveState(); schedulePreview(); return; }
+  if (t.dataset.kind === 'color') { const pick = $(`#props [data-colorpick="${t.dataset.prop}"]`); const rc = resolveColor(t.value); if (pick && /^#[0-9a-fA-F]{6}$/.test(rc)) pick.value = rc; }
+  renderStage(); renderLayers(); updateSaveState(); schedulePreview();
+});
+props.addEventListener('change', e => {
+  const t = e.target; const el = selected();
+  if (t.matches('[data-varsel]')) {
+    if (!el) return;
+    let v = t.value;
+    if (v === '__custom__') {
+      v = (prompt('Name der eigenen Variable (Buchstaben, Ziffern, Unterstrich):', '') || '').trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) { toast('Ungültiger Variablenname', 'error'); renderProps(true); return; }
+      ensureVariable(v);
+    }
+    snapshot();
+    if (v === '__text__') { delete el.var; if (el.text == null) el.text = 'Text'; }
+    else if (v === '__src__') { delete el.var; if (el.src == null) el.src = ''; }
+    else { el.var = v; if (el.type === 'text') delete el.text; if (el.type === 'image') delete el.src; }
+    S.propsKey = ''; commit(); return;
+  }
+  if (t.matches('[data-toggle-shadow]')) {
+    if (!el) return; snapshot();
+    if (t.checked) el.shadow = {dx: 3, dy: 3, color: '#000000', blur: 4}; else delete el.shadow;
+    S.propsKey = ''; commit(); return;
+  }
+  if (t.matches('[data-prop]') && t.type === 'checkbox') {
+    if (!el) return; if (!S.focusSnap) snapshot();
+    applyProp(el, t.dataset.prop, t.dataset.kind, t.value, t.checked); commit({keepProps: true}); return;
+  }
+  if (t.matches('[data-prop]') && t.tagName === 'SELECT') {
+    if (!el) return; if (!S.focusSnap) snapshot();
+    applyProp(el, t.dataset.prop, t.dataset.kind, t.value); commit({keepProps: true}); return;
+  }
+  if (t.matches('[data-prop][data-kind="color"]')) { commit({keepProps: true}); return; }
+});
+props.addEventListener('click', e => {
+  const el = selected();
+  const seg = e.target.closest('[data-seg] button');
+  if (seg) {
+    if (!el) return; snapshot();
+    const prop = seg.closest('[data-seg]').dataset.seg; const v = seg.dataset.val;
+    if (prop === 'coverfill') { if (v === 'color') el.fill = '#000000'; else el.fill = v; S.propsKey = ''; commit(); return; }
+    el[prop] = v; $$('button', seg.parentElement).forEach(b => b.classList.toggle('on', b === seg));
+    commit({keepProps: true}); return;
+  }
+  const brand = e.target.closest('[data-brand]');
+  if (brand) {
+    if (!el) return; snapshot();
+    setNested(el, brand.dataset.target, 'brand:' + brand.dataset.brand); S.propsKey = ''; commit(); return;
+  }
+  const clear = e.target.closest('[data-clear]');
+  if (clear) { if (!el) return; snapshot(); setNested(el, clear.dataset.clear, undefined); S.propsKey = ''; commit(); return; }
+  const act = e.target.closest('[data-el-act]');
+  if (act && el) { if (act.dataset.elAct === 'dup') duplicateElement(el.id); else deleteElement(el.id); return; }
+  if (e.target.id === 'btn-canvas-img' && S.imageSize) {
+    snapshot(); S.config.canvas = {width: S.imageSize.width, height: S.imageSize.height}; S.canvas = {...S.config.canvas}; S.propsKey = ''; commit();
+  }
+});
+
+// ── Kopfzeile: Chips, Speichern, Hilfe, Duplizieren ───────────────────────────
+function renderChips() {
+  const vars = collectVars(S.config);
+  $('#required-chips').innerHTML = vars.length ? vars.map(v => `<span class="chip ${varKind(v)}" title="${esc(varLabel(v))}">${esc(v)}</span>`).join('') : '<span class="chip">keine Variablen</span>';
+}
+function showErrors(list) {
+  const box = $('#errors-box');
+  if (!list || !list.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false; box.innerHTML = `<b>Nicht gespeichert – bitte prüfen:</b><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+}
+async function save() {
+  if (S.saving) return false;
+  // Canvas immer mitschreiben, damit ein späterer Hintergrundwechsel die Boxen nicht verschiebt
+  if (!S.config.canvas && S.canvas) S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
+  S.saving = true; updateSaveState('busy');
+  try {
+    const d = await api('PUT', `/api/studio/${TID}/config`, {
+      config: S.config, name: $('#tpl-name').value.trim(), series: $('#tpl-series').value.trim(),
+      series_position: $('#tpl-series-pos').value === '' ? null : parseInt($('#tpl-series-pos').value, 10),
+    });
+    if (d.template) S.template = d.template;
+    S.saved = serialize(); showErrors([]); updateSaveState(); toast('Gespeichert (' + (d.required_vars || []).length + ' Variablen)', 'success');
+    if (!selected()) renderProps(true);
+    return true;
+  } catch (e) {
+    showErrors((e.data && e.data.errors) || [e.message]); updateSaveState(); toast('Speichern fehlgeschlagen', 'error'); return false;
+  } finally { S.saving = false; }
+}
+$('#btn-save').addEventListener('click', save);
+['#tpl-name', '#tpl-series', '#tpl-series-pos'].forEach(s => $(s).addEventListener('input', updateSaveState));
+$('#btn-help').addEventListener('click', () => { const h = $('#help-box'); h.hidden = !h.hidden; if (S.zoom === 'fit') renderStage(); });
+$('#btn-duplicate').addEventListener('click', async () => {
+  if (isDirty() && !confirm('Es gibt ungespeicherte Änderungen. Vor dem Duplizieren speichern?')) return;
+  if (isDirty() && !(await save())) return;
+  try {
+    const d = await api('POST', `/api/studio/${TID}/duplicate`, {});
+    toast('Kopie angelegt: ' + d.name, 'success');
+    if (confirm('Kopie „' + d.name + '“ jetzt im Studio öffnen?')) window.location.href = '/studio/' + d.id;
+  } catch (e) { toast('Duplizieren fehlgeschlagen: ' + e.message, 'error'); }
+});
+window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+// ── Hintergrund & Schrift hochladen ───────────────────────────────────────────
+$('#btn-bg').addEventListener('click', () => $('#bg-file').click());
+$('#bg-file').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  toast('Hintergrund wird hochgeladen …');
+  try {
+    const d = await api('POST', `/api/studio/${TID}/background`, fd);
+    S.bgUrl = d.background_url + '?v=' + Date.now(); S.imageSize = d.image_size || null;
+    if (d.canvas) S.canvas = d.canvas;
+    S.propsKey = ''; renderAll();
+    toast('Hintergrund ersetzt' + (d.cloudinary ? ' und in Cloudinary gesichert' : ''), 'success');
+  } catch (err) { toast('Upload fehlgeschlagen: ' + err.message, 'error'); }
+});
+$('#btn-font').addEventListener('click', () => $('#font-file').click());
+$('#font-file').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { toast('Schrift zu groß (max. 5 MB)', 'error'); return; }
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    S.fonts = await api('POST', '/api/studio/fonts', fd);
+    S.propsKey = ''; renderProps(true); await registerFonts(); renderStage();
+    toast('Schrift hochgeladen: ' + f.name, 'success');
+  } catch (err) { toast('Schrift-Upload fehlgeschlagen: ' + err.message, 'error'); }
+});
+
+// ── Vorschau ───────────────────────────────────────────────────────────────────
+function setPvStatus(html) { $('#pv-status').innerHTML = html || ''; }
+function clearPreviewUrls() { previewUrls.forEach(u => URL.revokeObjectURL(u)); previewUrls = []; }
+function showPreviews(items) {
+  clearPreviewUrls();
+  const box = $('#pv-imgs');
+  if (!items.length) { box.innerHTML = '<div class="preview-empty">Keine Vorschau.</div>'; return; }
+  box.innerHTML = items.map(it => {
+    let src = it.src;
+    if (it.blob) { src = URL.createObjectURL(it.blob); previewUrls.push(src); }
+    return `<figure><img src="${esc(src)}" alt="Vorschau ${esc(it.label)}" title="Klick: in voller Größe öffnen" data-full="${esc(src)}"><figcaption>${esc(it.label)}</figcaption></figure>`;
+  }).join('');
+}
+$('#pv-imgs').addEventListener('click', e => { const img = e.target.closest('img[data-full]'); if (img) window.open(img.dataset.full, '_blank'); });
+function schedulePreview() {
+  if (!$('#pv-auto').checked || !S.bgUrl) return;
+  clearTimeout(previewTimer); previewTimer = setTimeout(() => renderPreview(), 800);
+}
+async function renderPreview(cityIds) {
+  if (!S.bgUrl) { toast('Ohne Hintergrundbild keine Vorschau', 'error'); return; }
+  if (previewAbort) previewAbort.abort();
+  previewAbort = new AbortController(); const signal = previewAbort.signal;
+  const cities = (cityIds || [currentCity() ? currentCity().id : null]).map(id => S.cities.find(c => c.id === id) || {id, name: 'Stadt ' + id});
+  setPvStatus('<span class="spinner"></span> rendert …');
+  $('#ai-info').hidden = true;
+  try {
+    const blobs = await Promise.all(cities.map(c => api('POST', `/api/studio/${TID}/preview`, {config: S.config, city_id: c.id}, {blob: true, signal})));
+    if (signal.aborted) return;
+    showPreviews(blobs.map((b, i) => ({blob: b, label: cities[i].name})));
+    setPvStatus('aktualisiert ' + new Date().toLocaleTimeString('de-DE'));
+  } catch (e) {
+    if (signal.aborted) return;
+    setPvStatus('<span style="color:var(--danger)">' + esc(e.message) + '</span>');
+  }
+}
+$('#btn-preview').addEventListener('click', () => renderPreview());
+$('#btn-three').addEventListener('click', () => {
+  if (!S.cities.length) { toast('Keine Städte vorhanden', 'error'); return; }
+  const pool = S.cities.slice(); const pick = [];
+  while (pick.length < 3 && pool.length) pick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].id);
+  renderPreview(pick);
+});
+$('#btn-ai').addEventListener('click', async () => {
+  if (!S.bgUrl) { toast('Ohne Hintergrundbild keine Vorschau', 'error'); return; }
+  if (!S.aiAvailable) { toast('Kein Anthropic-Key hinterlegt – KI-Werte nicht verfügbar', 'error'); return; }
+  if (isDirty()) { toast('Speichere zuerst, damit die KI die aktuellen Variablen kennt …'); if (!(await save())) return; }
+  const city = currentCity(); if (!city) return;
+  setPvStatus('<span class="spinner"></span> KI-Werte für ' + esc(city.name) + ' …');
+  $('#btn-ai').disabled = true;
+  try {
+    const d = await api('POST', `/api/studio/${TID}/preview-ai`, {city_id: city.id, config: S.config});
+    showPreviews([{src: 'data:image/png;base64,' + d.image_b64, label: city.name + ' (KI)'}]);
+    const info = $('#ai-info'); info.hidden = false;
+    const score = d.fit_score == null ? '–' : d.fit_score + ' / 100';
+    info.innerHTML = `<div><b style="color:var(--text)">Fit-Score:</b> <span class="badge ${d.fit_score >= 70 ? 'badge-green' : d.fit_score >= 40 ? 'badge-yellow' : 'badge-red'}">${esc(score)}</span></div>
+      ${d.reasoning ? `<div style="margin-top:4px;">${esc(d.reasoning)}</div>` : ''}${d.warning ? `<div class="badge badge-yellow" style="margin-top:4px;">${esc(d.warning)}</div>` : ''}
+      <table>${Object.entries(d.values || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+    setPvStatus('KI-Vorschau ' + new Date().toLocaleTimeString('de-DE'));
+  } catch (e) { setPvStatus('<span style="color:var(--danger)">' + esc(e.message) + '</span>'); toast('KI-Werte: ' + e.message, 'error'); }
+  finally { $('#btn-ai').disabled = false; }
+});
+$('#pv-auto').addEventListener('change', e => { try { localStorage.setItem('studio_auto_preview', e.target.checked ? '1' : '0'); } catch (_) {} if (e.target.checked) schedulePreview(); });
+$('#pv-city').addEventListener('change', () => { renderStage(); schedulePreview(); });
+$('#btn-pv-toggle').addEventListener('click', () => {
+  const p = $('#preview-panel'); p.classList.toggle('collapsed');
+  $('#btn-pv-toggle').textContent = p.classList.contains('collapsed') ? '▴' : '▾';
+  if (S.zoom === 'fit') setTimeout(renderStage, 160);
+});
+$('#btn-undo').addEventListener('click', undo);
+$('#btn-redo').addEventListener('click', redo);
+
+// ── Tastatur ───────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) && e.target.type !== 'checkbox';
+  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
+  if (inField) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  const el = selected();
+  if (mod && e.key.toLowerCase() === 'd') { if (el) { e.preventDefault(); duplicateElement(el.id); } return; }
+  if (e.key === 'Escape') { select(null); return; }
+  if (!el) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteElement(el.id); return; }
+  const step = e.shiftKey ? 10 : 1; let dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft') dx = -step; else if (e.key === 'ArrowRight') dx = step;
+  else if (e.key === 'ArrowUp') dy = -step; else if (e.key === 'ArrowDown') dy = step; else return;
+  e.preventDefault();
+  const now = Date.now(); if (now - S.arrowSnapAt > 600) snapshot(); S.arrowSnapAt = now;
+  el.x = Math.round(num(el.x, 0) + dx); el.y = Math.round(num(el.y, 0) + dy);
+  positionElementDom(el); syncPropsGeometry(); updateSaveState(); schedulePreview();
+});
+
+load();
+</script>
+</body>
+</html>

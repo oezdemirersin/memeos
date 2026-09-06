@@ -111,6 +111,8 @@ class City(db.Model):
     brand_text_color = db.Column(db.String(20), default='#000000')
     brand_font       = db.Column(db.String(100), default='Arial')
     rss_url          = db.Column(db.String(500))
+    lat              = db.Column(db.Float)   # Koordinaten für Wetter-Events (Open-Meteo), scheduler.py
+    lon              = db.Column(db.Float)
     notes            = db.Column(db.Text)
     active           = db.Column(db.Boolean, default=True, index=True)
     created_at       = db.Column(db.DateTime, default=datetime.utcnow)

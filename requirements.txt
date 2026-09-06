@@ -7,3 +7,10 @@ gunicorn==23.0.0
 python-dotenv==1.0.1
 cloudinary>=1.40.0
 Pillow==10.4.0
+# Phase B: Template-Import aus Canva/PPTX (pptx_import_bp.py)
+python-pptx==1.0.2
+# Phase B: Renderer cover fill 'inpaint' (memeos_render.py) – optional, ohne beides Fallback auf fill 'auto'
+opencv-python-headless>=4.10,<5
+numpy>=1.24
+# Phase B: Zeitzonendaten für den Scheduler (Europe/Berlin), falls das Image keine System-tzdata hat
+tzdata>=2024.1
