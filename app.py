@@ -2926,6 +2926,7 @@ def api_settings_get():
         'telegram_token_hint':  _tg_token[-4:] if _tg_token else '',
         'telegram_chat_id':     AppSettings.get('telegram_chat_id', ''),
         'alert_threshold_days': AppSettings.get('alert_threshold_days', '3'),
+        'category_overhang_tolerance': AppSettings.get('category_overhang_tolerance', '15'),
         'data_root':            _DATA_ROOT,
     })
 
@@ -2936,6 +2937,14 @@ def api_settings_save():
     for key in ('content_os_url', 'telegram_chat_id', 'alert_threshold_days'):
         if key in d:
             AppSettings.set(key, d[key])
+    # Toleranz für den Kategorie-Überhang (Prozentpunkte über dem Zielmix,
+    # ab denen die Render-Queue warnt). 0 = jede Abweichung meldet.
+    if 'category_overhang_tolerance' in d:
+        roh = str(d.get('category_overhang_tolerance') or '0').strip().replace(',', '.')
+        try:
+            AppSettings.set('category_overhang_tolerance', str(int(max(0, min(100, float(roh))))))
+        except ValueError:
+            return jsonify({'error': 'Toleranz muss eine Zahl zwischen 0 und 100 sein'}), 400
     # KI-Anbieter, DeepSeek-Modell und Monatsbudget
     if 'ai_provider' in d:
         gewaehlt = str(d.get('ai_provider') or 'anthropic').strip().lower()
@@ -3616,19 +3625,30 @@ def api_events_notify():
 # KATEGORIE-MIX (Freshness) API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _post_datum():
+    """Das für Freshness/Duplikate maßgebliche Datum eines Beitrags.
+
+    Veröffentlicht schlägt geplant, geplant schlägt angelegt — damit zählen
+    sowohl schon gelaufene als auch fest eingeplante Beiträge.
+    """
+    return db.func.coalesce(MemePost.published_at, MemePost.scheduled_at, MemePost.created_at)
+
+
 @app.route('/api/city/<int:city_id>/category-mix', methods=['GET'])
 @login_required
 def api_category_mix(city_id):
     days = int(request.args.get('days', 30))
     cutoff = datetime.utcnow() - timedelta(days=days)
-    jobs = (RenderJob.query
-            .filter_by(city_id=city_id)
-            .filter(RenderJob.status.in_(['approved','done']))
-            .filter(RenderJob.completed_at >= cutoff)
-            .all())
+    # Basis ist der Vorrat (MemePost), nicht mehr der alte Generator-Auftrag:
+    # die Render-Queue legt Beiträge ohne RenderJob an.
+    posts = (MemePost.query
+             .filter(MemePost.city_id == city_id)
+             .filter(MemePost.status != 'archiviert')
+             .filter(_post_datum() >= cutoff)
+             .all())
     counts = {}
-    for j in jobs:
-        cat = j.template.category if j.template else 'unbekannt'
+    for p in posts:
+        cat = p.template.category if p.template else 'unbekannt'
         counts[cat] = counts.get(cat, 0) + 1
     total = sum(counts.values())
     # Load target mix from settings
@@ -3683,40 +3703,64 @@ def api_check_duplicate():
     if not city_id:
         return jsonify({'ok': True, 'warnings': []})
 
-    cutoff_tmpl = datetime.utcnow() - timedelta(days=days_tmpl)
-    cutoff_cat  = datetime.utcnow() - timedelta(days=days_cat)
+    jetzt        = datetime.utcnow()
+    cutoff_tmpl  = jetzt - timedelta(days=days_tmpl)
+    cutoff_cat   = jetzt - timedelta(days=days_cat)
+    horizont_t   = jetzt + timedelta(days=days_tmpl)
+    horizont_c   = jetzt + timedelta(days=days_cat)
+    datum        = _post_datum()
+
+    # Grundlage ist der Vorrat, nicht der alte Generator-Auftrag: seit der
+    # Render-Queue entstehen Beiträge ohne RenderJob, der Prüfer sah sie sonst nie.
+    # Geprüft wird in beide Richtungen — schon gelaufen und schon eingeplant.
+    def _vorrat(cutoff, horizont):
+        return (MemePost.query
+                .filter(MemePost.city_id == city_id)
+                .filter(MemePost.status != 'archiviert')
+                .filter(datum >= cutoff)
+                .filter(datum <= horizont))
 
     if template_id:
-        dupe = (RenderJob.query
-                .filter_by(city_id=city_id, template_id=template_id)
-                .filter(RenderJob.status.in_(['approved','done']))
-                .filter(RenderJob.completed_at >= cutoff_tmpl)
-                .first())
-        if dupe:
+        treffer = (_vorrat(cutoff_tmpl, horizont_t)
+                   .filter(MemePost.template_id == template_id)
+                   .order_by(datum.desc()).all())
+        vergangen = [p for p in treffer if (p.published_at or p.scheduled_at or p.created_at) <= jetzt]
+        geplant   = [p for p in treffer if (p.published_at or p.scheduled_at or p.created_at) > jetzt]
+        if vergangen:
+            letzter = vergangen[0]
+            wann = letzter.published_at or letzter.scheduled_at or letzter.created_at
             warnings.append({
                 'type': 'template',
                 'message': f'Dieses Template wurde für diese Stadt in den letzten {days_tmpl} Tagen bereits verwendet',
-                'last_used': dupe.completed_at.isoformat() if dupe.completed_at else None,
+                'last_used': wann.isoformat() if wann else None,
+                'post_id': letzter.id,
+            })
+        if geplant:
+            naechster = geplant[-1]
+            wann = naechster.scheduled_at or naechster.created_at
+            warnings.append({
+                'type': 'template_geplant',
+                'message': f'Dieses Template ist für diese Stadt in den nächsten {days_tmpl} Tagen bereits eingeplant',
+                'next_use': wann.isoformat() if wann else None,
+                'post_id': naechster.id,
             })
 
-    if category and category not in ('allgemein', 'sonstige'):
-        tmpl = MemeTemplate.query.get(template_id) if template_id else None
-        cat_check = category or (tmpl.category if tmpl else None)
-        if cat_check:
-            cat_jobs = (RenderJob.query
-                        .join(MemeTemplate, RenderJob.template_id == MemeTemplate.id)
-                        .filter(RenderJob.city_id == city_id)
-                        .filter(MemeTemplate.category == cat_check)
-                        .filter(RenderJob.status.in_(['approved','done']))
-                        .filter(RenderJob.completed_at >= cutoff_cat)
-                        .count())
-            if cat_jobs >= 2:
-                warnings.append({
-                    'type': 'category',
-                    'message': f'Kategorie „{cat_check}" wurde in den letzten {days_cat} Tagen bereits {cat_jobs}× für diese Stadt verwendet',
-                })
+    tmpl = MemeTemplate.query.get(template_id) if template_id else None
+    cat_check = category or (tmpl.category if tmpl else None)
+    if cat_check and cat_check not in ('allgemein', 'sonstige'):
+        cat_count = (_vorrat(cutoff_cat, horizont_c)
+                     .join(MemeTemplate, MemePost.template_id == MemeTemplate.id)
+                     .filter(MemeTemplate.category == cat_check)
+                     .count())
+        if cat_count >= 2:
+            warnings.append({
+                'type': 'category',
+                'message': f'Kategorie „{cat_check}" liegt für diese Stadt {cat_count}× im Fenster von {days_cat} Tagen',
+                'count': cat_count,
+            })
 
-    return jsonify({'ok': True, 'warnings': warnings, 'has_warnings': len(warnings) > 0})
+    return jsonify({'ok': True, 'warnings': warnings, 'has_warnings': len(warnings) > 0,
+                    'basis': 'vorrat'})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # RECYCLE SETTINGS API

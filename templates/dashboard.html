@@ -1262,9 +1262,16 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <div style="flex:1;"></div>
         <button class="btn btn-primary btn-sm" onclick="saveCategoryMix()">Speichern</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
-        Warnschwelle: Liegt eine Kategorie mehr als 15 Prozentpunkte über ihrem Ziel, warnt der Bulk-Generator beim Anlegen eines Batches – die Stadt wird trotzdem gerendert.
-        Der Schwellwert steht in der Einstellung <code>category_overhang_tolerance</code> (Standard 15) und wird bisher nicht über das Dashboard gesetzt.
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label for="category-overhang-tolerance" style="font-size:12px;color:var(--muted2);">Warnschwelle</label>
+          <input type="number" id="category-overhang-tolerance" min="0" max="100" value="15" style="width:70px;">
+          <span style="font-size:12px;color:var(--muted);">Prozentpunkte über dem Ziel</span>
+          <button class="btn btn-ghost btn-sm" onclick="saveCategoryTolerance()">Übernehmen</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">
+          Liegt eine Kategorie für eine Stadt mehr als diesen Abstand über ihrem Ziel, warnt der Bulk-Generator beim Anlegen eines Auftrags. Die Stadt wird trotzdem gerendert, du entscheidest. 0 meldet jede Überschreitung.
+        </div>
       </div>
     </div>
 
@@ -8240,6 +8247,22 @@ async function loadCategoryMix() {
     inp.value = (v !== undefined && v !== null) ? v : 0;
   });
   _updateCategoryMixSum();
+  // Warnschwelle liegt in den allgemeinen Einstellungen, nicht im Zielmix selbst
+  const tol = document.getElementById('category-overhang-tolerance');
+  if (tol) {
+    const s = await api('GET', '/api/settings').catch(() => null);
+    if (s && !s.error && s.category_overhang_tolerance !== undefined) {
+      tol.value = s.category_overhang_tolerance;
+    }
+  }
+}
+
+async function saveCategoryTolerance() {
+  const el = document.getElementById('category-overhang-tolerance');
+  if (!el) return;
+  const r = await api('POST', '/api/settings', { category_overhang_tolerance: el.value });
+  if (r && !r.error) toast('Warnschwelle gespeichert', 'success');
+  else toast((r && r.error) || 'Fehler beim Speichern', 'error');
 }
 
 function _updateCategoryMixSum() {
