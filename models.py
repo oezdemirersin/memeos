@@ -1114,3 +1114,53 @@ class StudioPreset(db.Model):
             'props':      self.get_props(),
             'created_at': self.created_at.isoformat() if self.created_at else '',
         }
+
+
+class MemeFormat(db.Model):
+    """Bekannte Meme-Vorlage: der saubere Hintergrund OHNE Text (H1 Vorlagen-Katalog).
+
+    Damit ein hochgeladenes fremdes Meme nachgebaut werden kann, ohne die Schrift nur
+    wegzuretuschieren, wird hier nachgeschlagen, ob das Originalformat bekannt ist.
+
+    quelle 'imgflip' – aus dem öffentlichen Katalog api.imgflip.com/get_memes
+    quelle 'eigen'   – aus der eigenen Bibliothek (Template-Hintergründe, Aufkleber);
+                       extern_id ist dort 'template:<id>' bzw. 'asset:<id>'
+    phash            – Differenzhash (dhash, 64 Bit) als 16-stellige Hex-Zeichenkette;
+                       leer, solange das Bild noch nicht lokal vorliegt
+    filename         – lokale Kopie in <DATA_ROOT>/formate/ (bei 'eigen' auch uploads/)
+
+    (quelle, extern_id) ist eindeutig; Zeilen ohne extern_id sind davon unberührt,
+    weil NULL in einem eindeutigen Index nicht mit NULL kollidiert.
+    """
+    __tablename__ = 'meme_format'
+    __table_args__ = (
+        db.UniqueConstraint('quelle', 'extern_id', name='uq_meme_format_quelle_extern'),
+    )
+
+    id         = db.Column(db.Integer, primary_key=True)
+    quelle     = db.Column(db.String(20), nullable=False, default='imgflip', index=True)
+    extern_id  = db.Column(db.String(80))
+    name       = db.Column(db.String(200), nullable=False, default='')
+    url        = db.Column(db.String(1000))
+    filename   = db.Column(db.String(300))
+    width      = db.Column(db.Integer, default=0)
+    height     = db.Column(db.Integer, default=0)
+    box_count  = db.Column(db.Integer)
+    phash      = db.Column(db.String(16), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'quelle':     self.quelle or '',
+            'extern_id':  self.extern_id or '',
+            'name':       self.name or '',
+            'url':        self.url or '',
+            'filename':   self.filename or '',
+            'width':      self.width or 0,
+            'height':     self.height or 0,
+            'box_count':  self.box_count,
+            'phash':      self.phash or '',
+            'hat_bild':   bool(self.filename),
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+        }
