@@ -718,6 +718,24 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <div id="wiki-empty" style="display:none;" class="empty">
           <p>Noch keine Wiki-Einträge.<br>KI generieren oder manuell hinzufügen.</p>
         </div>
+
+        <!-- Bilder der Stadt (Stadtbilder für Vorlagen) -->
+        <div id="stadtbilder-block" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:600;">Bilder der Stadt</div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-ghost btn-xs" onclick="loadStadtbilder()">↻ Aktualisieren</button>
+              <button class="btn btn-primary btn-xs" onclick="openStadtbildModal()">+ Bild</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:10px;">
+            Wappen, Logo, Skyline: Bilder, die je Stadt wechseln. Jedes Bild hat einen Schlüssel;
+            im Studio zieht ein Bild-Element mit der Variablen <code>bild_&lt;schlüssel&gt;</code>
+            automatisch das Bild der Stadt, für die gerade gerendert wird.
+          </div>
+          <div id="stadtbilder-grid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+          <div id="stadtbilder-uebersicht" style="margin-top:14px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -729,6 +747,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="page-title">TEMPLATE <span>BIBLIOTHEK</span></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="openCategoryManager()">⚙ Kategorien</button>
+      <button class="btn btn-ghost btn-sm" onclick="openNeueVorlage()" title="Leere Vorlage anlegen und im Studio von Null aufbauen">Neu erstellen</button>
       <button class="btn btn-ghost btn-sm" onclick="openImportModal()" title="Template aus Canva-Design, PPTX-Datei oder Bild anlegen">Importieren</button>
       <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">+ Template</button>
     </div>
@@ -1463,6 +1482,40 @@ tr:hover td{background:rgba(255,255,255,.02);}
           Prüft mit einem winzigen Testaufruf, ob der hinterlegte Schlüssel wirklich antwortet. Vor jedem großen Batch empfehlenswert.
         </div>
       </div>
+    </div>
+
+    <div class="card" id="bildbibliothek-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="font-size:14px;font-weight:600;">Bild-Bibliothek</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadBildBibliothek()">↻ Aktualisieren</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px;">
+        Aufkleber, Rahmen und Logos, die in jeder Stadt gleich sind. Im Studio lassen sie sich
+        als Bild-Element auf die Leinwand setzen. Stadtabhängige Bilder gehören nicht hierher,
+        sondern unter „Städte &amp; Wiki“ in den Abschnitt „Bilder der Stadt“.
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="form-group" style="margin:0;flex:1;min-width:180px;">
+          <label>Datei (PNG, JPG, WebP)</label>
+          <input type="file" id="bb-file" accept=".png,.jpg,.jpeg,.webp">
+        </div>
+        <div class="form-group" style="margin:0;min-width:150px;">
+          <label>Name</label>
+          <input type="text" id="bb-name" placeholder="leer = Dateiname">
+        </div>
+        <div class="form-group" style="margin:0;width:130px;">
+          <label>Art</label>
+          <select id="bb-kind">
+            <option value="sticker" selected>Aufkleber</option>
+            <option value="logo">Logo</option>
+            <option value="rahmen">Rahmen</option>
+            <option value="sonstige">Sonstige</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="bb-upload-btn" onclick="bildBibliothekHochladen()">Hochladen</button>
+      </div>
+      <div id="bb-error" style="color:var(--danger);font-size:12px;margin-bottom:8px;"></div>
+      <div id="bb-grid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
     </div>
 
     <div class="card">
@@ -3208,6 +3261,108 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- Stadtbild hochladen -->
+<div class="modal-overlay" id="modal-stadtbild">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title">BILD DER STADT</div>
+      <button class="modal-close" onclick="closeModal('modal-stadtbild')">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;" id="sb-stadt-zeile"></div>
+    <div class="form-group">
+      <label>Schlüssel</label>
+      <input type="text" id="sb-key" list="sb-key-list" placeholder="z. B. wappen" oninput="sbVarVorschau()">
+      <datalist id="sb-key-list"></datalist>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">
+        Kleinbuchstaben, Ziffern und _. Ergibt die Variable <code id="sb-var-vorschau">bild_…</code>.
+        Ein vorhandenes Bild mit demselben Schlüssel wird ersetzt.
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Name</label><input type="text" id="sb-name" placeholder="leer = Schlüssel"></div>
+      <div class="form-group">
+        <label>Art</label>
+        <select id="sb-kind">
+          <option value="wappen">Wappen</option>
+          <option value="logo">Logo</option>
+          <option value="foto">Foto</option>
+          <option value="sonstige" selected>Sonstige</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Datei</label><input type="file" id="sb-file" accept=".png,.jpg,.jpeg,.webp"></div>
+    </div>
+    <div id="sb-error" style="color:var(--danger);font-size:12px;margin-top:8px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-stadtbild')">Abbrechen</button>
+      <button class="btn btn-primary" id="sb-btn" onclick="stadtbildHochladen()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Neue Vorlage (von Null) -->
+<div class="modal-overlay" id="modal-neue-vorlage">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">NEUE VORLAGE</div>
+      <button class="modal-close" onclick="closeModal('modal-neue-vorlage')">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;">
+      Legt eine leere Leinwand an – ohne Hintergrundbild, nur Größe und Grundfarbe.
+      Alles Weitere entsteht im Studio.
+    </div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Name</label><input type="text" id="nv-name" placeholder="leer = Neue Vorlage"></div>
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="nv-category">
+          {% for k, label, emoji, group in template_categories %}
+          <option value="{{ k }}"{% if k == 'allgemein' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Größe</label>
+        <select id="nv-preset" onchange="nvGroesseWechsel()">
+          <option value="feed" selected>Feed 1080 × 1350</option>
+          <option value="quadrat">Quadrat 1080 × 1080</option>
+          <option value="story">Story 1080 × 1920</option>
+          <option value="frei">Frei…</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row-3" id="nv-frei-row" style="display:none;">
+      <div class="form-group"><label>Breite (px)</label><input type="number" id="nv-width" value="1080" min="64" max="8000"></div>
+      <div class="form-group"><label>Höhe (px)</label><input type="number" id="nv-height" value="1350" min="64" max="8000"></div>
+      <div class="form-group"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Hintergrund</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="nv-bg-art" onchange="nvHintergrundWechsel()" style="width:auto;">
+          <option value="farbe" selected>Farbe</option>
+          <option value="verlauf">Verlauf</option>
+          <option value="keiner">Keiner (weiß)</option>
+        </select>
+        <input type="color" id="nv-bg-c1" value="#111827" style="width:52px;padding:2px;" oninput="nvVorschau()">
+        <input type="color" id="nv-bg-c2" value="#3b82f6" style="width:52px;padding:2px;display:none;" oninput="nvVorschau()">
+        <label id="nv-bg-winkel-label" style="display:none;margin:0;font-size:12px;color:var(--muted);">Winkel
+          <input type="number" id="nv-bg-winkel" value="90" min="0" max="360" style="width:72px;display:inline-block;margin-left:6px;" oninput="nvVorschau()">
+        </label>
+      </div>
+      <div id="nv-bg-vorschau" style="margin-top:8px;height:36px;border-radius:6px;border:1px solid var(--border);"></div>
+    </div>
+
+    <div id="nv-error" style="color:var(--danger);font-size:12px;margin-top:8px;"></div>
+    <div id="nv-hinweis" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-neue-vorlage')">Abbrechen</button>
+      <button class="btn btn-primary" id="nv-btn" onclick="nvAnlegen()">Anlegen und im Studio öffnen</button>
+    </div>
+  </div>
+</div>
+
 <!-- User Modal -->
 <div class="modal-overlay" id="modal-user">
   <div class="modal">
@@ -3239,6 +3394,13 @@ function _esc(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+// Adressen aus fremden Quellen (RSS-Feeds, Inspiration) landen in href-Attributen.
+// Nur http und https durchlassen — javascript: und data: würden beim Klick Code ausführen.
+function _escUrl(u) {
+  const s = String(u ?? '').trim();
+  if (!/^https?:\/\//i.test(s)) return '#';
+  return _esc(s);
+}
 // Datum als YYYY-MM-DD in Ortszeit. Termine sind Berlin-naiv gespeichert –
 // toISOString() rechnet nach UTC um und kippt an Tagesgrenzen den Tag.
 function _ymdLokal(d) {
@@ -3267,7 +3429,7 @@ function showPage(name) {
   if(name==='news') loadNews();
   if(name==='todos') loadTodos();
   if(name==='surveys') loadSurveys();
-  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); loadIntegrationSettings(); loadPlanerSettings(); }
+  if(name==='settings') { loadUsers(); loadCloudinaryStatus(); loadSettingsPage(); loadRecycleSettings(); loadCategoryMix(); loadIntegrationSettings(); loadPlanerSettings(); loadBildBibliothek(); }
   if(name==='templates') loadTemplates();
   if(name==='bulk') { rqLoadSeries(); rqRefreshQueueTile(); rqLoadRecent(); }
   if(name==='hochladen') hlGoToPhase1();
@@ -3347,6 +3509,7 @@ async function selectCity(id, name) {
   document.getElementById('wiki-city-name').textContent = name;
   document.getElementById('kw-city-id').value = id;
   await loadWiki(id);
+  loadStadtbilder(id);
 }
 
 async function loadWiki(cityId) {
@@ -3373,13 +3536,13 @@ async function loadWiki(cityId) {
 
 function knowledgeCard(e) {
   return `<div class="knowledge-card ${e.on_cooldown ? 'on-cooldown' : ''}" data-id="${e.id}">
-    <div class="knowledge-card-name">${e.name}</div>
+    <div class="knowledge-card-name">${_esc(e.name)}</div>
     <div class="knowledge-card-meta">
-      <span class="badge badge-gray" style="font-size:10px;">${e.source_badge}</span>
+      <span class="badge badge-gray" style="font-size:10px;">${_esc(e.source_badge)}</span>
       <span style="color:${e.confidence >= 70 ? 'var(--success)' : e.confidence >= 40 ? 'var(--warning)' : 'var(--danger)'}"> ${e.confidence}%</span>
       ${e.on_cooldown ? '<span title="Cooldown aktiv"> ❄</span>' : ''}
     </div>
-    ${e.description ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${e.description}</div>` : ''}
+    ${e.description ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${_esc(e.description)}</div>` : ''}
     <div class="knowledge-card-actions">
       <button class="btn btn-xs btn-ghost" onclick="deleteKnowledge(${e.id})">✕</button>
     </div>
@@ -4020,10 +4183,10 @@ async function _loadCategoryList() {
       const inUseNote = c.active ? '' : `<span style="font-size:10px;color:var(--muted);margin-left:6px;">(inaktiv)</span>`;
       html += `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border-radius:7px;">
-          <input type="text" value="${c.emoji}" onchange="updateCatEmoji(${c.id},this.value)"
+          <input type="text" value="${_esc(c.emoji)}" onchange="updateCatEmoji(${c.id},this.value)"
             style="width:38px;font-size:16px;text-align:center;background:transparent;border:1px solid var(--border);border-radius:5px;padding:2px;cursor:pointer;">
-          <span style="font-size:13px;font-weight:600;flex:1;">${c.label}${inUseNote}
-            <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:4px;">(${c.key})</span>
+          <span style="font-size:13px;font-weight:600;flex:1;">${_esc(c.label)}${inUseNote}
+            <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:4px;">(${_esc(c.key)})</span>
           </span>
           <select onchange="updateCatGroup(${c.id},this.value)" style="font-size:11px;width:auto;padding:3px 6px;">
             <option value="seasonal" ${c.group==='seasonal'?'selected':''}>☀️</option>
@@ -4082,7 +4245,7 @@ function _refreshCategoryDropdowns() {
   sel.innerHTML = _allCategories
     .filter(c => c.active)
     .sort((a,b) => a.sort_order - b.sort_order)
-    .map(c => `<option value="${c.key}" ${c.key===cur?'selected':''}>${c.emoji} ${c.label}</option>`)
+    .map(c => `<option value="${_esc(c.key)}" ${c.key===cur?'selected':''}>${_esc(c.emoji)} ${_esc(c.label)}</option>`)
     .join('');
 
   const filterSel = document.getElementById('template-filter-cat');
@@ -4090,7 +4253,7 @@ function _refreshCategoryDropdowns() {
     const filterCur = filterSel.value;
     filterSel.innerHTML = '<option value="">Alle Kategorien</option>' +
       _allCategories.filter(c=>c.active).sort((a,b)=>a.sort_order-b.sort_order)
-        .map(c=>`<option value="${c.key}" data-group="${c.group}" ${c.key===filterCur?'selected':''}>${c.emoji} ${c.label}</option>`).join('');
+        .map(c=>`<option value="${_esc(c.key)}" data-group="${_esc(c.group)}" ${c.key===filterCur?'selected':''}>${_esc(c.emoji)} ${_esc(c.label)}</option>`).join('');
   }
 }
 
@@ -4880,11 +5043,11 @@ async function loadNews() {
   if(!items.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">Keine News</td></tr>'; return; }
   tbody.innerHTML = items.map(n => `
     <tr>
-      <td style="font-size:12px;">${n.city_name}</td>
-      <td><a href="${n.url}" target="_blank" style="color:var(--text);text-decoration:none;font-size:13px;">${n.headline}</a></td>
+      <td style="font-size:12px;">${_esc(n.city_name)}</td>
+      <td><a href="${_escUrl(n.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none;font-size:13px;">${_esc(n.headline)}</a></td>
       <td><span style="color:${n.meme_score_color};font-weight:700;">${n.meme_score ?? '—'}</span></td>
-      <td style="font-size:12px;color:var(--muted);">${n.suggested_template_name || '—'}</td>
-      <td style="font-size:11px;color:var(--muted);">${n.meme_reasoning || ''}</td>
+      <td style="font-size:12px;color:var(--muted);">${_esc(n.suggested_template_name || '—')}</td>
+      <td style="font-size:11px;color:var(--muted);">${_esc(n.meme_reasoning || '')}</td>
       <td>
         <div style="display:flex;gap:4px;">
           ${n.suggested_template_id && n.status!=='used' ? `<button class="btn btn-primary btn-xs" onclick="generateFromNews(${n.id})">⚡</button>` : ''}
@@ -4951,7 +5114,7 @@ async function viewSurvey(id) {
   el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Lade…</div>';
   openModal('modal-survey-result');
   // For now show a placeholder — answers come from the submitted form
-  el.innerHTML = `<div style="font-size:14px;margin-bottom:12px;">${survey?.city_name} — ${survey?.respondent || 'anonym'}</div>
+  el.innerHTML = `<div style="font-size:14px;margin-bottom:12px;">${_esc(survey?.city_name)} — ${_esc(survey?.respondent || 'anonym')}</div>
     <div style="color:var(--muted);font-size:13px;">Die Antworten werden aus der Datenbank geladen. Klicke "Ins Wiki importieren" um alle Antworten als City-Wiki-Einträge zu speichern.</div>`;
 }
 
@@ -4989,8 +5152,8 @@ async function loadTodos() {
     <div style="display:flex;align-items:start;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;" id="todo-${t.id}">
       <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo(${t.id},this.checked)" style="margin-top:2px;flex-shrink:0;">
       <div style="flex:1;">
-        <div style="font-size:13px;${t.done?'text-decoration:line-through;color:var(--muted);':''}">${catIcon[t.category]||'•'} ${t.text}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px;">${t.category}${t.priority?` · <span style="color:var(--warning);">Hoch</span>`:''}</div>
+        <div style="font-size:13px;${t.done?'text-decoration:line-through;color:var(--muted);':''}">${catIcon[t.category]||'•'} ${_esc(t.text)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">${_esc(t.category)}${t.priority?` · <span style="color:var(--warning);">Hoch</span>`:''}</div>
       </div>
       <button class="btn btn-xs" style="background:none;color:var(--muted);border:none;" onclick="deleteTodo(${t.id})">✕</button>
     </div>`;
@@ -5068,7 +5231,7 @@ async function loadUsers() {
   const el = document.getElementById('users-list');
   el.innerHTML = users.map(u=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
-      <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${u.username}</div><div style="font-size:11px;color:var(--muted);">${u.email||''}${u.last_login?' · zuletzt: '+u.last_login.substring(0,10):''}</div></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${_esc(u.username)}</div><div style="font-size:11px;color:var(--muted);">${_esc(u.email||'')}${u.last_login?' · zuletzt: '+u.last_login.substring(0,10):''}</div></div>
       <button class="btn btn-xs btn-ghost" onclick="deleteUser(${u.id})">Löschen</button>
     </div>`).join('');
 }
@@ -5230,7 +5393,7 @@ function hlRenderPreviews() {
         : `<img src="${src}">`;
       return `<div class="hl-thumb">${media}
         <button class="hl-thumb-rm" onclick="hlRemoveFile(${i})">✕</button>
-        <div class="hl-thumb-name">${f.name}</div>
+        <div class="hl-thumb-name">${_esc(f.name)}</div>
       </div>`;
     }).join('');
   }
@@ -5295,15 +5458,15 @@ function hlBuildScheduleGrid() {
   grid.innerHTML = _hlUploaded.map((item, i) => {
     const isImg = item.ftype !== 'video';
     const preview = isImg
-      ? `<img src="${item.url}" style="width:100%;height:100%;object-fit:cover;">`
-      : `<video src="${item.url}" style="width:100%;height:100%;object-fit:cover;"></video>`;
+      ? `<img src="${_esc(item.url)}" style="width:100%;height:100%;object-fit:cover;">`
+      : `<video src="${_esc(item.url)}" style="width:100%;height:100%;object-fit:cover;"></video>`;
     return `<div class="hl-srow" id="hl-srow-${i}">
       <div style="width:56px;height:56px;border-radius:8px;overflow:hidden;background:var(--surface2);flex-shrink:0;position:relative;">
         ${preview}
         <button onclick="hlDeleteItem(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:16px;height:16px;cursor:pointer;font-size:9px;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>
       <div style="flex:1;min-width:0;">
-        <input type="text" id="hl-title-${i}" value="${item.title||''}" placeholder="Titel…"
+        <input type="text" id="hl-title-${i}" value="${_esc(item.title||'')}" placeholder="Titel…"
                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:4px 8px;font-size:11px;margin-bottom:5px;">
         <div style="display:flex;gap:6px;align-items:center;">
           <input type="text" id="hl-cap-${i}" placeholder="Caption (optional)…"
@@ -5652,6 +5815,13 @@ function postQualitaet(item) {
   const namen = _postMeta(item).missing_vars;
   return Array.isArray(namen) ? namen.filter(n => String(n).trim()) : [];
 }
+// Stadtbilder stehen bewusst nicht in required_vars und tauchen darum nicht in
+// missing_vars auf. Der Server rechnet beim Lesen aus, welche Bilder der Stadt fehlen,
+// obwohl die Vorlage sie benutzt – das ist ein anderer Mangel als eine leere Textvariable.
+function postFehlendeStadtbilder(item) {
+  const namen = item && item.fehlende_stadtbilder;
+  return Array.isArray(namen) ? namen.filter(n => String(n).trim()) : [];
+}
 // Einzeiler unter dem Notizfeld: was die Warteschlange zu diesem Beitrag hinterlegt hat
 function _postMetaZeile(p) {
   const m = _postMeta(p);
@@ -5663,6 +5833,8 @@ function _postMetaZeile(p) {
     teile.push(`${m.rendered} von ${m.total} gerendert`);
   const fehlend = postQualitaet(p);
   if (fehlend.length) teile.push(`${fehlend.length} Variable${fehlend.length === 1 ? '' : 'n'} ohne Wert (${fehlend.join(', ')})`);
+  const bilder = postFehlendeStadtbilder(p);
+  if (bilder.length) teile.push(`${bilder.length} Stadtbild${bilder.length === 1 ? '' : 'er'} fehlt bei dieser Stadt (${bilder.join(', ')})`);
   if (m.fit_score !== null && m.fit_score !== undefined && m.fit_score !== '') teile.push('Fit ' + m.fit_score);
   if (m.warning) teile.push(String(m.warning));
   if (!teile.length) return '';
@@ -5680,6 +5852,13 @@ function _vorratMissingBadge(p) {
   return `<span class="badge badge-yellow" style="font-size:9px;cursor:pointer;"
     title="Ohne Wert: ${_esc(fehlend.join(', '))} – dort steht noch der Vorlagentext"
     onclick="event.stopPropagation();openVorratEdit(${p.id})">● Variablen fehlen</span>`;
+}
+function _vorratStadtbildBadge(p) {
+  const bilder = postFehlendeStadtbilder(p);
+  if (!bilder.length) return '';
+  return `<span class="badge badge-yellow" style="font-size:9px;cursor:pointer;"
+    title="Die Vorlage benutzt bild_${_esc(bilder.join(', bild_'))} – diese Stadt hat das Bild nicht. Nachtragen unter Städte &amp; Wiki → Bilder der Stadt."
+    onclick="event.stopPropagation();showPage('cities')">● Stadtbild fehlt</span>`;
 }
 
 function renderVorratGrid(data) {
@@ -5726,6 +5905,7 @@ function renderVorratGrid(data) {
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           ${dot}<span style="font-size:11px;color:${_esc(st.color)};">${_esc(st.label)}</span>
           ${_vorratMissingBadge(p)}
+          ${_vorratStadtbildBadge(p)}
           <div style="flex:1;"></div>
           ${slideCount > 1 ? `<button class="btn btn-xs btn-ghost" id="vslides-btn-${p.id}" onclick="toggleVorratSlides(${p.id})" title="Alle Slides anzeigen">Slides ${slidesOpen?'▼':'▶'}</button>` : ''}
           <button class="btn btn-xs btn-ghost" onclick="openVorratEdit(${p.id})" title="Bearbeiten">✏</button>
@@ -6300,11 +6480,11 @@ async function loadPerformance() {
   const topEl = document.getElementById('perf-top-posts');
   topEl.innerHTML = data.top_posts.length ? data.top_posts.map(p => `
     <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-      ${p.image_url ? `<img src="${p.image_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+      ${p.image_url ? `<img src="${_esc(p.image_url)}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
         `<div style="width:44px;height:44px;background:var(--surface2);border-radius:6px;flex-shrink:0;"></div>`}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${p.title||p.city_name}</div>
-        <div style="font-size:11px;color:var(--muted);">${p.city_name} · ${p.post_type}</div>
+        <div style="font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${_esc(p.title||p.city_name)}</div>
+        <div style="font-size:11px;color:var(--muted);">${_esc(p.city_name)} · ${_esc(p.post_type)}</div>
       </div>
       <div style="text-align:right;flex-shrink:0;">
         <div style="font-size:13px;font-weight:700;color:var(--accent);">❤ ${(p.perf_likes||0).toLocaleString()}</div>
@@ -6326,7 +6506,7 @@ async function loadPerformance() {
   const tmplEl = document.getElementById('perf-tmpl-stats');
   tmplEl.innerHTML = data.tmpl_stats.length ? data.tmpl_stats.slice(0,8).map(t => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-      <div style="flex:1;font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${t.template_name}</div>
+      <div style="flex:1;font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${_esc(t.template_name)}</div>
       <div style="font-size:11px;color:var(--muted);">${t.count}×</div>
       <div style="font-size:12px;color:var(--accent);font-weight:600;">Ø ${t.avg_likes} ❤</div>
     </div>`).join('') :
@@ -6815,13 +6995,13 @@ async function _buildTrendCityTabs() {
   const tabRow = document.getElementById('trend-city-tabs');
   const allBtn = `<button class="city-tab ${_trendCityId==='' ? 'active' : ''}" data-city-id="" onclick="setTrendCity(this,'')">Alle</button>`;
   const cityBtns = cities.map(c =>
-    `<button class="city-tab ${_trendCityId==c.id ? 'active' : ''}" data-city-id="${c.id}" onclick="setTrendCity(this,${c.id})" style="border-left:3px solid ${c.accent_color||'#3b82f6'}">${c.name}</button>`
+    `<button class="city-tab ${_trendCityId==c.id ? 'active' : ''}" data-city-id="${c.id}" onclick="setTrendCity(this,${c.id})" style="border-left:3px solid ${_esc(c.accent_color||'#3b82f6')}">${_esc(c.name)}</button>`
   ).join('');
   tabRow.innerHTML = allBtn + cityBtns;
 
   // Also populate manual modal city select
   const sel = document.getElementById('tm-city');
-  if (sel) sel.innerHTML = '<option value="">Überregional</option>' + cities.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  if (sel) sel.innerHTML = '<option value="">Überregional</option>' + cities.map(c => `<option value="${c.id}">${_esc(c.name)}</option>`).join('');
 }
 
 function setTrendCity(btn, cityId) {
@@ -6870,8 +7050,8 @@ function _renderTrending(allTopics) {
     <div class="trend-city-block">
       <div class="trend-city-header">
         <div class="trend-city-name">
-          <span class="trend-city-dot" style="background:${g.color}"></span>
-          ${g.name}
+          <span class="trend-city-dot" style="background:${_esc(g.color)}"></span>
+          ${_esc(g.name)}
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           ${g.id ? `<span style="font-size:11px;color:var(--muted);" id="trend-refresh-ts-${g.id}"></span>
@@ -6959,7 +7139,7 @@ async function openTrendIdea(topicId) {
 async function _fetchTrendIdea(topicId, bodyEl) {
   bodyEl.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>';
   const r = await fetch(`/api/trending/${topicId}/idea`, {method:'POST', headers: CSRF_H}).then(r => r.json());
-  if (r.error) { bodyEl.innerHTML = `<div class="empty"><p>${r.error}</p></div>`; return; }
+  if (r.error) { bodyEl.innerHTML = `<div class="empty"><p>${_esc(r.error)}</p></div>`; return; }
   const idx = _trendTopics.findIndex(t => t.id === topicId);
   if (idx >= 0) _trendTopics[idx] = r.topic;
   _showIdeaInModal(r.topic.meme_idea, bodyEl);
@@ -7042,7 +7222,7 @@ async function loadRcCityFilter() {
   const sel = document.getElementById('rc-city-filter');
   if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">Alle Städte</option>' + cities.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  sel.innerHTML = '<option value="">Alle Städte</option>' + cities.map(c => `<option value="${c.id}">${_esc(c.name)}</option>`).join('');
   sel.value = cur;
 }
 
@@ -7469,8 +7649,8 @@ function renderMarktTable(data) {
   tbody.innerHTML = data.map(c => {
     return `<tr class="markt-row${_marktSelectedId===c.id?' selected':''}" onclick="selectMarktCity(${c.id})">
       <td style="color:var(--muted);font-size:11px;">${c.rank}</td>
-      <td><strong>${c.name}</strong></td>
-      <td style="color:var(--muted);font-size:12px;">${c.state||''}</td>
+      <td><strong>${_esc(c.name)}</strong></td>
+      <td style="color:var(--muted);font-size:12px;">${_esc(c.state||'')}</td>
       <td style="font-size:12px;">${c.population?(c.population/1000).toFixed(0)+'k':'—'}</td>
       <td>
         <select class="status-select" onchange="updateMarktStatus(${c.id},this.value)" onclick="event.stopPropagation()">
@@ -7496,8 +7676,8 @@ async function selectMarktCity(id) {
   const panel = document.getElementById('markt-detail-panel');
   panel.innerHTML = `
     <div style="padding:16px;">
-      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">${city.name}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${city.state||''} · ${city.population?(city.population/1000).toFixed(0)+'k Einwohner':''} · Rang #${city.rank}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">${_esc(city.name)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${_esc(city.state||'')} · ${city.population?(city.population/1000).toFixed(0)+'k Einwohner':''} · Rang #${city.rank}</div>
       <label style="font-size:11px;color:var(--muted2);">STATUS</label>
       <select class="status-select" style="width:100%;margin-bottom:12px;" onchange="updateMarktStatus(${city.id},this.value)">
         ${Object.entries(MARKT_STATUS_LABELS).map(([v,s])=>`<option value="${v}"${city.status===v?' selected':''}>${s.label}</option>`).join('')}
@@ -7516,19 +7696,19 @@ function renderPageCard(p) {
   return `<div class="page-card" id="page-card-${p.id}" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
       <div>
-        <div style="font-size:13px;font-weight:600;">${p.handle||p.instagram_url}</div>
+        <div style="font-size:13px;font-weight:600;">${_esc(p.handle||p.instagram_url)}</div>
         ${p.followers?`<div style="font-size:11px;color:var(--muted);">${(p.followers/1000).toFixed(1)}k Follower</div>`:''}
         ${p.price_ask?`<div style="font-size:11px;color:var(--accent);">~${p.price_ask}€</div>`:''}
       </div>
       <button class="btn btn-xs" style="background:none;color:var(--muted);padding:0 4px;" onclick="deleteMarktPage(${p.id})">✕</button>
     </div>
-    ${p.contact_notes?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">${p.contact_notes}</div>`:''}
+    ${p.contact_notes?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">${_esc(p.contact_notes)}</div>`:''}
     <div style="display:flex;flex-wrap:wrap;gap:4px;">
       ${Object.entries(CONTACT_STATUS_LABELS).map(([v,s])=>
         `<button class="btn btn-xs ${p.contact_status===v?'btn-primary':'btn-ghost'}" onclick="updateContactStatus(${p.id},'${v}')">${s.label}</button>`
       ).join('')}
     </div>
-    ${p.instagram_url?`<a href="${p.instagram_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:6px;">Link öffnen ↗</a>`:''}
+    ${p.instagram_url?`<a href="${_esc(p.instagram_url)}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:6px;">Link öffnen ↗</a>`:''}
   </div>`;
 }
 
@@ -7733,7 +7913,7 @@ async function loadInspoPosts() {
         :`<div class="inspo-img" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Kein Bild</div>`}
       <div class="inspo-body">
         <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap;">
-          <span style="font-size:11px;color:var(--accent);">${p.username||'Manuell'}</span>
+          <span style="font-size:11px;color:var(--accent);">${_esc(p.username||'Manuell')}</span>
           ${aiTag}
         </div>
         ${p.ai_reasoning?`<div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-style:italic;">${_esc(p.ai_reasoning)}</div>`:''}
@@ -7962,7 +8142,7 @@ async function loadPerformance() {
   const topEl = document.getElementById('perf-top-posts');
   topEl.innerHTML = data.top_posts.length ? data.top_posts.map(p => `
     <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-      ${p.image_url ? `<img src="${p.image_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+      ${p.image_url ? `<img src="${_esc(p.image_url)}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
         `<div style="width:44px;height:44px;background:var(--surface2);border-radius:6px;flex-shrink:0;"></div>`}
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${_esc(p.title||p.city_name)}</div>
@@ -9066,6 +9246,327 @@ async function _loadWissenBadge() {
     badge.style.display = pending > 0 ? '' : 'none';
     badge.textContent   = pending > 0 ? pending : '';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STUDIO-ANBINDUNG: neue Vorlage, Bilder der Stadt, Bild-Bibliothek
+// ═══════════════════════════════════════════════════════════════════════════════
+// Alle Routen liegen im Studio-Blueprint (studio_bp). Schreibende Aufrufe brauchen den
+// CSRF-Kopf; bei multipart/form-data darf KEIN Content-Type gesetzt werden, sonst fehlt
+// die Grenzmarke des Formulars.
+
+const NV_GROESSEN = {feed: [1080, 1350], quadrat: [1080, 1080], story: [1080, 1920]};
+
+async function _apiForm(method, url, formData) {
+  let r;
+  try { r = await fetch(url, {method, headers: CSRF_H, body: formData}); }
+  catch (e) { return {error: 'Netzwerkfehler – Server nicht erreichbar'}; }
+  if (r.status === 401 || (r.redirected && /\/login(\?|$)/.test(r.url))) { location.href = '/login'; return {error: 'Nicht angemeldet'}; }
+  let data = null;
+  if ((r.headers.get('Content-Type') || '').includes('json')) { try { data = await r.json(); } catch (e) { data = null; } }
+  if (data === null) return {error: r.ok ? 'Unerwartete Antwort vom Server' : ('HTTP ' + r.status)};
+  if (!r.ok && !data.error) return {error: 'HTTP ' + r.status};
+  return data;
+}
+
+// ── Neue Vorlage von Null ─────────────────────────────────────────────────────
+function openNeueVorlage() {
+  document.getElementById('nv-name').value = '';
+  document.getElementById('nv-preset').value = 'feed';
+  document.getElementById('nv-error').textContent = '';
+  document.getElementById('nv-hinweis').textContent = '';
+  document.getElementById('nv-bg-art').value = 'farbe';
+  nvGroesseWechsel();
+  nvHintergrundWechsel();
+  openModal('modal-neue-vorlage');
+}
+
+function nvGroesseWechsel() {
+  const wahl = document.getElementById('nv-preset').value;
+  const frei = wahl === 'frei';
+  document.getElementById('nv-frei-row').style.display = frei ? '' : 'none';
+  if (!frei && NV_GROESSEN[wahl]) {
+    document.getElementById('nv-width').value = NV_GROESSEN[wahl][0];
+    document.getElementById('nv-height').value = NV_GROESSEN[wahl][1];
+  }
+}
+
+function nvHintergrundWechsel() {
+  const art = document.getElementById('nv-bg-art').value;
+  document.getElementById('nv-bg-c1').style.display = art === 'keiner' ? 'none' : '';
+  document.getElementById('nv-bg-c2').style.display = art === 'verlauf' ? '' : 'none';
+  document.getElementById('nv-bg-winkel-label').style.display = art === 'verlauf' ? '' : 'none';
+  nvVorschau();
+}
+
+function nvVorschau() {
+  const art = document.getElementById('nv-bg-art').value;
+  const c1 = document.getElementById('nv-bg-c1').value;
+  const c2 = document.getElementById('nv-bg-c2').value;
+  const winkel = parseInt(document.getElementById('nv-bg-winkel').value, 10) || 0;
+  const box = document.getElementById('nv-bg-vorschau');
+  if (art === 'keiner') box.style.background = '#ffffff';
+  else if (art === 'verlauf') box.style.background = `linear-gradient(${winkel}deg, ${c1}, ${c2})`;
+  else box.style.background = c1;
+}
+
+function nvHintergrundWert() {
+  const art = document.getElementById('nv-bg-art').value;
+  if (art === 'keiner') return null;
+  const c1 = document.getElementById('nv-bg-c1').value;
+  if (art === 'farbe') return c1;
+  const c2 = document.getElementById('nv-bg-c2').value;
+  let winkel = parseInt(document.getElementById('nv-bg-winkel').value, 10);
+  if (!Number.isFinite(winkel)) winkel = 0;
+  winkel = Math.min(360, Math.max(0, winkel));
+  return {type: 'linear', angle: winkel, stops: [{at: 0, color: c1}, {at: 1, color: c2}]};
+}
+
+async function nvAnlegen() {
+  const btn = document.getElementById('nv-btn');
+  const fehler = document.getElementById('nv-error');
+  const hinweis = document.getElementById('nv-hinweis');
+  fehler.textContent = ''; hinweis.textContent = '';
+  const wahl = document.getElementById('nv-preset').value;
+  const body = {
+    name: document.getElementById('nv-name').value.trim(),
+    category: document.getElementById('nv-category').value,
+    background: nvHintergrundWert(),
+  };
+  if (wahl === 'frei') {
+    body.width = parseInt(document.getElementById('nv-width').value, 10);
+    body.height = parseInt(document.getElementById('nv-height').value, 10);
+    if (!Number.isFinite(body.width) || !Number.isFinite(body.height)) {
+      fehler.textContent = 'Breite und Höhe müssen Zahlen sein'; return;
+    }
+  } else {
+    body.preset = wahl;
+  }
+  btn.disabled = true;
+  const alterText = btn.textContent;
+  btn.textContent = 'Wird angelegt…';
+  try {
+    const r = await api('POST', '/api/studio/neu', body);
+    if (r.error) {
+      fehler.textContent = r.error === 'HTTP 404'
+        ? 'Die Route /api/studio/neu gibt es hier noch nicht – Studio-Modul nicht geladen.'
+        : r.error;
+      return;
+    }
+    const url = r.studio_url || ('/studio/' + r.id);
+    const reiter = window.open(url, '_blank');
+    if (!reiter) hinweis.innerHTML = `Vorlage angelegt. <a href="${_esc(url)}" target="_blank" style="color:var(--accent);">Im Studio öffnen →</a>`;
+    else closeModal('modal-neue-vorlage');
+    toast('Vorlage angelegt', 'success');
+    loadTemplates();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = alterText;
+  }
+}
+
+// ── Bilder der Stadt ──────────────────────────────────────────────────────────
+let _stadtbildKeys = [];
+// Namen/Schlüssel nie durch einen onclick-Text schicken: _esc() macht aus einem Apostroph
+// &#39;, der Browser dekodiert das im Attribut zurück – und der JS-Aufruf bricht.
+let _stadtbildAssets = [];
+let _bibliothekAssets = [];
+
+async function loadStadtbilder(cityId) {
+  const id = cityId || _selectedCityId;
+  const grid = document.getElementById('stadtbilder-grid');
+  if (!grid) return;
+  if (!id) { grid.innerHTML = ''; return; }
+  grid.innerHTML = '<div style="font-size:12px;color:var(--muted);">Wird geladen…</div>';
+  const r = await api('GET', `/api/studio/cities/${id}/assets`);
+  if (r.error) {
+    grid.innerHTML = `<div style="font-size:12px;color:var(--danger);">${_esc(r.error)}</div>`;
+    return;
+  }
+  // Zwischenzeitlicher Stadtwechsel: eine späte Antwort darf die neue Stadt nicht überschreiben
+  if (String(_selectedCityId) !== String(id)) return;
+  const assets = Array.isArray(r.assets) ? r.assets : [];
+  if (Array.isArray(r.known_keys)) _stadtbildKeys = r.known_keys;
+  _stadtbildAssets = assets;
+  grid.innerHTML = assets.length
+    ? assets.map(a => stadtbildKachel(a, id)).join('')
+    : '<div style="font-size:12px;color:var(--muted);">Noch keine Bilder für diese Stadt.</div>';
+  loadStadtbildUebersicht();
+}
+
+function stadtbildKachel(a, cityId) {
+  const bild = a.vorschau_url || a.datei_url || '';
+  return `<div style="width:132px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface2);">
+    <div style="height:96px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(var(--surface) 0% 25%, var(--surface2) 0% 50%) 50% / 14px 14px;">
+      ${bild ? `<img src="${_esc(bild)}" alt="" style="max-width:100%;max-height:96px;object-fit:contain;">`
+             : '<span style="font-size:11px;color:var(--muted);">Kein Bild</span>'}
+    </div>
+    <div style="padding:6px 8px;">
+      <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(a.name || a.key)}">${_esc(a.name || a.key)}</div>
+      <div style="font-size:10px;color:var(--muted);font-family:monospace;">${_esc(a.var || ('bild_' + a.key))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+        <span style="font-size:10px;color:var(--muted);">${_esc(a.kind || '')}</span>
+        <button class="btn btn-ghost btn-xs" onclick="stadtbildLoeschen(${cityId}, ${a.id})" title="Bild entfernen">✕</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function loadStadtbildUebersicht() {
+  const box = document.getElementById('stadtbilder-uebersicht');
+  if (!box) return;
+  const r = await api('GET', '/api/studio/city-asset-keys');
+  if (r.error) { box.innerHTML = ''; return; }
+  const keys = Array.isArray(r.keys) ? r.keys : [];
+  if (Array.isArray(r.keys)) _stadtbildKeys = keys;
+  if (!keys.length) { box.innerHTML = ''; return; }
+  const fehlend = r.missing || {};
+  const zeilen = keys.map(k => {
+    const offen = Array.isArray(fehlend[k.key]) ? fehlend[k.key] : [];
+    const namen = offen.map(c => c.name).join(', ');
+    const farbe = k.complete ? 'var(--success)' : 'var(--warning)';
+    return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:3px 0;">
+      <span style="width:8px;height:8px;border-radius:50%;background:${farbe};flex-shrink:0;"></span>
+      <span style="min-width:110px;font-family:monospace;">${_esc(k.var || ('bild_' + k.key))}</span>
+      <span style="color:var(--muted);">${k.cities} von ${k.total_cities} Städten</span>
+      ${namen ? `<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Fehlt bei: ${_esc(namen)}">fehlt bei ${_esc(namen)}</span>` : ''}
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div style="font-size:12px;font-weight:600;margin-bottom:6px;">Vollständigkeit über alle Städte</div>${zeilen}`;
+}
+
+function openStadtbildModal() {
+  if (!_selectedCityId) { toast('Erst eine Stadt auswählen', 'error'); return; }
+  document.getElementById('sb-key').value = '';
+  document.getElementById('sb-name').value = '';
+  document.getElementById('sb-kind').value = 'sonstige';
+  document.getElementById('sb-file').value = '';
+  document.getElementById('sb-error').textContent = '';
+  document.getElementById('sb-var-vorschau').textContent = 'bild_…';
+  const stadt = document.getElementById('wiki-city-name')?.textContent || '';
+  document.getElementById('sb-stadt-zeile').textContent = stadt ? `Bild für ${stadt}` : '';
+  document.getElementById('sb-key-list').innerHTML =
+    (_stadtbildKeys || []).map(k => `<option value="${_esc(k.key)}">`).join('');
+  openModal('modal-stadtbild');
+}
+
+function _sbSchluesselSaeubern(roh) {
+  let v = String(roh || '').trim().toLowerCase();
+  v = v.replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+  v = v.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (v.startsWith('bild_')) v = v.slice(5);
+  return v.slice(0, 40);
+}
+
+function sbVarVorschau() {
+  const key = _sbSchluesselSaeubern(document.getElementById('sb-key').value);
+  document.getElementById('sb-var-vorschau').textContent = key ? ('bild_' + key) : 'bild_…';
+}
+
+async function stadtbildHochladen() {
+  const fehler = document.getElementById('sb-error');
+  fehler.textContent = '';
+  const key = _sbSchluesselSaeubern(document.getElementById('sb-key').value);
+  if (!key) { fehler.textContent = 'Bitte einen Schlüssel angeben (a–z, 0–9, _)'; return; }
+  const datei = document.getElementById('sb-file').files[0];
+  if (!datei) { fehler.textContent = 'Bitte eine Bilddatei wählen'; return; }
+  const fd = new FormData();
+  fd.append('key', key);
+  fd.append('name', document.getElementById('sb-name').value.trim());
+  fd.append('kind', document.getElementById('sb-kind').value);
+  fd.append('file', datei);
+  const btn = document.getElementById('sb-btn');
+  btn.disabled = true;
+  const alterText = btn.textContent;
+  btn.textContent = 'Wird gespeichert…';
+  try {
+    const r = await _apiForm('POST', `/api/studio/cities/${_selectedCityId}/assets`, fd);
+    if (r.error) { fehler.textContent = r.error; return; }
+    closeModal('modal-stadtbild');
+    toast('Stadtbild gespeichert', 'success');
+    loadStadtbilder();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = alterText;
+  }
+}
+
+async function stadtbildLoeschen(cityId, assetId) {
+  const key = (_stadtbildAssets.find(x => x.id === assetId) || {}).key || '';
+  if (!confirm(`Bild „${key}" wirklich entfernen? Vorlagen mit bild_${key} lassen es dann bei dieser Stadt weg.`)) return;
+  const r = await api('DELETE', `/api/studio/cities/${cityId}/assets/${assetId}`);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Stadtbild entfernt', 'success');
+  loadStadtbilder(cityId);
+}
+
+// ── Bild-Bibliothek (Aufkleber, stadtunabhängig) ──────────────────────────────
+async function loadBildBibliothek() {
+  const grid = document.getElementById('bb-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="font-size:12px;color:var(--muted);">Wird geladen…</div>';
+  const r = await api('GET', '/api/studio/assets');
+  if (r.error) {
+    grid.innerHTML = `<div style="font-size:12px;color:var(--danger);">${_esc(r.error)}</div>`;
+    return;
+  }
+  const assets = Array.isArray(r.assets) ? r.assets : [];
+  _bibliothekAssets = assets;
+  grid.innerHTML = assets.length
+    ? assets.map(a => bildBibliothekKachel(a)).join('')
+    : '<div style="font-size:12px;color:var(--muted);">Noch keine Bilder in der Bibliothek.</div>';
+}
+
+function bildBibliothekKachel(a) {
+  const bild = a.vorschau_url || a.datei_url || '';
+  return `<div style="width:132px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface2);">
+    <div style="height:96px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(var(--surface) 0% 25%, var(--surface2) 0% 50%) 50% / 14px 14px;">
+      ${bild ? `<img src="${_esc(bild)}" alt="" style="max-width:100%;max-height:96px;object-fit:contain;">`
+             : '<span style="font-size:11px;color:var(--muted);">Kein Bild</span>'}
+    </div>
+    <div style="padding:6px 8px;">
+      <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(a.name)}">${_esc(a.name)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+        <span style="font-size:10px;color:var(--muted);">${_esc(a.kind || '')}</span>
+        <button class="btn btn-ghost btn-xs" onclick="bildBibliothekLoeschen(${a.id})" title="Bild löschen">✕</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function bildBibliothekHochladen() {
+  const fehler = document.getElementById('bb-error');
+  fehler.textContent = '';
+  const datei = document.getElementById('bb-file').files[0];
+  if (!datei) { fehler.textContent = 'Bitte eine Bilddatei wählen'; return; }
+  const fd = new FormData();
+  fd.append('file', datei);
+  fd.append('name', document.getElementById('bb-name').value.trim());
+  fd.append('kind', document.getElementById('bb-kind').value);
+  const btn = document.getElementById('bb-upload-btn');
+  btn.disabled = true;
+  const alterText = btn.textContent;
+  btn.textContent = 'Läuft…';
+  try {
+    const r = await _apiForm('POST', '/api/studio/assets', fd);
+    if (r.error) { fehler.textContent = r.error; return; }
+    document.getElementById('bb-file').value = '';
+    document.getElementById('bb-name').value = '';
+    toast('Bild in die Bibliothek gelegt', 'success');
+    loadBildBibliothek();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = alterText;
+  }
+}
+
+async function bildBibliothekLoeschen(id) {
+  const name = (_bibliothekAssets.find(x => x.id === id) || {}).name || 'Dieses Bild';
+  if (!confirm(`„${name}" wirklich löschen? Vorlagen, die dieses Bild benutzen, zeigen es danach nicht mehr.`)) return;
+  const r = await api('DELETE', `/api/studio/assets/${id}`);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Bild gelöscht', 'success');
+  loadBildBibliothek();
 }
 
 </script>

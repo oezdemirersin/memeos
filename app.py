@@ -2326,7 +2326,9 @@ def _ki_system_blocks(city, grundtext):
 
 
 def _template_prompt_teil(template, mit_id=False):
-    required_vars = template.get_required_vars()
+    # bild_-Variablen kommen aus den Bildern der Stadt – die KI soll dafür keine
+    # Dateinamen erfinden und keine Token dafür ausgeben.
+    required_vars = [v for v in template.get_required_vars() if not _ist_stadtbild_var(v)]
     vars_str = ', '.join(required_vars) if required_vars else 'keine'
     kopf = f"Template-ID {template.id}: {template.name}" if mit_id else f"Meme-Template: {template.name}"
     return (f"{kopf}\n"
@@ -2342,25 +2344,38 @@ def _ki_antwort_zu_ergebnis(data, template, city):
     vars_dict = {str(k): str(v) for k, v in vars_dict.items() if v is not None}
     if 'city_name' in required_vars and not vars_dict.get('city_name'):
         vars_dict['city_name'] = city.name
+    # Stadtbilder kommen aus der Bilderverwaltung der Stadt, nicht aus der KI. Sie gehören
+    # in genau dieses Dict: damit rendert die Warteschlange, und daraus baut sie die
+    # Metadaten des Beitrags. Fehlt der Stadt ein Bild, sagt das die Warnung.
+    fehlend = _stadtbilder_einsetzen(city, template, vars_dict)
     try:
         fit = max(0, min(100, int(data.get('fit_score'))))
     except (TypeError, ValueError):
         fit = None
-    return {
+    ergebnis = {
         'fit_score': fit,
         'reasoning': str(data.get('reasoning') or '')[:500],
         'vars': vars_dict,
         'brief': str(data.get('brief') or '')[:1000],
     }
+    warnung = _stadtbild_warnung(fehlend)
+    if warnung:
+        ergebnis['warning'] = warnung
+    return ergebnis
 
 
 def _ki_ohne_schluessel(city, template):
+    vars_dict = {v: city.name for v in template.get_required_vars() if v == 'city_name'}
+    fehlend = _stadtbilder_einsetzen(city, template, vars_dict)
+    warnung = 'Kein Anthropic-Key: nur Stadtname und Stadtbilder eingesetzt'
+    if fehlend:
+        warnung += ' | ' + _stadtbild_warnung(fehlend)
     return {
         'fit_score': None,
         'reasoning': 'Kein Anthropic-Key',
-        'vars': {v: city.name for v in template.get_required_vars() if v == 'city_name'},
+        'vars': vars_dict,
         'brief': '',
-        'warning': 'Kein Anthropic-Key: nur Stadtname eingesetzt',
+        'warning': warnung,
     }
 
 
@@ -2680,6 +2695,125 @@ def _city_brand(city):
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# STADTBILDER (CityAsset) im Massenlauf
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ein Bild-Element mit einem var, das mit 'bild_' beginnt, bekommt seinen Wert nicht von der
+# KI, sondern aus den Bildern der Stadt: 'bild_wappen' zieht das CityAsset mit key='wappen'.
+# Aufgelöst wird das in studio_bp.stadt_bild_werte(city); hier wird es in den Massenlauf
+# eingehängt. Wichtig ist der Zeitpunkt: die Werte stehen schon im KI-Ergebnis, also in genau
+# dem Dict, mit dem render_queue rendert UND aus dem es die Metadaten des Beitrags baut.
+# Verwaltet werden die Bilder auf der Seite „Städte & Wiki“, Abschnitt „Bilder der Stadt“.
+
+STADTBILD_PRAEFIX = getattr(_models, 'CITY_ASSET_VAR_PREFIX', 'bild_')
+
+
+def _ist_stadtbild_var(name):
+    """True für 'bild_wappen' & Co."""
+    s = str(name or '')
+    return s.startswith(STADTBILD_PRAEFIX) and len(s) > len(STADTBILD_PRAEFIX)
+
+
+def _stadtbild_werte(city):
+    """{'bild_x': Dateiname oder URL} für alle Bilder dieser Stadt.
+    Leer, solange das Studio-Modul nicht geladen ist – ein fehlendes Modul darf den
+    Massenlauf nicht anhalten."""
+    if city is None:
+        return {}
+    try:
+        import studio_bp
+        fn = getattr(studio_bp, 'stadt_bild_werte', None)
+        return (fn(city) or {}) if callable(fn) else {}
+    except Exception as ex:
+        log.warning(f'Stadtbilder von {getattr(city, "name", "?")} nicht lesbar: {ex}')
+        return {}
+
+
+def _template_stadtbild_vars(template):
+    """bild_-Variablen, die diese Vorlage benutzt (var, only_if, skip_if).
+    Sie stehen bewusst NICHT in required_vars – sonst meldete die Warteschlange jedes
+    optionale Stadtbild wie eine leere Textvariable. Darum hier direkt aus der Config."""
+    namen = []
+    if template is None:
+        return namen
+    try:
+        cfg = json.loads(template.pil_config or '{}')
+    except Exception:
+        return namen
+    elemente = (cfg or {}).get('elements')
+    if not isinstance(elemente, list):
+        return namen
+    for el in elemente:
+        if not isinstance(el, dict):
+            continue
+        for feld in ('var', 'only_if', 'skip_if'):
+            name = str(el.get(feld) or '').strip()
+            if _ist_stadtbild_var(name) and name not in namen:
+                namen.append(name)
+    return namen
+
+
+def _stadtbilder_einsetzen(city, template, vars_dict, werte=None):
+    """Die bild_-Variablen der Vorlage aus den Bildern der Stadt füllen.
+    Schon gesetzte, nicht leere Werte bleiben stehen (Studio-Vorschau darf von Hand setzen).
+    Rückgabe: die Variablen, für die diese Stadt kein Bild hat."""
+    if not isinstance(vars_dict, dict):
+        return []
+    gebraucht = _template_stadtbild_vars(template)
+    if not gebraucht:
+        return []
+    vorhanden = _stadtbild_werte(city) if werte is None else werte
+    fehlend = []
+    for name in gebraucht:
+        if str(vars_dict.get(name) or '').strip():
+            continue
+        wert = vorhanden.get(name)
+        if wert:
+            vars_dict[name] = wert
+        else:
+            fehlend.append(name)
+    return fehlend
+
+
+def _stadtbild_warnung(fehlend):
+    """Ein Satz für die Qualitätsmeldung der Warteschlange – fehlende Stadtbilder fallen
+    im fertigen Bild als leere Fläche auf, genau wie eine Variable ohne Wert."""
+    schluessel = ', '.join(str(n)[len(STADTBILD_PRAEFIX):] for n in fehlend or [])
+    if not schluessel:
+        return ''
+    if len(fehlend) == 1:
+        return f'Stadtbild fehlt: {schluessel}'
+    return f'{len(fehlend)} Stadtbilder fehlen: {schluessel}'
+
+
+def _fehlende_stadtbilder(template, city, werte_cache=None):
+    """Schlüssel der Stadtbilder, die diese Vorlage braucht und die dieser Stadt fehlen.
+    werte_cache ({city_id: werte}) spart bei Listen eine Abfrage je Beitrag."""
+    gebraucht = _template_stadtbild_vars(template)
+    if not gebraucht or city is None:
+        return []
+    if werte_cache is None:
+        vorhanden = _stadtbild_werte(city)
+    else:
+        if city.id not in werte_cache:
+            werte_cache[city.id] = _stadtbild_werte(city)
+        vorhanden = werte_cache[city.id]
+    return [str(n)[len(STADTBILD_PRAEFIX):] for n in gebraucht if not vorhanden.get(n)]
+
+
+def _config_ohne_hintergrundbild_moeglich(config):
+    """Trägt die Config auch ganz ohne Hintergrundbild? Das ist der Fall, sobald canvas
+    eine echte Größe hat („Neu erstellen“ im Studio) – sonst bleibt es beim alten Verhalten,
+    damit eine Vorlage mit verlorenem Hintergrund weiter als Fehler auffällt."""
+    canvas = (config or {}).get('canvas')
+    if not isinstance(canvas, dict):
+        return False
+    try:
+        return int(float(canvas.get('width') or 0)) > 0 and int(float(canvas.get('height') or 0)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _pil_render(template, vars_dict, city=None):
     """Rendert ein Template lokal mit Pillow. Delegiert an memeos_render (Phase B, Element-Renderer
     mit text/image/cover/rect, brand:-Farben); ohne das Modul greift die alte Implementierung.
@@ -2687,14 +2821,21 @@ def _pil_render(template, vars_dict, city=None):
     if memeos_render is None:
         return _pil_render_legacy(template, vars_dict)
     src_path = _template_bg_path(template)
-    if not src_path:
-        return None
     try:
         config = json.loads(template.pil_config or '{}')
     except Exception:
         config = {}
+    # Von Null gebaute Vorlagen haben kein Hintergrundbild, sondern nur canvas
+    # (Größe + Farbe/Verlauf) – die dürfen hier nicht als „kein Hintergrund“ scheitern.
+    if not src_path and not _config_ohne_hintergrundbild_moeglich(config):
+        return None
+    werte = dict(vars_dict or {})
+    # Sicherheitsnetz: ruft jemand direkt (ohne KI-Ergebnis) mit einer Stadt, kommen die
+    # Stadtbilder trotzdem an. Der Normalweg füllt sie schon im KI-Ergebnis.
+    if city is not None:
+        _stadtbilder_einsetzen(city, template, werte)
     try:
-        return memeos_render.render(src_path, config, vars_dict or {},
+        return memeos_render.render(src_path, config, werte,
                                     brand=_city_brand(city) if city else None)
     except FileNotFoundError as ex:
         log.warning(f'PIL Render Template {template.id}: {ex}')
@@ -5199,6 +5340,27 @@ def api_cloudinary_migrate():
 # VORRAT API
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _vorrat_post_dict(post, werte_cache=None):
+    """Beitrag als Dict plus 'fehlende_stadtbilder'.
+
+    Stadtbilder stehen bewusst nicht in required_vars, tauchen also nicht in missing_vars
+    auf. Ohne diesen Zusatz sähe man einem Beitrag nicht an, dass seine Vorlage ein
+    Stadtbild braucht, das diese Stadt nicht hat. Die Angabe wird beim Lesen berechnet,
+    ist also aktuell, sobald das Bild nachgetragen wurde."""
+    d = post.to_dict()
+    try:
+        d['fehlende_stadtbilder'] = _fehlende_stadtbilder(post.template, post.city, werte_cache)
+    except Exception as ex:
+        log.warning(f'Fehlende Stadtbilder für Beitrag {post.id} nicht ermittelbar: {ex}')
+        d['fehlende_stadtbilder'] = []
+    return d
+
+
+def _vorrat_items(posts):
+    cache = {}
+    return [_vorrat_post_dict(p, cache) for p in posts]
+
+
 @app.route('/api/vorrat', methods=['GET'])
 @login_required
 def api_vorrat_list():
@@ -5230,7 +5392,7 @@ def api_vorrat_list():
             counts[s] = c
 
     return jsonify({
-        'items':    [p.to_dict() for p in posts],
+        'items':    _vorrat_items(posts),
         'total':    total,
         'page':     page,
         'per_page': per_page,
@@ -5275,7 +5437,7 @@ def api_vorrat_item(post_id):
         db.session.commit()
         return jsonify({'ok': True})
     if request.method == 'GET':
-        return jsonify(p.to_dict())
+        return jsonify(_vorrat_post_dict(p))
     d = request.json or {}
     for f in ['title','image_url','caption','hashtags','post_type','status',
               'perf_likes','perf_comments','perf_saves','perf_reach','perf_impressions']:

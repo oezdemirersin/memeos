@@ -2,39 +2,65 @@
 """
 memeos_render – lokaler PIL-Renderer für Meme-Templates (ohne Canva, ohne app-Import).
 
-Vertrag (siehe Integrationsnotiz scratchpad/integration/renderer.md):
+Vertrag (Element-Spezifikation v3):
     list_fonts()                                  -> [{'key','label','path','source'}]
     resolve_font_path(name_or_key, brand=None)    -> Pfad (tolerant, Fallback anton)
     font_key_for(name)                            -> (key, exact: bool)
     validate_config(config)                       -> Liste von Fehlertexten (leer = ok)
     render(bg_path, config, values, brand=None)   -> PNG-Bytes (RGB)
     measure_text_box(text, font_key, size, max_width) -> (Zeilen, Höhe)
+    text_metrics(text, el, canvas_groesse, brand=None) -> {'lines','size','width','height', ...}
+    element_defaults(typ, shape=None)             -> Standardwerte für ein neues Element
+    fill_flaeche(groesse, farbwert, brand=None)   -> RGBA-Bild (Farbe ODER Verlauf)
     sample_values_placeholder(var)                -> '[var]'
+    Konstanten: ELEMENT_TYPES, SHAPES, BLEND_MODES, FIT_MODES, IMAGE_FITS, TEXT_FITS,
+                MASKS, ALIGNS, VALIGNS
 
 Config-Format:
-    {"canvas": {"width": W, "height": H},          # optional, sonst Größe des Hintergrunds
-     "elements": [ {...}, ... ]}                    # Reihenfolge = Zeichenreihenfolge
+    {"canvas": {"width": W, "height": H, "background": <Farbe|Verlauf|null>},
+     "elements": [ {...}, ... ]}                    # Reihenfolge = Zeichenreihenfolge, letztes oben
 
-Elemente (Koordinaten in Canvas-Pixeln):
-    gemeinsam: id, type ('text'|'image'|'cover'|'rect'), x, y, width, height,
-               opacity (0-1, default 1), hidden (bool)
-    text:  var ODER text (fester Text, {var} wird ersetzt), font (Key/Name/'brand'),
-           max_size, min_size, color, stroke, stroke_width,
-           shadow {'dx','dy','color','blur'}, align left|center|right,
-           valign top|middle|bottom, uppercase, max_lines, line_height (1.15),
-           letter_spacing (px), fallback, fit 'shrink' (Standard) | 'none'
-    image: var (Pfad/URL) ODER src, fit 'contain'|'cover', radius
-    cover: fill 'auto' | '#hex' | 'inpaint' | 'brand:x', feather (px)
-    rect:  fill, radius, stroke, stroke_width
-    Farben: '#rgb', '#rrggbb', '#rrggbbaa', CSS-Name oder 'brand:bg'|'brand:text'|'brand:accent'.
+canvas.background wird VOR dem Hintergrundbild gezeichnet und trägt allein, wenn gar kein
+Hintergrundbild gesetzt ist (Bauen von Null). Ohne beides: Weiß + Warnung.
 
-Nur Pillow ist Pflicht. cv2 + numpy werden für cover:'inpaint' genutzt, wenn vorhanden
-(sonst Fallback auf 'auto'). requests wird nur für Bild-URLs gebraucht.
+Farbwert (überall, wo unten „Farbe“ steht):
+    '#rgb' | '#rrggbb' | '#rrggbbaa' | CSS-Name | 'rgb(...)' | (r,g,b[,a])
+    'brand:bg' | 'brand:text' | 'brand:accent'
+    Verlauf: {'type':'linear','angle':0..360,'stops':[{'at':0.0,'color':'#...'}, ...]}
+             {'type':'radial','stops':[...]}           (optional 'center':{'x','y'} 0..1)
+    Winkel: 0 = von links nach rechts, 90 = von oben nach unten (im Uhrzeigersinn).
+
+Gemeinsame Element-Eigenschaften:
+    id, type, name, x, y, width, height, rotation (Grad, positiv = im Uhrzeigersinn,
+    Drehpunkt Boxmitte), opacity (0..1), hidden, locked (nur Editor), flip_h, flip_v,
+    blend ('normal'|'multiply'|'screen'|'overlay'|'darken'|'lighten'),
+    group (Kennung, nur Editor), only_if (Variablenname), skip_if (Variablenname)
+
+type 'text':   var | text ({var} wird ersetzt), fallback, font, max_size, min_size, color,
+               stroke, stroke_width, shadow {dx,dy,color,blur}, align, valign, uppercase,
+               max_lines, line_height, letter_spacing,
+               fit 'shrink'|'wrap'|'clip'|'none', padding (Zahl oder {top,right,bottom,left}),
+               box {fill, radius, padding, stroke, stroke_width, per_line}
+type 'image':  var | src (Dateiname im Upload-Ordner oder http(s)-URL), fallback,
+               fit 'contain'|'cover'|'stretch', radius, mask 'none'|'circle'|'rounded',
+               crop {x,y,w,h} (Anteile 0..1 des Quellbilds),
+               adjust {brightness, contrast, saturation (0..2), blur (px), grayscale (0..1)}
+type 'cover':  fill 'auto'|'inpaint'|Farbe, feather (px)
+type 'shape':  shape 'rect'|'ellipse'|'triangle'|'star'|'line'|'arrow'|'bubble',
+               fill, radius (rect/bubble), stroke, stroke_width,
+               points (star, Standard 5), inner (star, Standard 0.5),
+               tail {x,y} (bubble, Leinwand-Pixel)
+type 'rect':   Altbestand, verhält sich wie shape mit shape='rect'
+
+Nur Pillow ist Pflicht. numpy beschleunigt Verläufe (Fallback ohne numpy vorhanden),
+cv2 + numpy werden für cover:'inpaint' gebraucht (sonst Fallback auf 'auto'),
+requests nur für Bild-URLs.
 """
 import io
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -42,16 +68,39 @@ import statistics
 import threading
 from urllib.parse import urljoin, urlparse
 
-from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import (Image, ImageChops, ImageColor, ImageDraw, ImageEnhance, ImageFilter,
+                 ImageFont, ImageOps)
 
 log = logging.getLogger('memeos_render')
 
 __all__ = [
     'FONT_BASE_DIR', 'USER_FONT_DIR', 'CANVA_FONT_MAP',
     'list_fonts', 'resolve_font_path', 'font_key_for', 'load_font',
-    'validate_config', 'render', 'fit_text', 'measure_text_box',
-    'sample_values_placeholder', 'parse_color',
+    'validate_config', 'render', 'fit_text', 'measure_text_box', 'text_metrics',
+    'sample_values_placeholder', 'parse_color', 'parse_paint', 'fill_flaeche',
+    'element_defaults',
+    'ELEMENT_TYPES', 'SHAPES', 'BLEND_MODES', 'FIT_MODES', 'IMAGE_FITS', 'TEXT_FITS',
+    'MASKS', 'ALIGNS', 'VALIGNS', 'DEFAULT_CANVAS',
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Konstanten (Vertrag für Editor, Import und Warteschlange)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ELEMENT_TYPES = ('text', 'image', 'cover', 'shape', 'rect')
+SHAPES = ('rect', 'ellipse', 'triangle', 'star', 'line', 'arrow', 'bubble')
+BLEND_MODES = ('normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten')
+IMAGE_FITS = ('contain', 'cover', 'stretch')
+TEXT_FITS = ('shrink', 'wrap', 'clip', 'none')      # 'none' = Altbestand (= shrink ohne Schrumpfen)
+FIT_MODES = {'image': IMAGE_FITS, 'text': TEXT_FITS}
+MASKS = ('none', 'circle', 'rounded')
+ALIGNS = ('left', 'center', 'right')
+VALIGNS = ('top', 'middle', 'bottom')
+GRADIENT_TYPES = ('linear', 'radial')
+DEFAULT_CANVAS = (1080, 1350)
+
+_SUPERSAMPLE = 4                 # Kantenglättung für Formen
+_SUPERSAMPLE_MAX_PIXELS = 40_000_000
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Schriften
@@ -244,40 +293,8 @@ def load_font(name_or_key, size, brand=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Farben / Zahlen
+# Zahlen / Wahrheitswerte
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def parse_color(spec, brand=None, default=None):
-    """Farbangabe -> RGBA-Tupel. Versteht '#rgb', '#rrggbb', '#rrggbbaa', CSS-Namen, 'rgb(...)',
-    Tupel/Listen und 'brand:bg'|'brand:text'|'brand:accent'. Ungültig -> default."""
-    if spec is None or spec == '' or spec is False:
-        return default
-    if isinstance(spec, (tuple, list)):
-        try:
-            vals = [max(0, min(255, int(v))) for v in spec]
-            if len(vals) == 3:
-                vals.append(255)
-            if len(vals) == 4:
-                return tuple(vals)
-        except (TypeError, ValueError):
-            pass
-        return default
-    s = str(spec).strip()
-    if s.lower().startswith('brand:'):
-        key = s.split(':', 1)[1].strip().lower()
-        merged = dict(_BRAND_DEFAULTS)
-        merged.update({k: v for k, v in (brand or {}).items() if v})
-        s = merged.get(key)
-        if s is None:
-            log.warning('Unbekannte Brand-Farbe %r', spec)
-            return default
-        s = str(s).strip()
-    try:
-        return ImageColor.getcolor(s, 'RGBA')
-    except (ValueError, TypeError):
-        log.warning('Ungültige Farbe %r', spec)
-        return default
-
 
 def _is_num(v):
     if isinstance(v, bool):
@@ -310,6 +327,223 @@ def _bool(v):
     if isinstance(v, str):
         return v.strip().lower() in ('1', 'true', 'ja', 'yes', 'on')
     return bool(v)
+
+
+def _clamp(v, lo, hi):
+    return lo if v < lo else (hi if v > hi else v)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Farben und Verläufe
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _is_gradient(spec):
+    return isinstance(spec, dict) and str(spec.get('type') or '').strip().lower() in GRADIENT_TYPES
+
+
+def parse_color(spec, brand=None, default=None):
+    """Farbangabe -> RGBA-Tupel. Versteht '#rgb', '#rrggbb', '#rrggbbaa', CSS-Namen, 'rgb(...)',
+    Tupel/Listen und 'brand:bg'|'brand:text'|'brand:accent'. Ungültig -> default.
+
+    Ein Verlauf-Objekt liefert seine mittlere Stopfarbe (Ersatzwert für Stellen, die nur eine
+    einzelne Farbe verarbeiten können); die Fläche selbst zeichnet fill_flaeche()."""
+    if spec is None or spec == '' or spec is False:
+        return default
+    if _is_gradient(spec):
+        stops = _gradient_stops(spec, brand)
+        return stops[len(stops) // 2][1] if stops else default
+    if isinstance(spec, (tuple, list)):
+        try:
+            vals = [max(0, min(255, int(v))) for v in spec]
+            if len(vals) == 3:
+                vals.append(255)
+            if len(vals) == 4:
+                return tuple(vals)
+        except (TypeError, ValueError):
+            pass
+        return default
+    if isinstance(spec, dict):
+        log.warning('Ungültige Farbe %r', spec)
+        return default
+    s = str(spec).strip()
+    if s.lower().startswith('brand:'):
+        key = s.split(':', 1)[1].strip().lower()
+        merged = dict(_BRAND_DEFAULTS)
+        merged.update({k: v for k, v in (brand or {}).items() if v})
+        s = merged.get(key)
+        if s is None:
+            log.warning('Unbekannte Brand-Farbe %r', spec)
+            return default
+        s = str(s).strip()
+    try:
+        return ImageColor.getcolor(s, 'RGBA')
+    except (ValueError, TypeError):
+        log.warning('Ungültige Farbe %r', spec)
+        return default
+
+
+def parse_paint(spec, brand=None):
+    """Farbwert einordnen: ('color', (r,g,b,a)) | ('gradient', normalisierter Verlauf) | None."""
+    if spec is None or spec == '' or spec is False:
+        return None
+    if _is_gradient(spec):
+        stops = _gradient_stops(spec, brand)
+        if not stops:
+            return None
+        return ('gradient', {
+            'type': str(spec.get('type')).strip().lower(),
+            'angle': _num(spec.get('angle'), 0.0),
+            'center': spec.get('center') if isinstance(spec.get('center'), dict) else None,
+            'stops': stops,
+        })
+    rgba = parse_color(spec, brand, None)
+    return ('color', rgba) if rgba is not None else None
+
+
+def _gradient_stops(spec, brand=None):
+    """[(pos 0..1, rgba), ...], nach Position sortiert; None/[] wenn unbrauchbar."""
+    raw = spec.get('stops') if isinstance(spec, dict) else None
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return []
+    items = []
+    for st in raw:
+        pos, col = None, None
+        if isinstance(st, dict):
+            for key in ('at', 'pos', 'position', 'offset'):
+                if _is_num(st.get(key)):
+                    pos = _clamp(_num(st.get(key)), 0.0, 1.0)
+                    break
+            col = parse_color(st.get('color'), brand, None)
+        else:
+            col = parse_color(st, brand, None)
+        if col is None:
+            continue
+        items.append([pos, col])
+    if not items:
+        return []
+    n = len(items)
+    for i, it in enumerate(items):
+        if it[0] is None:
+            it[0] = (i / (n - 1)) if n > 1 else 0.0
+    items.sort(key=lambda it: it[0])
+    if len(items) == 1:
+        items = [[0.0, items[0][1]], [1.0, items[0][1]]]
+    return [(float(p), tuple(c)) for p, c in items]
+
+
+def _lerp_stops(stops, t):
+    """Farbe an Position t (0..1) zwischen den Stops."""
+    t = _clamp(float(t), 0.0, 1.0)
+    if t <= stops[0][0]:
+        return stops[0][1]
+    if t >= stops[-1][0]:
+        return stops[-1][1]
+    for i in range(len(stops) - 1):
+        p0, c0 = stops[i]
+        p1, c1 = stops[i + 1]
+        if p0 <= t <= p1:
+            span = (p1 - p0) or 1.0
+            f = (t - p0) / span
+            return tuple(int(round(c0[k] + (c1[k] - c0[k]) * f)) for k in range(4))
+    return stops[-1][1]
+
+
+def _gradient_numpy(size, gtype, angle, center, stops):
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    w, h = size
+    xs = np.arange(w, dtype=np.float32)
+    ys = np.arange(h, dtype=np.float32)
+    if gtype == 'radial':
+        cx, cy = 0.5, 0.5
+        if isinstance(center, dict):
+            if _is_num(center.get('x')):
+                cx = _clamp(_num(center.get('x')), 0.0, 1.0)
+            if _is_num(center.get('y')):
+                cy = _clamp(_num(center.get('y')), 0.0, 1.0)
+        px, py = cx * (w - 1 or 1), cy * (h - 1 or 1)
+        dx = xs - px
+        dy = ys - py
+        field = np.sqrt(np.add.outer(dy * dy, dx * dx))
+        rmax = max(math.hypot(px, py), math.hypot(w - 1 - px, py),
+                   math.hypot(px, h - 1 - py), math.hypot(w - 1 - px, h - 1 - py)) or 1.0
+        t = np.clip(field / rmax, 0.0, 1.0)
+    else:
+        rad = math.radians(_num(angle, 0.0))
+        ca, sa = math.cos(rad), math.sin(rad)
+        proj = np.add.outer(ys * sa, xs * ca)
+        lo, hi = float(proj.min()), float(proj.max())
+        t = (proj - lo) / ((hi - lo) or 1.0)
+    flat = t.ravel()
+    px_pos = np.array([p for p, _ in stops], dtype=np.float32)
+    chans = []
+    for k in range(4):
+        vals = np.array([c[k] for _, c in stops], dtype=np.float32)
+        chans.append(np.interp(flat, px_pos, vals))
+    arr = np.stack(chans, axis=-1).reshape(h, w, 4)
+    return Image.fromarray(np.clip(arr, 0, 255).astype('uint8'), 'RGBA')
+
+
+def _gradient_pillow(size, gtype, angle, center, stops):
+    """Fallback ohne numpy. Gleiche Geometrie wie der numpy-Weg: Der Verlauf spannt genau
+    über die Ausdehnung der Fläche in Verlaufsrichtung (linear) bzw. bis zur weitesten Ecke
+    (radial). Gezeichnet wird in 256 Stufen."""
+    w, h = size
+    steps = 256
+    lut = [_lerp_stops(stops, i / (steps - 1)) for i in range(steps)]
+    if gtype == 'radial':
+        cx, cy = 0.5, 0.5
+        if isinstance(center, dict):
+            if _is_num(center.get('x')):
+                cx = _clamp(_num(center.get('x')), 0.0, 1.0)
+            if _is_num(center.get('y')):
+                cy = _clamp(_num(center.get('y')), 0.0, 1.0)
+        px, py = cx * max(1, w - 1), cy * max(1, h - 1)
+        rmax = max(math.hypot(px, py), math.hypot(w - 1 - px, py),
+                   math.hypot(px, h - 1 - py), math.hypot(w - 1 - px, h - 1 - py)) or 1.0
+        rr = int(math.ceil(rmax)) + 1
+        base = Image.new('RGBA', (2 * rr, 2 * rr), lut[-1])
+        d = ImageDraw.Draw(base)
+        for i in range(steps - 1, -1, -1):
+            r = rmax * i / (steps - 1)
+            d.ellipse((rr - r, rr - r, rr + r, rr + r), fill=lut[i])
+        left, top = int(round(rr - px)), int(round(rr - py))
+        return base.crop((left, top, left + w, top + h))
+    rad = math.radians(_num(angle, 0.0))
+    extent = abs((w - 1) * math.cos(rad)) + abs((h - 1) * math.sin(rad)) or 1.0
+    m = int(math.ceil(math.hypot(w, h))) + 4
+    off = (m - extent) / 2.0
+    strip = Image.new('RGBA', (m, 1))
+    strip.putdata([_lerp_stops(stops, (i - off) / extent) for i in range(m)])
+    big = strip.resize((m, m), Image.NEAREST)
+    rot = big.rotate(-_num(angle, 0.0), resample=Image.BILINEAR, expand=False)
+    left, top = (m - w) // 2, (m - h) // 2
+    return rot.crop((left, top, left + w, top + h))
+
+
+def fill_flaeche(groesse, farbwert, brand=None):
+    """(breite, hoehe) + Farbwert (einfarbig ODER Verlauf) -> RGBA-Bild dieser Größe.
+
+    Gemeinsame Flächenquelle für canvas.background, Formen, Textkästen und cover.
+    Liefert None, wenn kein oder ein unbrauchbarer Farbwert übergeben wurde."""
+    try:
+        w = max(1, int(round(float(groesse[0]))))
+        h = max(1, int(round(float(groesse[1]))))
+    except (TypeError, ValueError, IndexError):
+        return None
+    paint = parse_paint(farbwert, brand)
+    if paint is None:
+        return None
+    kind, value = paint
+    if kind == 'color':
+        return Image.new('RGBA', (w, h), tuple(value))
+    stops = value['stops']
+    img = _gradient_numpy((w, h), value['type'], value['angle'], value['center'], stops)
+    if img is None:
+        img = _gradient_pillow((w, h), value['type'], value['angle'], value['center'], stops)
+    return img.convert('RGBA')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -454,16 +688,246 @@ def sample_values_placeholder(var):
     return f'[{var}]'
 
 
+def _padding_box(v, default=0.0):
+    """Innenabstand: Zahl oder {top,right,bottom,left} -> (top, right, bottom, left)."""
+    if isinstance(v, dict):
+        t = _num(v.get('top'), default)
+        r = _num(v.get('right'), default)
+        b = _num(v.get('bottom'), default)
+        l = _num(v.get('left'), default)
+        return (max(0.0, t), max(0.0, r), max(0.0, b), max(0.0, l))
+    if _is_num(v):
+        p = max(0.0, _num(v, default))
+        return (p, p, p, p)
+    p = max(0.0, float(default))
+    return (p, p, p, p)
+
+
+def _text_layout(text, el, canvas_size, brand=None):
+    """Vollständige Textgeometrie eines text-Elements. Gemeinsame Grundlage von
+    _render_text() und text_metrics(); der Editor kann damit die Bühne genau nachbauen.
+
+    Liefert dict mit font, size, lines, line_height (px), align, valign,
+    lines_geom [(x, y, breite, text)], width/height (Blockmaß), block (x0,y0,x1,y1),
+    boxes [(x0,y0,x1,y1), ...] (Textkästen), clip (x0,y0,x1,y1) oder None."""
+    cw, ch = canvas_size
+    x, y = _num(el.get('x'), 0), _num(el.get('y'), 0)
+    width = _num(el.get('width'), 0) or (cw - x)
+    if width <= 0:
+        width = max(1.0, cw - x)
+    height = el.get('height')
+    height = _num(height) if height not in (None, '') else None
+    if height is not None and height <= 0:
+        height = None
+
+    pt, pr, pb, pl = _padding_box(el.get('padding'), 0.0)
+    inner_x = x + pl
+    inner_y = y + pt
+    inner_w = max(1.0, width - pl - pr)
+    inner_h = None if height is None else max(1.0, height - pt - pb)
+
+    font_key = el.get('font') or _FALLBACK_KEY
+    max_size = _int(el.get('max_size'), 64)
+    min_size = _int(el.get('min_size'), 24)
+    spacing = _num(el.get('letter_spacing'), 0.0)
+    lh_factor = _num(el.get('line_height'), 1.15) or 1.15
+    max_lines = _int(el.get('max_lines'), 0) if el.get('max_lines') not in (None, '', 0) else None
+    if max_lines is not None and max_lines < 1:
+        max_lines = None
+    fit = str(el.get('fit') or 'shrink').strip().lower()
+    if fit not in TEXT_FITS:
+        fit = 'shrink'
+
+    if fit in ('shrink', 'none'):
+        low = max_size if fit == 'none' else min_size
+        font, lines, lh = fit_text(text, font_key, max_size, low, inner_w, inner_h,
+                                   max_lines=max_lines, line_height=lh_factor,
+                                   letter_spacing=spacing, brand=brand)
+    else:
+        font = load_font(font_key, max_size, brand=brand)
+        lines, _ = _wrap(text, font, inner_w, spacing, hard_break=True)
+        lh = font.size * lh_factor
+        if max_lines is not None and len(lines) > max_lines:
+            lines = lines[:max_lines]
+            lines[-1] = _ellipsize(lines[-1], font, inner_w, spacing)
+        if fit == 'clip' and inner_h is not None and lh > 0:
+            keep = max(1, int(inner_h // lh))
+            if len(lines) > keep:
+                lines = lines[:keep]
+
+    align = str(el.get('align') or 'left').strip().lower()
+    if align not in ALIGNS:
+        align = 'left'
+    valign = str(el.get('valign') or 'top').strip().lower()
+    if valign not in VALIGNS:
+        valign = 'top'
+
+    block_h = lh * len(lines)
+    cy0 = inner_y
+    if inner_h is not None:
+        if valign == 'middle':
+            cy0 = inner_y + (inner_h - block_h) / 2.0
+        elif valign == 'bottom':
+            cy0 = inner_y + inner_h - block_h
+
+    geom, cy = [], cy0
+    for line in lines:
+        lw = _text_width(font, line, spacing)
+        if align == 'center':
+            lx = inner_x + (inner_w - lw) / 2.0
+        elif align == 'right':
+            lx = inner_x + inner_w - lw
+        else:
+            lx = inner_x
+        geom.append((lx, cy, lw, line))
+        cy += lh
+
+    max_w = max([g[2] for g in geom] or [0.0])
+    if geom:
+        b_x0 = min(g[0] for g in geom)
+        b_x1 = max(g[0] + g[2] for g in geom)
+    else:
+        b_x0 = b_x1 = inner_x
+    block = (b_x0, cy0, b_x1, cy0 + block_h)
+
+    boxes = []
+    box_cfg = el.get('box')
+    if isinstance(box_cfg, dict) and box_cfg:
+        bt, br, bb, bl = _padding_box(box_cfg.get('padding'), round(font.size * 0.18))
+        if _bool(box_cfg.get('per_line')):
+            # Kastenhöhe = echte Zeilenhöhe der Schrift (Ober- + Unterlänge), NICHT der
+            # Zeilenvorschub. Sonst wächst der Kasten mit line_height mit, die Bänder stoßen
+            # immer aneinander und ein senkrechter Abstand ist gar nicht einstellbar.
+            # Deckel bleibt der Vorschub: bei enger Zeilenschaltung ändert sich nichts
+            # gegenüber früher, Unterlängen werden weiter überdeckt.
+            try:
+                asc, desc = font.getmetrics()
+                glyph_h = float(asc) + float(desc)
+            except Exception:
+                glyph_h = 0.0
+            zeilen_h = min(lh, glyph_h) if glyph_h > 0 else lh
+            for lx, ly, lw, line in geom:
+                if not line.strip():
+                    continue
+                boxes.append((lx - bl, ly - bt, lx + lw + br, ly + zeilen_h + bb))
+        else:
+            boxes.append((block[0] - bl, block[1] - bt, block[2] + br, block[3] + bb))
+
+    clip = None
+    if fit == 'clip':
+        clip = (inner_x, inner_y, inner_x + inner_w,
+                inner_y + (inner_h if inner_h is not None else block_h))
+
+    return {
+        'font': font, 'size': int(font.size), 'lines': lines, 'line_height': lh,
+        'align': align, 'valign': valign, 'letter_spacing': spacing,
+        'lines_geom': geom, 'width': max_w, 'height': block_h,
+        'block': block, 'boxes': boxes, 'clip': clip, 'fit': fit,
+        'inner': (inner_x, inner_y, inner_w, inner_h),
+    }
+
+
+def text_metrics(text, el, canvas_groesse, brand=None):
+    """Tatsächliche Textmaße eines text-Elements, ohne zu zeichnen – für die Editor-Bühne.
+
+    text:            fertiger Text (Variablen bereits ersetzt); uppercase wird hier angewandt
+    el:              das text-Element (dict) aus der Config
+    canvas_groesse:  (breite, hoehe) der Leinwand
+    Liefert {'lines': [...], 'size': int, 'width': int, 'height': int,
+             'line_height': float, 'x': int, 'y': int, 'lines_geom': [...],
+             'block': (x0,y0,x1,y1), 'boxes': [...], 'align', 'valign'}"""
+    el = el if isinstance(el, dict) else {}
+    s = str(text if text is not None else '')
+    if _bool(el.get('uppercase')):
+        s = s.upper()
+    try:
+        size = (int(canvas_groesse[0]), int(canvas_groesse[1]))
+    except (TypeError, ValueError, IndexError):
+        size = DEFAULT_CANVAS
+    lay = _text_layout(s, el, size, brand=brand)
+    return {
+        'lines': list(lay['lines']),
+        'size': int(lay['size']),
+        'width': int(round(lay['width'])),
+        'height': int(round(lay['height'])),
+        'line_height': float(lay['line_height']),
+        'x': int(round(lay['block'][0])),
+        'y': int(round(lay['block'][1])),
+        'lines_geom': [(round(g[0], 2), round(g[1], 2), round(g[2], 2), g[3]) for g in lay['lines_geom']],
+        'block': tuple(round(v, 2) for v in lay['block']),
+        'boxes': [tuple(round(v, 2) for v in b) for b in lay['boxes']],
+        'align': lay['align'], 'valign': lay['valign'],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Standardwerte für neue Elemente (Editor und Renderer sollen sich einig sein)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def element_defaults(typ, shape=None):
+    """Sinnvolle Startwerte für ein neues Element. Ohne 'id' – die vergibt der Editor.
+
+    typ:   'text' | 'image' | 'cover' | 'shape' | 'rect'
+    shape: bei typ='shape' die Form aus SHAPES (Standard 'rect')"""
+    t = str(typ or 'text').strip().lower()
+    if t not in ELEMENT_TYPES:
+        t = 'text'
+    base = {
+        'type': t, 'name': '', 'x': 80, 'y': 80, 'width': 400, 'height': 300,
+        'rotation': 0, 'opacity': 1, 'hidden': False, 'locked': False,
+        'flip_h': False, 'flip_v': False, 'blend': 'normal',
+    }
+    if t == 'text':
+        base.update({
+            'name': 'Text', 'x': 60, 'y': 80, 'width': 960, 'height': 300,
+            'text': 'Neuer Text', 'font': _FALLBACK_KEY,
+            'max_size': 72, 'min_size': 28, 'color': '#ffffff',
+            'stroke': '#000000', 'stroke_width': 0,
+            'align': 'center', 'valign': 'top', 'uppercase': False,
+            'max_lines': 0, 'line_height': 1.15, 'letter_spacing': 0,
+            'fit': 'shrink', 'padding': 0,
+        })
+    elif t == 'image':
+        base.update({
+            'name': 'Bild', 'x': 140, 'y': 300, 'width': 800, 'height': 800,
+            'src': '', 'fit': 'cover', 'radius': 0, 'mask': 'none',
+        })
+    elif t == 'cover':
+        base.update({
+            'name': 'Abdeckung', 'x': 100, 'y': 100, 'width': 600, 'height': 200,
+            'fill': 'auto', 'feather': 2,
+        })
+    else:                                       # shape / rect
+        s = str(shape or ('rect' if t == 'rect' else 'rect')).strip().lower()
+        if s not in SHAPES:
+            s = 'rect'
+        labels = {'rect': 'Rechteck', 'ellipse': 'Ellipse', 'triangle': 'Dreieck',
+                  'star': 'Stern', 'line': 'Linie', 'arrow': 'Pfeil', 'bubble': 'Sprechblase'}
+        base.update({
+            'name': labels.get(s, 'Form'), 'x': 340, 'y': 500, 'width': 400, 'height': 400,
+            'fill': '#ffffff', 'stroke': '', 'stroke_width': 0,
+        })
+        if t == 'shape':
+            base['shape'] = s
+        if s == 'rect':
+            base['radius'] = 24
+        elif s == 'star':
+            base.update({'points': 5, 'inner': 0.5})
+        elif s == 'line':
+            base.update({'x': 240, 'y': 640, 'width': 600, 'height': 8,
+                         'fill': '', 'stroke': '#ffffff', 'stroke_width': 8})
+        elif s == 'arrow':
+            base.update({'width': 480, 'height': 200})
+        elif s == 'bubble':
+            base.update({'x': 200, 'y': 300, 'width': 680, 'height': 320, 'radius': 48,
+                         'fill': '#ffffff',
+                         'tail': {'x': 340, 'y': 720}})
+    return base
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Validierung
 # ═══════════════════════════════════════════════════════════════════════════════
-
-_TYPES = ('text', 'image', 'cover', 'rect')
-_ALIGNS = ('left', 'center', 'right')
-_VALIGNS = ('top', 'middle', 'bottom')
-_IMAGE_FITS = ('contain', 'cover')
-_TEXT_FITS = ('shrink', 'none')
-
 
 def _coerce_config(config):
     if config is None:
@@ -486,14 +950,48 @@ def validate_config(config):
     if not isinstance(config, dict):
         return ['Config muss ein Objekt ({...}) sein']
 
+    def check_paint(value, label, feld):
+        """Farbe oder Verlauf prüfen."""
+        if value in (None, '', False):
+            return
+        if _is_gradient(value):
+            stops = value.get('stops')
+            if not isinstance(stops, (list, tuple)) or not stops:
+                errors.append(f'{label}: Verlauf in {feld} hat keine stops')
+                return
+            if 'angle' in value and value.get('angle') not in (None, '') and not _is_num(value.get('angle')):
+                errors.append(f'{label}: {feld}.angle muss eine Zahl sein')
+            elif _is_num(value.get('angle')) and not (-360 <= _num(value.get('angle')) <= 360):
+                errors.append(f'{label}: {feld}.angle muss zwischen -360 und 360 liegen')
+            ok = 0
+            for j, st in enumerate(stops):
+                col = st.get('color') if isinstance(st, dict) else st
+                if parse_color(col) is None:
+                    errors.append(f"{label}: ungültige Farbe in {feld}.stops[{j}] ('{col}')")
+                else:
+                    ok += 1
+                if isinstance(st, dict) and st.get('at') not in (None, '') and (
+                        not _is_num(st.get('at')) or not (0 <= _num(st.get('at')) <= 1)):
+                    errors.append(f'{label}: {feld}.stops[{j}].at muss zwischen 0 und 1 liegen')
+            if not ok:
+                errors.append(f'{label}: Verlauf in {feld} hat keine gültige Farbe')
+            return
+        if parse_color(value) is None:
+            errors.append(f"{label}: ungültige Farbe in {feld} ('{value}')")
+
     canvas = config.get('canvas')
     if canvas is not None:
         if not isinstance(canvas, dict):
             errors.append('canvas muss ein Objekt mit width/height sein')
         else:
             for k in ('width', 'height'):
+                if canvas.get(k) in (None, ''):
+                    continue                    # canvas darf auch nur background enthalten
                 if not _is_num(canvas.get(k)) or _num(canvas.get(k)) <= 0:
                     errors.append(f'canvas.{k} muss eine positive Zahl sein')
+            if ('width' in canvas) != ('height' in canvas):
+                errors.append('canvas braucht width UND height (oder keins von beidem)')
+            check_paint(canvas.get('background'), 'canvas', 'background')
 
     elements = config.get('elements')
     if elements is None:
@@ -515,8 +1013,8 @@ def validate_config(config):
             seen_ids.add(str(el_id))
 
         t = el.get('type', 'text')
-        if t not in _TYPES:
-            errors.append(f"{label}: unbekannter type '{t}' (erlaubt: {', '.join(_TYPES)})")
+        if t not in ELEMENT_TYPES:
+            errors.append(f"{label}: unbekannter type '{t}' (erlaubt: {', '.join(ELEMENT_TYPES)})")
             continue
 
         for k in ('x', 'y'):
@@ -534,13 +1032,22 @@ def validate_config(config):
         if 'opacity' in el and el.get('opacity') is not None:
             if not _is_num(el.get('opacity')) or not (0 <= _num(el.get('opacity')) <= 1):
                 errors.append(f'{label}: opacity muss zwischen 0 und 1 liegen')
+        if el.get('rotation') not in (None, ''):
+            if not _is_num(el.get('rotation')) or not (-360 <= _num(el.get('rotation')) <= 360):
+                errors.append(f'{label}: rotation muss eine Zahl zwischen -360 und 360 sein')
+        if el.get('blend') not in (None, '') and str(el.get('blend')).lower() not in BLEND_MODES:
+            errors.append(f"{label}: blend muss {', '.join(BLEND_MODES)} sein")
+        for k in ('only_if', 'skip_if'):
+            v = el.get(k)
+            if v not in (None, '') and not isinstance(v, str):
+                errors.append(f'{label}: {k} muss ein Variablenname (Text) sein')
+        if el.get('group') not in (None, '') and not isinstance(el.get('group'), (str, int)):
+            errors.append(f'{label}: group muss ein Text oder eine Zahl sein')
+        if el.get('name') not in (None, '') and not isinstance(el.get('name'), str):
+            errors.append(f'{label}: name muss ein Text sein')
 
         def check_color(key, container=el, lbl=label):
-            v = container.get(key)
-            if v in (None, ''):
-                return
-            if parse_color(v) is None:
-                errors.append(f"{lbl}: ungültige Farbe in {key} ('{v}')")
+            check_paint(container.get(key), lbl, key)
 
         if t == 'text':
             if not el.get('var') and not el.get('text') and el.get('fallback') in (None, ''):
@@ -550,12 +1057,12 @@ def validate_config(config):
                     errors.append(f'{label}: {k} muss eine positive Zahl sein')
             if _is_num(el.get('max_size')) and _is_num(el.get('min_size')) and _num(el['min_size']) > _num(el['max_size']):
                 errors.append(f'{label}: min_size ist größer als max_size')
-            if el.get('align') not in (None, '') and el.get('align') not in _ALIGNS:
-                errors.append(f"{label}: align muss {', '.join(_ALIGNS)} sein")
-            if el.get('valign') not in (None, '') and el.get('valign') not in _VALIGNS:
-                errors.append(f"{label}: valign muss {', '.join(_VALIGNS)} sein")
-            if el.get('fit') not in (None, '') and el.get('fit') not in _TEXT_FITS:
-                errors.append(f"{label}: fit muss {', '.join(_TEXT_FITS)} sein")
+            if el.get('align') not in (None, '') and el.get('align') not in ALIGNS:
+                errors.append(f"{label}: align muss {', '.join(ALIGNS)} sein")
+            if el.get('valign') not in (None, '') and el.get('valign') not in VALIGNS:
+                errors.append(f"{label}: valign muss {', '.join(VALIGNS)} sein")
+            if el.get('fit') not in (None, '') and el.get('fit') not in TEXT_FITS:
+                errors.append(f"{label}: fit muss {', '.join(TEXT_FITS)} sein")
             if el.get('max_lines') not in (None, '', 0) and (not _is_num(el.get('max_lines')) or _num(el.get('max_lines')) < 1):
                 errors.append(f'{label}: max_lines muss eine ganze Zahl ≥ 1 sein')
             if el.get('line_height') not in (None, '') and (not _is_num(el.get('line_height')) or _num(el.get('line_height')) <= 0):
@@ -564,8 +1071,36 @@ def validate_config(config):
                 errors.append(f'{label}: letter_spacing muss eine Zahl sein')
             if el.get('stroke_width') not in (None, '') and (not _is_num(el.get('stroke_width')) or _num(el.get('stroke_width')) < 0):
                 errors.append(f'{label}: stroke_width muss eine Zahl ≥ 0 sein')
+            pad = el.get('padding')
+            if pad not in (None, ''):
+                if isinstance(pad, dict):
+                    for k in ('top', 'right', 'bottom', 'left'):
+                        if pad.get(k) not in (None, '') and (not _is_num(pad.get(k)) or _num(pad.get(k)) < 0):
+                            errors.append(f'{label}: padding.{k} muss eine Zahl ≥ 0 sein')
+                elif not _is_num(pad) or _num(pad) < 0:
+                    errors.append(f'{label}: padding muss eine Zahl ≥ 0 oder ein Objekt sein')
             check_color('color')
             check_color('stroke')
+            box = el.get('box')
+            if box not in (None, '', False):
+                if not isinstance(box, dict):
+                    errors.append(f'{label}: box muss ein Objekt (fill, radius, padding, stroke, stroke_width, per_line) sein')
+                else:
+                    if box.get('fill') in (None, '') and box.get('stroke') in (None, ''):
+                        errors.append(f'{label}: box braucht fill oder stroke')
+                    check_paint(box.get('fill'), label + ' box', 'fill')
+                    check_paint(box.get('stroke'), label + ' box', 'stroke')
+                    for k in ('radius', 'stroke_width'):
+                        if box.get(k) not in (None, '') and (not _is_num(box.get(k)) or _num(box.get(k)) < 0):
+                            errors.append(f'{label}: box.{k} muss eine Zahl ≥ 0 sein')
+                    bpad = box.get('padding')
+                    if bpad not in (None, ''):
+                        if isinstance(bpad, dict):
+                            for k in ('top', 'right', 'bottom', 'left'):
+                                if bpad.get(k) not in (None, '') and (not _is_num(bpad.get(k)) or _num(bpad.get(k)) < 0):
+                                    errors.append(f'{label}: box.padding.{k} muss eine Zahl ≥ 0 sein')
+                        elif not _is_num(bpad) or _num(bpad) < 0:
+                            errors.append(f'{label}: box.padding muss eine Zahl ≥ 0 oder ein Objekt sein')
             sh = el.get('shadow')
             if sh not in (None, '', False):
                 if not isinstance(sh, dict):
@@ -574,37 +1109,85 @@ def validate_config(config):
                     for k in ('dx', 'dy', 'blur'):
                         if k in sh and not _is_num(sh.get(k)):
                             errors.append(f'{label}: shadow.{k} muss eine Zahl sein')
-                    check_color('color', sh, label + ' shadow')
+                    check_paint(sh.get('color'), label + ' shadow', 'color')
 
         elif t == 'image':
             if not el.get('var') and not el.get('src'):
                 errors.append(f'{label}: image-Element braucht var oder src')
-            if el.get('fit') not in (None, '') and el.get('fit') not in _IMAGE_FITS:
-                errors.append(f"{label}: fit muss {', '.join(_IMAGE_FITS)} sein")
+            if el.get('fit') not in (None, '') and el.get('fit') not in IMAGE_FITS:
+                errors.append(f"{label}: fit muss {', '.join(IMAGE_FITS)} sein")
             if el.get('radius') not in (None, '') and (not _is_num(el.get('radius')) or _num(el.get('radius')) < 0):
                 errors.append(f'{label}: radius muss eine Zahl ≥ 0 sein')
+            if el.get('mask') not in (None, '') and str(el.get('mask')).lower() not in MASKS:
+                errors.append(f"{label}: mask muss {', '.join(MASKS)} sein")
+            crop = el.get('crop')
+            if crop not in (None, '', False):
+                if not isinstance(crop, dict):
+                    errors.append(f'{label}: crop muss ein Objekt (x, y, w, h als Anteile 0..1) sein')
+                else:
+                    for k in ('x', 'y', 'w', 'h'):
+                        if crop.get(k) in (None, ''):
+                            continue
+                        if not _is_num(crop.get(k)) or not (0 <= _num(crop.get(k)) <= 1):
+                            errors.append(f'{label}: crop.{k} muss zwischen 0 und 1 liegen')
+                    for k in ('w', 'h'):
+                        if _is_num(crop.get(k)) and _num(crop.get(k)) <= 0:
+                            errors.append(f'{label}: crop.{k} muss größer als 0 sein')
+            adj = el.get('adjust')
+            if adj not in (None, '', False):
+                if not isinstance(adj, dict):
+                    errors.append(f'{label}: adjust muss ein Objekt (brightness, contrast, saturation, blur, grayscale) sein')
+                else:
+                    for k in ('brightness', 'contrast', 'saturation'):
+                        if adj.get(k) in (None, ''):
+                            continue
+                        if not _is_num(adj.get(k)) or not (0 <= _num(adj.get(k)) <= 2):
+                            errors.append(f'{label}: adjust.{k} muss zwischen 0 und 2 liegen')
+                    if adj.get('blur') not in (None, '') and (not _is_num(adj.get('blur')) or _num(adj.get('blur')) < 0):
+                        errors.append(f'{label}: adjust.blur muss eine Zahl ≥ 0 sein')
+                    if adj.get('grayscale') not in (None, '') and (
+                            not _is_num(adj.get('grayscale')) or not (0 <= _num(adj.get('grayscale')) <= 1)):
+                        errors.append(f'{label}: adjust.grayscale muss zwischen 0 und 1 liegen')
 
         elif t == 'cover':
             fill = el.get('fill', 'auto')
-            if fill not in (None, '', 'auto', 'inpaint') and parse_color(fill) is None:
-                errors.append(f"{label}: fill muss 'auto', 'inpaint' oder eine Farbe sein ('{fill}')")
+            if fill not in (None, '', 'auto', 'inpaint'):
+                check_paint(fill, label, 'fill')
             if el.get('feather') not in (None, '') and (not _is_num(el.get('feather')) or _num(el.get('feather')) < 0):
                 errors.append(f'{label}: feather muss eine Zahl ≥ 0 sein')
 
-        elif t == 'rect':
+        else:                                   # shape / rect
+            shape = str(el.get('shape') or 'rect').strip().lower()
+            if t == 'shape' and shape not in SHAPES:
+                errors.append(f"{label}: unbekannte shape '{el.get('shape')}' (erlaubt: {', '.join(SHAPES)})")
+                shape = 'rect'
             if el.get('fill') in (None, '') and el.get('stroke') in (None, ''):
-                errors.append(f'{label}: rect-Element braucht fill oder stroke')
+                errors.append(f'{label}: {t}-Element braucht fill oder stroke')
             check_color('fill')
             check_color('stroke')
             for k in ('radius', 'stroke_width'):
                 if el.get(k) not in (None, '') and (not _is_num(el.get(k)) or _num(el.get(k)) < 0):
                     errors.append(f'{label}: {k} muss eine Zahl ≥ 0 sein')
+            if shape == 'star':
+                if el.get('points') not in (None, '') and (not _is_num(el.get('points')) or _num(el.get('points')) < 3):
+                    errors.append(f'{label}: points muss eine ganze Zahl ≥ 3 sein')
+                if el.get('inner') not in (None, '') and (not _is_num(el.get('inner')) or not (0 < _num(el.get('inner')) <= 1)):
+                    errors.append(f'{label}: inner muss größer als 0 und höchstens 1 sein')
+            if shape == 'bubble':
+                tail = el.get('tail')
+                if tail not in (None, '', False):        # ohne tail = Standardposition, erlaubt
+                    if not isinstance(tail, dict):
+                        errors.append(f'{label}: tail muss ein Objekt mit x und y sein')
+                    else:
+                        for k in ('x', 'y'):
+                            if not _is_num(tail.get(k)):
+                                errors.append(f'{label}: tail.{k} muss eine Zahl sein')
 
     return errors
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Rendern
+# Rendern – Grundlagen
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _VAR_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*)\}')
@@ -662,6 +1245,18 @@ def _value_for(el, values):
     return str(fb) if fb not in (None, '') else None
 
 
+def _has_value(values, name):
+    """True, wenn die Variable vorhanden und nicht leer ist (Grundlage für only_if/skip_if)."""
+    if not name:
+        return False
+    v = values.get(str(name))
+    if v is None:
+        return False
+    if isinstance(v, str):
+        return bool(v.strip())
+    return True
+
+
 def _apply_opacity(layer, opacity):
     if opacity >= 1:
         return layer
@@ -669,6 +1264,84 @@ def _apply_opacity(layer, opacity):
     layer.putalpha(alpha)
     return layer
 
+
+def _mask_layer(layer, mask):
+    """Alpha der Ebene mit einer L-Maske multiplizieren (in-place)."""
+    layer.putalpha(ImageChops.multiply(layer.getchannel('A'), mask))
+    return layer
+
+
+def _blit(layer, patch, ox, oy):
+    """RGBA-Ausschnitt an (ox, oy) auf die Ebene legen. Anders als Image.alpha_composite()
+    verträgt das negative Koordinaten und Überstand – beides kommt bei Konturen,
+    Sprechblasen-Spitzen und Textkästen am Rand ständig vor."""
+    ox, oy = int(round(ox)), int(round(oy))
+    px0, py0 = max(0, -ox), max(0, -oy)
+    px1 = min(patch.width, layer.width - ox)
+    py1 = min(patch.height, layer.height - oy)
+    if px1 <= px0 or py1 <= py0:
+        return layer
+    if (px0, py0, px1, py1) != (0, 0, patch.width, patch.height):
+        patch = patch.crop((px0, py0, px1, py1))
+    layer.alpha_composite(patch, (ox + px0, oy + py0))
+    return layer
+
+
+def _transform_layer(layer, cx, cy, rotation, flip_h, flip_v):
+    """Ebene um die Boxmitte (cx, cy) spiegeln und drehen. Positive Winkel = im Uhrzeigersinn.
+    Der Mittelpunkt bleibt dabei an derselben Stelle."""
+    rot = _num(rotation, 0.0) % 360.0
+    if rot > 180:
+        rot -= 360
+    if abs(rot) < 0.01 and not flip_h and not flip_v:
+        return layer
+    bbox = layer.getbbox()
+    if bbox is None:
+        return layer
+    cxi, cyi = int(round(cx)), int(round(cy))
+    rx = int(math.ceil(max(abs(bbox[0] - cxi), abs(bbox[2] - cxi)))) + 2
+    ry = int(math.ceil(max(abs(bbox[1] - cyi), abs(bbox[3] - cyi)))) + 2
+    rx, ry = max(1, rx), max(1, ry)
+    patch = layer.crop((cxi - rx, cyi - ry, cxi + rx, cyi + ry))
+    if flip_h:
+        patch = ImageOps.mirror(patch)
+    if flip_v:
+        patch = ImageOps.flip(patch)
+    if abs(rot) >= 0.01:
+        patch = patch.rotate(-rot, resample=Image.BICUBIC, expand=True)
+    out = Image.new('RGBA', layer.size, (0, 0, 0, 0))
+    out.paste(patch, (cxi - patch.width // 2, cyi - patch.height // 2))
+    return out
+
+
+_CHOPS = {
+    'multiply': ImageChops.multiply,
+    'screen': ImageChops.screen,
+    'overlay': ImageChops.overlay,
+    'darken': ImageChops.darker,
+    'lighten': ImageChops.lighter,
+}
+
+
+def _composite(base, layer, blend='normal'):
+    """Ebene auf die (deckende) Leinwand bringen. 'normal' = alpha_composite,
+    sonst der jeweilige Mischmodus über ImageChops, maskiert mit dem Alpha der Ebene."""
+    mode = str(blend or 'normal').strip().lower()
+    if mode not in BLEND_MODES:
+        if mode:
+            log.warning('Unbekannter blend-Modus %r, nutze normal', blend)
+        mode = 'normal'
+    if mode == 'normal':
+        return Image.alpha_composite(base, layer)
+    op = _CHOPS[mode]
+    mixed = op(base.convert('RGB'), layer.convert('RGB')).convert('RGBA')
+    mixed.putalpha(layer.getchannel('A'))
+    return Image.alpha_composite(base, mixed)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rendern – Text
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _draw_line(draw, xy, line, font, fill, stroke_width, stroke_fill, spacing):
     x, y = xy
@@ -683,92 +1356,103 @@ def _draw_line(draw, xy, line, font, fill, stroke_width, stroke_fill, spacing):
                   stroke_width=stroke_width, stroke_fill=stroke_fill)
 
 
+def _rounded_mask(size, radius, box=None):
+    """L-Maske mit abgerundetem Rechteck, kantengeglättet über Supersampling."""
+    w, h = size
+    scale = _SUPERSAMPLE if w * h * _SUPERSAMPLE ** 2 <= _SUPERSAMPLE_MAX_PIXELS else 1
+    m = Image.new('L', (max(1, w * scale), max(1, h * scale)), 0)
+    x0, y0, x1, y1 = box if box else (0, 0, w, h)
+    ImageDraw.Draw(m).rounded_rectangle(
+        (x0 * scale, y0 * scale, x1 * scale - 1, y1 * scale - 1),
+        radius=max(0, radius) * scale, fill=255)
+    if scale > 1:
+        m = m.resize((w, h), Image.LANCZOS)
+    return m
+
+
 def _render_text(img, el, values, brand):
     text = _value_for(el, values)
     if text is None:
-        return img
+        # Ohne Wert UND ohne fallback fällt die Zeile ersatzlos weg. Das war bisher völlig
+        # still: die Vorlage rendert scheinbar sauber, das Bild ist aber nur der Hintergrund.
+        log.warning('Text-Element %s ohne Wert (var=%r, kein fallback) – nicht gezeichnet',
+                    el.get('id') or el.get('name') or el.get('var') or '?', el.get('var'))
+        return None
     if _bool(el.get('uppercase')):
         text = text.upper()
 
-    x, y = _int(el.get('x'), 0), _int(el.get('y'), 0)
-    width = _int(el.get('width'), img.width - x)
-    if width <= 0:
-        width = max(1, img.width - x)
-    height = el.get('height')
-    height = _int(height) if height not in (None, '') else None
-    if height is not None and height <= 0:
-        height = None
-
-    font_key = el.get('font') or _FALLBACK_KEY
-    max_size = _int(el.get('max_size'), 64)
-    min_size = _int(el.get('min_size'), 24)
-    if str(el.get('fit') or 'shrink').lower() == 'none':
-        min_size = max_size
-    spacing = _num(el.get('letter_spacing'), 0.0)
-    stroke_width = max(0, _int(el.get('stroke_width'), 0))
-
-    font, lines, lh = fit_text(
-        text, font_key, max_size, min_size, width, height,
-        max_lines=el.get('max_lines'), line_height=el.get('line_height') or 1.15,
-        letter_spacing=spacing, brand=brand,
-    )
-
+    lay = _text_layout(text, el, img.size, brand=brand)
+    font, lines, lh = lay['font'], lay['lines'], lay['line_height']
+    spacing = lay['letter_spacing']
     color = parse_color(el.get('color'), brand, (255, 255, 255, 255))
     stroke = parse_color(el.get('stroke'), brand, None)
+    stroke_width = max(0, _int(el.get('stroke_width'), 0))
     if stroke is None:
         stroke_width = 0
-    align = str(el.get('align') or 'left').lower()
-    valign = str(el.get('valign') or 'top').lower()
-    opacity = max(0.0, min(1.0, _num(el.get('opacity'), 1.0)))
 
-    block_h = lh * len(lines)
-    cy0 = y
-    if height is not None:
-        if valign == 'middle':
-            cy0 = y + (height - block_h) / 2
-        elif valign == 'bottom':
-            cy0 = y + height - block_h
+    layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
 
-    def positions():
-        cy = cy0
-        for line in lines:
-            lw = _text_width(font, line, spacing)
-            if align == 'center':
-                lx = x + (width - lw) / 2
-            elif align == 'right':
-                lx = x + width - lw
-            else:
-                lx = x
-            yield lx, cy, line
-            cy += lh
+    # 1) Kästen hinter dem Text (Blockkasten oder je Zeile)
+    box_cfg = el.get('box')
+    if lay['boxes'] and isinstance(box_cfg, dict):
+        b_radius = max(0, _int(box_cfg.get('radius'), 0))
+        b_stroke = parse_paint(box_cfg.get('stroke'), brand)
+        b_stroke_w = max(0, _int(box_cfg.get('stroke_width'), 0)) if b_stroke else 0
+        for bx0, by0, bx1, by1 in lay['boxes']:
+            bw = max(1, int(math.ceil(bx1 - bx0)))
+            bh = max(1, int(math.ceil(by1 - by0)))
+            ox, oy = int(math.floor(bx0)), int(math.floor(by0))
+            fill_img = fill_flaeche((bw, bh), box_cfg.get('fill'), brand)
+            if fill_img is not None:
+                _mask_layer(fill_img, _rounded_mask((bw, bh), b_radius))
+                _blit(layer, fill_img, ox, oy)
+            if b_stroke_w:
+                outer = _rounded_mask((bw, bh), b_radius)
+                inner = _rounded_mask((bw, bh), max(0, b_radius - b_stroke_w),
+                                      box=(b_stroke_w, b_stroke_w, bw - b_stroke_w, bh - b_stroke_w))
+                stroke_img = fill_flaeche((bw, bh), box_cfg.get('stroke'), brand)
+                if stroke_img is not None:
+                    _mask_layer(stroke_img, ImageChops.subtract(outer, inner))
+                    _blit(layer, stroke_img, ox, oy)
 
-    # Schatten
+    # 2) Schatten
     shadow = el.get('shadow')
     if isinstance(shadow, dict) and shadow:
         s_color = parse_color(shadow.get('color'), brand, (0, 0, 0, 160))
         dx, dy = _num(shadow.get('dx'), 2), _num(shadow.get('dy'), 2)
         blur = max(0.0, _num(shadow.get('blur'), 0))
-        layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        ld = ImageDraw.Draw(layer)
-        for lx, cy, line in positions():
-            _draw_line(ld, (lx + dx, cy + dy), line, font, s_color, stroke_width, s_color, spacing)
+        s_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        sd = ImageDraw.Draw(s_layer)
+        for lx, ly, _lw, line in lay['lines_geom']:
+            _draw_line(sd, (lx + dx, ly + dy), line, font, s_color, stroke_width, s_color, spacing)
         if blur > 0:
-            layer = layer.filter(ImageFilter.GaussianBlur(blur))
-        img = Image.alpha_composite(img, _apply_opacity(layer, opacity))
+            s_layer = s_layer.filter(ImageFilter.GaussianBlur(blur))
+        layer = Image.alpha_composite(layer, s_layer)
 
-    # Haupttext
-    if opacity >= 1:
-        draw = ImageDraw.Draw(img)
-        for lx, cy, line in positions():
-            _draw_line(draw, (lx, cy), line, font, color, stroke_width, stroke, spacing)
-    else:
-        layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        ld = ImageDraw.Draw(layer)
-        for lx, cy, line in positions():
-            _draw_line(ld, (lx, cy), line, font, color, stroke_width, stroke, spacing)
-        img = Image.alpha_composite(img, _apply_opacity(layer, opacity))
-    return img
+    # 3) Text
+    draw = ImageDraw.Draw(layer)
+    for lx, ly, _lw, line in lay['lines_geom']:
+        _draw_line(draw, (lx, ly), line, font, color, stroke_width, stroke, spacing)
 
+    # 4) fit='clip': alles außerhalb der (um padding verkleinerten) Elementbox abschneiden
+    if lay['clip']:
+        cx0, cy0, cx1, cy1 = lay['clip']
+        m = Image.new('L', img.size, 0)
+        ImageDraw.Draw(m).rectangle((int(round(cx0)), int(round(cy0)),
+                                     int(round(cx1)) - 1, int(round(cy1)) - 1), fill=255)
+        _mask_layer(layer, m)
+
+    # Drehpunkt: ohne height gibt es keine Elementbox – dann die tatsächliche Textmitte
+    center = None
+    if el.get('height') in (None, ''):
+        ix, _iy, iw, _ih = lay['inner']
+        center = (ix + iw / 2.0, (lay['block'][1] + lay['block'][3]) / 2.0)
+    return layer, center
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rendern – Bild
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _is_safe_public_url(url):
     """True, wenn die URL http(s) ist und JEDE aufgelöste Adresse öffentlich ist.
@@ -863,37 +1547,102 @@ def _load_image_source(src):
     return Image.open(_local_image_path(s)).convert('RGBA')
 
 
+def _apply_crop(im, crop):
+    """crop {x, y, w, h} als Anteile 0..1 des Quellbilds."""
+    if not isinstance(crop, dict) or not crop:
+        return im
+    cx = _clamp(_num(crop.get('x'), 0.0), 0.0, 1.0)
+    cy = _clamp(_num(crop.get('y'), 0.0), 0.0, 1.0)
+    cw = _clamp(_num(crop.get('w'), 1.0 - cx), 0.0, 1.0)
+    chh = _clamp(_num(crop.get('h'), 1.0 - cy), 0.0, 1.0)
+    x0 = int(round(cx * im.width))
+    y0 = int(round(cy * im.height))
+    x1 = min(im.width, x0 + max(1, int(round(cw * im.width))))
+    y1 = min(im.height, y0 + max(1, int(round(chh * im.height))))
+    if x1 <= x0 or y1 <= y0:
+        return im
+    return im.crop((x0, y0, x1, y1))
+
+
+def _apply_adjust(im, adjust):
+    """brightness/contrast/saturation (0..2, 1 = unverändert), blur (px), grayscale (0..1)."""
+    if not isinstance(adjust, dict) or not adjust:
+        return im
+    alpha = im.getchannel('A')
+    rgb = im.convert('RGB')
+    for key, cls in (('brightness', ImageEnhance.Brightness),
+                     ('contrast', ImageEnhance.Contrast),
+                     ('saturation', ImageEnhance.Color)):
+        if adjust.get(key) in (None, ''):
+            continue
+        f = _clamp(_num(adjust.get(key), 1.0), 0.0, 4.0)
+        if abs(f - 1.0) > 1e-3:
+            rgb = cls(rgb).enhance(f)
+    gray = _clamp(_num(adjust.get('grayscale'), 0.0), 0.0, 1.0)
+    if gray > 0:
+        rgb = Image.blend(rgb, ImageOps.grayscale(rgb).convert('RGB'), gray)
+    blur = max(0.0, _num(adjust.get('blur'), 0.0))
+    if blur > 0:
+        rgb = rgb.filter(ImageFilter.GaussianBlur(blur))
+    out = rgb.convert('RGBA')
+    out.putalpha(alpha)
+    return out
+
+
 def _render_image(img, el, values, brand):
     var = el.get('var')
     src = values.get(var) if var else el.get('src')
     if src is None or (isinstance(src, str) and not src.strip()):
         src = el.get('fallback')
     if src is None or (isinstance(src, str) and not src.strip()):
-        return img
+        return None
     x, y = _int(el.get('x'), 0), _int(el.get('y'), 0)
     w, h = max(1, _int(el.get('width'), 100)), max(1, _int(el.get('height'), 100))
-    fit = str(el.get('fit') or 'contain').lower()
+    fit = str(el.get('fit') or 'contain').strip().lower()
+    if fit not in IMAGE_FITS:
+        fit = 'contain'
     radius = max(0, _int(el.get('radius'), 0))
-    opacity = max(0.0, min(1.0, _num(el.get('opacity'), 1.0)))
+    mask_kind = str(el.get('mask') or 'none').strip().lower()
+    if mask_kind not in MASKS:
+        mask_kind = 'none'
 
     overlay = _load_image_source(src)
+    overlay = _apply_crop(overlay, el.get('crop'))
+    overlay = _apply_adjust(overlay, el.get('adjust'))
+
     if fit == 'cover':
         overlay = ImageOps.fit(overlay, (w, h), method=Image.LANCZOS)
+        ox, oy = x, y
+    elif fit == 'stretch':
+        overlay = overlay.resize((w, h), Image.LANCZOS)
         ox, oy = x, y
     else:
         overlay = ImageOps.contain(overlay, (w, h), method=Image.LANCZOS)
         ox = x + (w - overlay.width) // 2
         oy = y + (h - overlay.height) // 2
-    if radius > 0:
-        mask = Image.new('L', overlay.size, 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, overlay.width - 1, overlay.height - 1),
-                                               radius=radius, fill=255)
-        overlay.putalpha(ImageChops.multiply(overlay.getchannel('A'), mask))
-    overlay = _apply_opacity(overlay, opacity)
+
+    ow, oh = overlay.size
+    if mask_kind == 'circle':
+        scale = _SUPERSAMPLE if ow * oh * _SUPERSAMPLE ** 2 <= _SUPERSAMPLE_MAX_PIXELS else 1
+        m = Image.new('L', (ow * scale, oh * scale), 0)
+        ImageDraw.Draw(m).ellipse((0, 0, ow * scale - 1, oh * scale - 1), fill=255)
+        if scale > 1:
+            m = m.resize((ow, oh), Image.LANCZOS)
+        _mask_layer(overlay, m)
+    elif mask_kind == 'rounded':
+        r = radius if radius > 0 else int(round(min(ow, oh) * 0.12))
+        _mask_layer(overlay, _rounded_mask((ow, oh), r))
+    elif radius > 0:
+        _mask_layer(overlay, _rounded_mask((ow, oh), radius))
+
     layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
     layer.paste(overlay, (ox, oy), overlay)
-    return Image.alpha_composite(img, layer)
+    return layer
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rendern – cover (Schrift auf fertigen Memes abdecken)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _median_edge_color(img, box):
     """Median-Farbe eines 2 px breiten Rings um die Box (außen; am Bildrand innen)."""
@@ -947,10 +1696,9 @@ def _render_cover(img, el, values, brand):
     x0, y0 = max(0, x), max(0, y)
     x1, y1 = min(img.width, x + w), min(img.height, y + h)
     if x1 <= x0 or y1 <= y0:
-        return img
+        return None
     box = (x0, y0, x1, y1)
     feather = max(0.0, _num(el.get('feather'), 0))
-    opacity = max(0.0, min(1.0, _num(el.get('opacity'), 1.0)))
     fill = el.get('fill', 'auto')
     fill = 'auto' if fill in (None, '') else fill
 
@@ -958,62 +1706,254 @@ def _render_cover(img, el, values, brand):
     ImageDraw.Draw(mask).rectangle((x0, y0, x1 - 1, y1 - 1), fill=255)
     if feather > 0:
         mask = mask.filter(ImageFilter.GaussianBlur(feather))
-    if opacity < 1:
-        mask = mask.point(lambda a: int(a * opacity))
 
     source = None
-    if str(fill).lower() == 'inpaint':
+    if isinstance(fill, str) and fill.strip().lower() == 'inpaint':
         source = _inpaint(img, box)
         if source is None:
             log.info('cover inpaint: cv2/numpy nicht verfügbar, nutze fill=auto')
             fill = 'auto'
     if source is None:
-        if str(fill).lower() == 'auto':
-            color = _median_edge_color(img, box)
+        if isinstance(fill, str) and fill.strip().lower() == 'auto':
+            source = Image.new('RGBA', img.size, _median_edge_color(img, box))
         else:
-            color = parse_color(fill, brand, None)
-            if color is None:
-                color = _median_edge_color(img, box)
-        source = Image.new('RGBA', img.size, color)
-    return Image.composite(source, img, mask)
+            source = fill_flaeche(img.size, fill, brand)
+            if source is None:
+                source = Image.new('RGBA', img.size, _median_edge_color(img, box))
+    source = source.convert('RGBA')
+    _mask_layer(source, mask)
+    return source
 
 
-def _render_rect(img, el, values, brand):
-    x, y = _int(el.get('x'), 0), _int(el.get('y'), 0)
-    w, h = max(1, _int(el.get('width'), 1)), max(1, _int(el.get('height'), 1))
-    radius = max(0, _int(el.get('radius'), 0))
-    fill = parse_color(el.get('fill'), brand, None)
-    stroke = parse_color(el.get('stroke'), brand, None)
-    stroke_width = max(0, _int(el.get('stroke_width'), 0)) if stroke is not None else 0
-    opacity = max(0.0, min(1.0, _num(el.get('opacity'), 1.0)))
-    if fill is None and stroke_width == 0:
-        return img
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rendern – Formen
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _star_points(cx, cy, rx, ry, points, inner):
+    pts = []
+    n = max(3, int(points))
+    for i in range(2 * n):
+        r = 1.0 if i % 2 == 0 else max(0.01, min(1.0, inner))
+        ang = -math.pi / 2 + i * math.pi / n
+        pts.append((cx + rx * r * math.cos(ang), cy + ry * r * math.sin(ang)))
+    return pts
+
+
+def _round_rect_path(x0, y0, x1, y1, r, steps=10):
+    """Abgerundetes Rechteck als Punktliste (im Uhrzeigersinn) plus Einfügestellen je Kante.
+    Liefert (punkte, slots) – slots = {'top': idx, 'right': idx, 'bottom': idx, 'left': idx};
+    an idx können zusätzliche Punkte in Laufrichtung eingefügt werden."""
+    r = max(0.0, min(r, (x1 - x0) / 2.0, (y1 - y0) / 2.0))
+    pts, slots = [], {}
+
+    def arc(cx, cy, a0, a1):
+        for i in range(steps + 1):
+            a = math.radians(a0 + (a1 - a0) * i / steps)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+
+    if r > 0:
+        arc(x0 + r, y0 + r, 180, 270)            # oben links
+    else:
+        pts.append((x0, y0))
+    slots['top'] = len(pts)
+    if r > 0:
+        arc(x1 - r, y0 + r, 270, 360)            # oben rechts
+    else:
+        pts.append((x1, y0))
+    slots['right'] = len(pts)
+    if r > 0:
+        arc(x1 - r, y1 - r, 0, 90)               # unten rechts
+    else:
+        pts.append((x1, y1))
+    slots['bottom'] = len(pts)
+    if r > 0:
+        arc(x0 + r, y1 - r, 90, 180)             # unten links
+    else:
+        pts.append((x0, y1))
+    slots['left'] = len(pts)
+    return pts, slots
+
+
+def _bubble_path(w, h, r, tail):
+    """Sprechblase als EIN zusammenhängender Polygonzug: abgerundetes Rechteck + Spitze."""
+    tx, ty = tail
+    pts, slots = _round_rect_path(0.0, 0.0, float(w), float(h), r)
+    # nächste Kante bestimmen
+    over = {'top': -ty, 'bottom': ty - h, 'left': -tx, 'right': tx - w}
+    side = max(over, key=lambda k: over[k])
+    if over[side] <= 0:                                  # Spitze liegt im Körper -> unten
+        side = 'bottom'
+    bw = max(6.0, min(w, h) * 0.12)
+    if side in ('top', 'bottom'):
+        edge_y = 0.0 if side == 'top' else float(h)
+        cxp = _clamp(tx, r + bw + 2, w - r - bw - 2) if w > 2 * (r + bw + 2) else w / 2.0
+        b1 = (cxp - bw, edge_y)
+        b2 = (cxp + bw, edge_y)
+        ins = [b1, (tx, ty), b2] if side == 'top' else [b2, (tx, ty), b1]
+    else:
+        edge_x = 0.0 if side == 'left' else float(w)
+        cyp = _clamp(ty, r + bw + 2, h - r - bw - 2) if h > 2 * (r + bw + 2) else h / 2.0
+        b1 = (edge_x, cyp - bw)
+        b2 = (edge_x, cyp + bw)
+        ins = [b1, (tx, ty), b2] if side == 'right' else [b2, (tx, ty), b1]
+    idx = slots[side]
+    return pts[:idx] + ins + pts[idx:]
+
+
+def _render_shape(img, el, values, brand):
+    """Formen mit Kantenglättung: auf vierfach vergrößerter Maske zeichnen, dann LANCZOS."""
+    el_type = str(el.get('type') or 'shape').strip().lower()
+    shape = str(el.get('shape') or 'rect').strip().lower()
+    if el_type == 'rect' and not el.get('shape'):
+        shape = 'rect'
+    if shape not in SHAPES:
+        log.warning('Unbekannte Form %r, nutze rect', el.get('shape'))
+        shape = 'rect'
+
+    x, y = _num(el.get('x'), 0), _num(el.get('y'), 0)
+    w = max(1, _int(el.get('width'), 1))
+    h = max(1, _int(el.get('height'), 1))
+    fill_spec = el.get('fill')
+    stroke_spec = el.get('stroke')
+    stroke_w = max(0.0, _num(el.get('stroke_width'), 0))
+    if parse_paint(stroke_spec, brand) is None:
+        stroke_w = 0.0
+    if shape == 'line':
+        if parse_paint(stroke_spec, brand) is None:
+            stroke_spec, stroke_w = fill_spec, (stroke_w or max(2.0, _num(el.get('stroke_width'), 4)))
+        if stroke_w <= 0:
+            stroke_w = 4.0
+        fill_spec = None
+    if parse_paint(fill_spec, brand) is None and stroke_w <= 0:
+        return None
+
+    # lokaler Rahmen: Elementbox plus Rand für die Kontur, bei bubble auch die Spitze
+    margin = stroke_w / 2.0 + 2.0
+    fx0, fy0, fx1, fy1 = -margin, -margin, w + margin, h + margin
+    tail = None
+    if shape == 'bubble':
+        t = el.get('tail')
+        if isinstance(t, dict) and _is_num(t.get('x')) and _is_num(t.get('y')):
+            tail = (_num(t['x']) - x, _num(t['y']) - y)     # tail ist in Leinwand-Pixeln
+        else:
+            tail = (w * 0.25, h * 1.25)
+        fx0, fy0 = min(fx0, tail[0] - margin), min(fy0, tail[1] - margin)
+        fx1, fy1 = max(fx1, tail[0] + margin), max(fy1, tail[1] + margin)
+    fw = max(1, int(math.ceil(fx1 - fx0)))
+    fh = max(1, int(math.ceil(fy1 - fy0)))
+
+    scale = _SUPERSAMPLE if fw * fh * _SUPERSAMPLE ** 2 <= _SUPERSAMPLE_MAX_PIXELS else 1
+    SW, SH = fw * scale, fh * scale
+
+    def P(p):
+        return ((p[0] - fx0) * scale, (p[1] - fy0) * scale)
+
+    fill_mask = Image.new('L', (SW, SH), 0)
+    stroke_mask = Image.new('L', (SW, SH), 0)
+    fd = ImageDraw.Draw(fill_mask)
+    sd = ImageDraw.Draw(stroke_mask)
+    sw_s = max(1, int(round(stroke_w * scale)))
+
+    if shape == 'rect':
+        radius = max(0.0, _num(el.get('radius'), 0)) * scale
+        p0, p1 = P((0, 0)), P((w, h))
+        rect = (p0[0], p0[1], p1[0] - 1, p1[1] - 1)
+        fd.rounded_rectangle(rect, radius=radius, fill=255)
+        if stroke_w > 0:
+            sd.rounded_rectangle(rect, radius=radius, outline=255, width=sw_s)
+    elif shape == 'ellipse':
+        p0, p1 = P((0, 0)), P((w, h))
+        box = (p0[0], p0[1], p1[0] - 1, p1[1] - 1)
+        fd.ellipse(box, fill=255)
+        if stroke_w > 0:
+            sd.ellipse(box, outline=255, width=sw_s)
+    elif shape == 'line':
+        a, b = P((0, 0)), P((w, h))
+        sd.line([a, b], fill=255, width=sw_s)
+        rr = sw_s / 2.0
+        for p in (a, b):
+            sd.ellipse((p[0] - rr, p[1] - rr, p[0] + rr, p[1] + rr), fill=255)
+    else:
+        if shape == 'triangle':
+            pts = [(w / 2.0, 0.0), (float(w), float(h)), (0.0, float(h))]
+        elif shape == 'star':
+            pts = _star_points(w / 2.0, h / 2.0, w / 2.0, h / 2.0,
+                               _int(el.get('points'), 5) or 5,
+                               _num(el.get('inner'), 0.5) or 0.5)
+        elif shape == 'arrow':
+            head = min(w * 0.45, h * 0.9)
+            thick = stroke_w if (stroke_w and not el.get('fill')) else h * 0.4
+            thick = _clamp(thick, 2.0, h)
+            ty0, ty1 = (h - thick) / 2.0, (h + thick) / 2.0
+            sx = max(0.0, w - head)
+            pts = [(0.0, ty0), (sx, ty0), (sx, 0.0), (float(w), h / 2.0),
+                   (sx, float(h)), (sx, ty1), (0.0, ty1)]
+        else:                                    # bubble
+            radius = _num(el.get('radius'), min(w, h) * 0.18)
+            pts = _bubble_path(w, h, radius, tail)
+        spts = [P(p) for p in pts]
+        fd.polygon(spts, fill=255)
+        if stroke_w > 0:
+            sd.line(spts + [spts[0]], fill=255, width=sw_s, joint='curve')
+
+    if scale > 1:
+        fill_mask = fill_mask.resize((fw, fh), Image.LANCZOS)
+        stroke_mask = stroke_mask.resize((fw, fh), Image.LANCZOS)
+
+    patch = Image.new('RGBA', (fw, fh), (0, 0, 0, 0))
+    fill_img = fill_flaeche((fw, fh), fill_spec, brand)
+    if fill_img is not None:
+        _mask_layer(fill_img, fill_mask)
+        patch = Image.alpha_composite(patch, fill_img)
+    if stroke_w > 0:
+        stroke_img = fill_flaeche((fw, fh), stroke_spec, brand)
+        if stroke_img is not None:
+            _mask_layer(stroke_img, stroke_mask)
+            patch = Image.alpha_composite(patch, stroke_img)
+
     layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(layer).rounded_rectangle(
-        (x, y, x + w - 1, y + h - 1), radius=radius, fill=fill,
-        outline=stroke if stroke_width else None, width=stroke_width,
-    )
-    return Image.alpha_composite(img, _apply_opacity(layer, opacity))
+    return _blit(layer, patch, x + fx0, y + fy0)
 
 
 _HANDLERS = {
     'text': _render_text,
     'image': _render_image,
     'cover': _render_cover,
-    'rect': _render_rect,
+    'shape': _render_shape,
+    'rect': _render_shape,
 }
 
 
-def render(bg_path, config, values, brand=None):
-    """Rendert Hintergrund + Elemente und liefert PNG-Bytes (RGB).
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rendern – Hauptlauf
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    bg_path: Pfad (oder Bytes/Dateiobjekt/PIL-Image) des Hintergrunds – fehlt die Datei,
-             wird FileNotFoundError geworfen (der einzige Fehler, der nach außen geht).
+def _canvas_config(config):
+    c = config.get('canvas')
+    return c if isinstance(c, dict) else {}
+
+
+def _canvas_size(canvas, bg_img):
+    if _is_num(canvas.get('width')) and _is_num(canvas.get('height')):
+        cw, ch = _int(canvas['width']), _int(canvas['height'])
+        if cw > 0 and ch > 0:
+            return (cw, ch)
+    if bg_img is not None:
+        return bg_img.size
+    return DEFAULT_CANVAS
+
+
+def render(bg_path, config, values, brand=None):
+    """Rendert Grundfläche + Hintergrundbild + Elemente und liefert PNG-Bytes (RGB).
+
+    bg_path: Pfad (oder Bytes/Dateiobjekt/PIL-Image) des Hintergrunds. None/'' ist erlaubt –
+             dann trägt canvas.background allein (Bauen von Null). Ist ein Hintergrund
+             angegeben, aber nicht lesbar, und es gibt KEIN canvas.background, wird wie
+             bisher FileNotFoundError geworfen (der einzige Fehler, der nach außen geht).
     config:  dict (oder JSON-Text) mit 'elements' und optional 'canvas'.
     values:  {var: Wert}; Nicht-Strings werden mit str() gewandelt.
     brand:   {'bg','text','accent','font'} für 'brand:x'-Farben und font 'brand'.
     Fehler einzelner Elemente werden geloggt und übersprungen."""
-    img = _open_background(bg_path)
     try:
         config = _coerce_config(config) or {}
     except Exception as ex:
@@ -1023,23 +1963,53 @@ def render(bg_path, config, values, brand=None):
         config = {}
     values = {str(k): v for k, v in (values or {}).items()}
     brand = dict(brand) if brand else None
+    canvas = _canvas_config(config)
+    bg_paint = canvas.get('background')
+    has_bg_paint = parse_paint(bg_paint, brand) is not None
 
-    canvas = config.get('canvas')
-    if isinstance(canvas, dict) and _is_num(canvas.get('width')) and _is_num(canvas.get('height')):
-        cw, ch = _int(canvas['width']), _int(canvas['height'])
-        if cw > 0 and ch > 0 and (cw, ch) != img.size:
-            img = ImageOps.fit(img, (cw, ch), method=Image.LANCZOS)
+    bg_img = None
+    if bg_path not in (None, '', False):
+        try:
+            bg_img = _open_background(bg_path)
+        except FileNotFoundError:
+            if not has_bg_paint:
+                raise
+            log.warning('Hintergrundbild fehlt, zeichne auf canvas.background: %r', bg_path)
+
+    size = _canvas_size(canvas, bg_img)
+    base = Image.new('RGBA', size, (255, 255, 255, 255))
+    if has_bg_paint:
+        fill_img = fill_flaeche(size, bg_paint, brand)
+        if fill_img is not None:
+            base = Image.alpha_composite(base, fill_img)
+    elif bg_img is None:
+        log.warning('Weder Hintergrundbild noch canvas.background – nutze Weiß (%dx%d)', *size)
+    if bg_paint not in (None, '', False) and not has_bg_paint:
+        log.warning('canvas.background %r unbrauchbar, nutze Weiß', bg_paint)
+
+    if bg_img is not None:
+        if bg_img.size != size:
+            bg_img = ImageOps.fit(bg_img, size, method=Image.LANCZOS)
+        base = Image.alpha_composite(base, bg_img)
+    img = base
 
     elements = config.get('elements') or []
     if not isinstance(elements, list):
         elements = []
+    text_versucht = text_gezeichnet = 0     # nur für den Sammelhinweis am Ende
     for i, el in enumerate(elements):
         if not isinstance(el, dict):
             log.warning('Element %d ist kein Objekt, übersprungen', i + 1)
             continue
         if _bool(el.get('hidden')):
             continue
-        if _num(el.get('opacity'), 1.0) <= 0:
+        opacity = _clamp(_num(el.get('opacity'), 1.0), 0.0, 1.0)
+        if opacity <= 0:
+            continue
+        only_if, skip_if = el.get('only_if'), el.get('skip_if')
+        if only_if and not _has_value(values, only_if):
+            continue
+        if skip_if and _has_value(values, skip_if):
             continue
         el_type = str(el.get('type') or 'text').lower()
         handler = _HANDLERS.get(el_type)
@@ -1047,10 +2017,38 @@ def render(bg_path, config, values, brand=None):
         if handler is None:
             log.warning("Element %s: unbekannter type '%s', übersprungen", el_id, el_type)
             continue
+        if el_type == 'text':
+            text_versucht += 1
         try:
-            img = handler(img, el, values, brand)
+            result = handler(img, el, values, brand)
+            if isinstance(result, tuple):
+                layer, center = result
+            else:
+                layer, center = result, None
+            if layer is None:
+                continue
+            if el_type == 'text':
+                text_gezeichnet += 1
+            if opacity < 1:
+                layer = _apply_opacity(layer, opacity)
+            rot = _num(el.get('rotation'), 0.0)
+            flip_h, flip_v = _bool(el.get('flip_h')), _bool(el.get('flip_v'))
+            if rot or flip_h or flip_v:
+                if center is None:
+                    center = (_num(el.get('x'), 0) + _num(el.get('width'), 0) / 2.0,
+                              _num(el.get('y'), 0) + _num(el.get('height'), 0) / 2.0)
+                layer = _transform_layer(layer, center[0], center[1], rot, flip_h, flip_v)
+            img = _composite(img, layer, el.get('blend'))
         except Exception as ex:
             log.warning('Element %s (%s) fehlgeschlagen: %s', el_id, el_type, ex)
+
+    if text_versucht and not text_gezeichnet:
+        # Genau der Fall „Bild sieht aus wie der reine Hintergrund“: jede Textzeile ist an
+        # einer fehlenden Variablen gescheitert. Ausgabe bleibt wie bisher – aber sichtbar.
+        log.warning('Rendern ohne jeden Text: alle %d Text-Elemente ohne Wert '
+                    '(vorhandene Variablen: %s)', text_versucht,
+                    ', '.join(sorted(k for k, v in values.items()
+                                     if v is not None and str(v).strip())) or 'keine')
 
     buf = io.BytesIO()
     img.convert('RGB').save(buf, format='PNG')

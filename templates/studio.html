@@ -11,6 +11,7 @@
   --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.12);
   --accent:#3b82f6; --accent2:#60a5fa; --accent-dim:rgba(59,130,246,0.15);
   --success:#22c55e; --warning:#f59e0b; --danger:#ef4444; --purple:#8b5cf6;
+  --city:#f59e0b; --city2:#fbbf24;
   --text:#e2e8f0; --muted:#64748b; --muted2:#94a3b8;
   --font-display:'Bebas Neue',sans-serif; --font-body:'DM Sans',sans-serif;
 }
@@ -26,6 +27,7 @@ button{font-family:var(--font-body);}
 .btn-primary:hover:not(:disabled){background:#2563eb;}
 .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
 .btn-ghost:hover:not(:disabled){background:var(--surface3);border-color:var(--border2);}
+.btn-ghost.on{background:var(--accent-dim);border-color:rgba(59,130,246,.45);color:var(--accent2);}
 .btn-danger{background:var(--danger);color:white;}
 .btn-sm{padding:5px 12px;font-size:12px;}
 .btn-xs{padding:3px 8px;font-size:11px;border-radius:5px;}
@@ -41,6 +43,7 @@ button{font-family:var(--font-body);}
 .form-group label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:500;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.form-row-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;}
 input[type=text],input[type=number],input[type=url],select,textarea{
   width:100%;padding:7px 9px;border-radius:7px;border:1px solid var(--border);
   background:var(--surface2);color:var(--text);font-family:var(--font-body);font-size:12px;
@@ -49,84 +52,121 @@ input[type=text],input[type=number],input[type=url],select,textarea{
 input:focus,select:focus,textarea:focus{border-color:var(--accent);}
 textarea{resize:vertical;min-height:60px;}
 select option{background:var(--surface2);}
-input[type=color]{width:34px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;}
+input[type=color]{width:34px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;flex-shrink:0;}
 input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;}
+input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
 .muted{color:var(--muted);}
 .small{font-size:11px;}
 
 /* ── Kopfzeile ── */
-.topbar{display:flex;align-items:center;gap:12px;padding:0 16px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
+.topbar{display:flex;align-items:center;gap:10px;padding:0 14px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
 .topbar .brand{font-family:var(--font-display);font-size:20px;letter-spacing:2px;color:white;white-space:nowrap;}
 .topbar .brand span{color:var(--accent);}
 .topbar .back{color:var(--muted2);text-decoration:none;font-size:12px;white-space:nowrap;padding:6px 10px;border-radius:7px;border:1px solid var(--border);}
 .topbar .back:hover{color:var(--text);background:var(--surface2);}
-.topbar .name-input{font-family:var(--font-body);font-size:15px;font-weight:600;background:transparent;border:1px solid transparent;color:var(--text);padding:6px 10px;border-radius:7px;min-width:240px;flex:1;max-width:520px;}
+.topbar .name-input{font-family:var(--font-body);font-size:15px;font-weight:600;background:transparent;border:1px solid transparent;color:var(--text);padding:6px 10px;border-radius:7px;min-width:180px;flex:1;max-width:420px;}
 .topbar .name-input:hover{border-color:var(--border);}
 .topbar .name-input:focus{border-color:var(--accent);background:var(--surface2);}
 .topbar .series-wrap{display:flex;align-items:center;gap:6px;}
-.topbar .series-wrap input{width:150px;}
-.topbar .series-wrap input.pos{width:60px;}
+.topbar .series-wrap input{width:120px;}
+.topbar .series-wrap input.pos{width:56px;}
 .topbar .grow{flex:1;}
 .save-state{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap;}
 .save-state.clean{background:rgba(34,197,94,.15);color:#4ade80;}
 .save-state.dirty{background:rgba(245,158,11,.15);color:#fbbf24;}
 .save-state.busy{background:var(--accent-dim);color:var(--accent2);}
-.chips{display:flex;gap:4px;flex-wrap:wrap;max-width:360px;}
+.chips{display:flex;gap:4px;flex-wrap:wrap;max-width:300px;max-height:38px;overflow:hidden;}
 .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;border:1px solid var(--border);background:var(--surface2);color:var(--muted2);white-space:nowrap;}
 .chip.knowledge{border-color:rgba(59,130,246,.35);color:var(--accent2);}
 .chip.city{border-color:rgba(34,197,94,.35);color:#4ade80;}
 .chip.free{border-color:rgba(245,158,11,.35);color:#fbbf24;}
+.chip.asset{border-color:rgba(139,92,246,.35);color:#a78bfa;}
 
 /* ── Hilfe ── */
-.help-box{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;font-size:12px;color:var(--muted2);line-height:1.55;flex-shrink:0;}
+.help-box{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;font-size:12px;color:var(--muted2);line-height:1.55;flex-shrink:0;max-height:220px;overflow-y:auto;}
 .help-box strong{color:var(--text);}
 .help-box kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px;padding:0 5px;font-family:var(--font-body);font-size:11px;color:var(--text);}
 .errors-box{background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.3);padding:8px 20px;font-size:12px;color:#f87171;flex-shrink:0;}
 .errors-box ul{margin:4px 0 0 16px;}
 
 /* ── Arbeitsfläche ── */
-.workspace{flex:1;display:grid;grid-template-columns:240px 1fr 310px;min-height:0;}
+.workspace{flex:1;display:grid;grid-template-columns:250px 1fr 330px;min-height:0;}
 .panel{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;min-height:0;}
 .panel.right{border-right:none;border-left:1px solid var(--border);}
-.panel-title{font-family:var(--font-display);font-size:15px;letter-spacing:1.5px;color:var(--muted2);padding:12px 14px 6px;}
+.panel-title{font-family:var(--font-display);font-size:15px;letter-spacing:1.5px;color:var(--muted2);padding:12px 14px 6px;display:flex;align-items:center;gap:6px;}
+.panel-title .cnt{font-family:var(--font-body);font-size:11px;letter-spacing:0;color:var(--muted);}
 .panel-body{padding:0 12px 14px;}
+.panel-split{border-top:1px solid var(--border);}
 
 /* Ebenen */
 .layer{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;}
 .layer:hover{background:var(--surface2);}
 .layer.selected{background:var(--accent-dim);border-color:rgba(59,130,246,.35);}
-.layer .glyph{width:20px;height:20px;border-radius:5px;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted2);flex-shrink:0;}
-.layer .lname{flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.layer.dragover{border-top:2px solid var(--accent2);}
+.layer.dragging{opacity:.4;}
+.layer .glyph{width:20px;height:20px;border-radius:5px;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted2);flex-shrink:0;cursor:grab;}
+.layer .lname{flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .layer .lname.hiddenel{color:var(--muted);text-decoration:line-through;}
-.layer .ltype{font-size:10px;color:var(--muted);}
+.layer input.lname-edit{flex:1;padding:2px 5px;font-size:12px;min-width:0;}
 .layer .lerr{width:7px;height:7px;border-radius:50%;background:var(--danger);flex-shrink:0;}
-.layer .lbtns{display:none;gap:1px;}
+.layer .lcity{font-size:10px;color:var(--city2);border:1px solid rgba(245,158,11,.4);border-radius:4px;padding:0 4px;flex-shrink:0;}
+.layer .lgrp{font-size:10px;color:var(--muted2);flex-shrink:0;}
+.layer .lbtns{display:none;gap:1px;flex-shrink:0;}
 .layer:hover .lbtns,.layer.selected .lbtns{display:flex;}
+.layer .lbtns .ibtn.always{display:inline-flex;}
+.layer.locked .lname{color:var(--muted);}
 .ibtn{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:4px;line-height:1;}
 .ibtn:hover{background:var(--surface3);color:var(--text);}
 .ibtn:disabled{opacity:.3;cursor:default;}
+.ibtn.on{color:var(--accent2);}
 .empty-hint{color:var(--muted);font-size:12px;padding:10px 8px;line-height:1.5;}
+
+/* Stadt-Leiste */
+.cityrow{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;background:rgba(245,158,11,.05);}
+.cityrow:hover{background:rgba(245,158,11,.12);}
+.cityrow.selected{border-color:rgba(245,158,11,.45);}
+.cityrow .cname{font-size:12px;flex:1;min-width:0;}
+.cityrow .cvar{font-family:ui-monospace,monospace;font-size:11px;color:var(--city2);display:block;}
+.cityrow .cval{font-size:11px;color:var(--muted2);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cityrow .cval.miss{color:var(--danger);}
 
 /* Bühne */
 .center{display:flex;flex-direction:column;min-height:0;min-width:0;}
-.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0;}
-.toolbar .sep{width:1px;height:20px;background:var(--border2);margin:0 4px;}
+.toolbar{display:flex;align-items:center;gap:5px;padding:7px 10px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0;}
+.toolbar .sep{width:1px;height:20px;background:var(--border2);margin:0 3px;}
 .toolbar select{width:auto;padding:5px 8px;}
+.toolbar .num{width:74px;padding:5px 7px;}
+.dd{position:relative;}
+.dd-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:60;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:5px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.55);display:none;max-height:340px;overflow-y:auto;}
+.dd.open .dd-menu{display:block;}
+.dd-menu button,.dd-menu a{display:flex;width:100%;align-items:center;gap:8px;background:none;border:none;color:var(--text);font-size:12px;padding:6px 8px;border-radius:6px;cursor:pointer;text-align:left;text-decoration:none;}
+.dd-menu button:hover,.dd-menu a:hover{background:var(--surface3);}
+.dd-menu .hd{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);padding:6px 8px 3px;}
+.dd-menu .row{display:flex;gap:5px;padding:4px 6px;}
 .stage-wrap{flex:1;overflow:auto;background:#05070c;position:relative;display:flex;align-items:flex-start;justify-content:center;padding:24px;background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:18px 18px;}
-.stage{position:relative;background:#222;box-shadow:0 10px 40px rgba(0,0,0,.6);flex-shrink:0;user-select:none;touch-action:none;}
+.stage{position:relative;background:#222;box-shadow:0 10px 40px rgba(0,0,0,.6);flex-shrink:0;user-select:none;touch-action:none;overflow:hidden;}
+.stage-paint{position:absolute;inset:0;pointer-events:none;}
 .stage-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;display:block;}
 .stage-nobg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;padding:20px;background:repeating-linear-gradient(45deg,#141a29 0 14px,#0f1420 14px 28px);}
-.el{position:absolute;cursor:move;outline:1px dashed rgba(255,255,255,0);transition:outline-color .1s;}
+.el{position:absolute;cursor:move;outline:1px dashed rgba(255,255,255,0);transform-origin:50% 50%;}
 .el:hover{outline-color:rgba(255,255,255,.4);}
-.el.selected{outline:1px solid var(--accent2);outline-offset:0;}
-.el.is-hidden{opacity:.25;}
+.el.selected{outline:1px solid var(--accent2);}
+.el.is-hidden{opacity:.25 !important;}
+.el.locked{cursor:default;pointer-events:none;}
+.el.city-bound{outline:1.5px solid rgba(245,158,11,.85);}
+.el.city-bound.selected{outline:2px solid var(--accent2);box-shadow:0 0 0 2px rgba(245,158,11,.7);}
+.stage.dim-others .el:not(.city-bound){opacity:.14 !important;}
+.stage.dim-others .stage-bg{opacity:.3;}
 .el .txt{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;white-space:pre;}
-.el .txt div{display:block;}
+.el .tbox{display:block;}
+.el .tline{display:block;}
 .el .cover{position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(239,68,68,.35) 0 6px,rgba(239,68,68,.12) 6px 12px);border:1px dashed rgba(239,68,68,.7);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fecaca;text-shadow:0 1px 2px #000;}
 .el .cover.solid{background:none;border-color:rgba(255,255,255,.4);}
-.el .img{position:absolute;inset:0;background:rgba(139,92,246,.18);border:1px dashed rgba(139,92,246,.8);display:flex;align-items:center;justify-content:center;font-size:11px;color:#ddd6fe;overflow:hidden;text-shadow:0 1px 2px #000;}
-.el .img img{width:100%;height:100%;display:block;}
-.el .rct{position:absolute;inset:0;}
+.el .img{position:absolute;inset:0;overflow:hidden;}
+.el .img .ph{position:absolute;inset:0;background:rgba(139,92,246,.18);border:1px dashed rgba(139,92,246,.8);display:flex;align-items:center;justify-content:center;font-size:11px;color:#ddd6fe;text-align:center;padding:4px;text-shadow:0 1px 2px #000;}
+.el .img img{position:absolute;display:block;}
+.el .shp{position:absolute;inset:0;}
+.el .shp svg{width:100%;height:100%;display:block;overflow:visible;}
 .handle{position:absolute;width:9px;height:9px;background:white;border:1px solid var(--accent);border-radius:2px;z-index:5;}
 .handle[data-h=nw]{left:-5px;top:-5px;cursor:nwse-resize;}
 .handle[data-h=n]{left:calc(50% - 5px);top:-5px;cursor:ns-resize;}
@@ -136,42 +176,92 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
 .handle[data-h=s]{left:calc(50% - 5px);bottom:-5px;cursor:ns-resize;}
 .handle[data-h=sw]{left:-5px;bottom:-5px;cursor:nesw-resize;}
 .handle[data-h=w]{left:-5px;top:calc(50% - 5px);cursor:ew-resize;}
+.handle.rot{border-radius:50%;background:var(--accent2);border-color:white;left:calc(50% - 5px);top:-26px;cursor:grab;}
+.handle.tail{border-radius:50%;background:var(--warning);border-color:#000;z-index:6;}
+.rot-stick{position:absolute;left:50%;top:-22px;width:1px;height:22px;background:var(--accent2);z-index:4;}
+.guide{position:absolute;background:#ff3b9a;z-index:40;pointer-events:none;}
+.guide.v{width:1px;top:0;bottom:0;}
+.guide.h{height:1px;left:0;right:0;}
+.marquee{position:absolute;border:1px solid var(--accent2);background:rgba(59,130,246,.14);z-index:45;pointer-events:none;}
 .stage-info{position:absolute;left:12px;bottom:8px;font-size:11px;color:var(--muted);pointer-events:none;}
+
+/* Kontextmenü */
+.ctxmenu{position:fixed;z-index:9000;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:5px;min-width:200px;box-shadow:0 12px 34px rgba(0,0,0,.6);}
+.ctxmenu button{display:flex;width:100%;justify-content:space-between;gap:14px;background:none;border:none;color:var(--text);font-size:12px;padding:6px 9px;border-radius:6px;cursor:pointer;text-align:left;}
+.ctxmenu button:hover{background:var(--surface3);}
+.ctxmenu button:disabled{opacity:.4;cursor:default;}
+.ctxmenu button span{color:var(--muted);font-size:11px;}
+.ctxmenu hr{border:none;border-top:1px solid var(--border);margin:4px 2px;}
 
 /* Eigenschaften */
 .prop-section{border-top:1px solid var(--border);padding:10px 0 4px;}
-.prop-section h4{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600;}
+.prop-section h4{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:6px;}
+.prop-section h4 .sp{margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;}
 .seg{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:2px;}
 .seg button{flex:1;background:none;border:none;color:var(--muted2);padding:5px 4px;border-radius:5px;cursor:pointer;font-size:12px;}
 .seg button.on{background:var(--accent-dim);color:var(--accent2);}
 .color-field{display:flex;align-items:center;gap:6px;}
 .color-field input[type=text]{flex:1;font-family:ui-monospace,monospace;font-size:11px;}
+.color-wrap{border:1px solid var(--border);border-radius:8px;padding:7px;background:rgba(255,255,255,.02);}
+.color-tabs{display:flex;gap:4px;margin-bottom:6px;}
+.color-tabs button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted2);font-size:11px;padding:3px 6px;border-radius:6px;cursor:pointer;}
+.color-tabs button.on{background:var(--accent-dim);border-color:rgba(59,130,246,.4);color:var(--accent2);}
+.grad-prev{height:20px;border-radius:5px;border:1px solid var(--border2);margin-bottom:6px;}
+.grad-stop{display:flex;align-items:center;gap:5px;margin-bottom:4px;}
+.grad-stop input[type=number]{width:64px;}
+.grad-stop input[type=text]{flex:1;font-family:ui-monospace,monospace;font-size:11px;}
 .brand-btns{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;}
 .brand-btns button{font-size:10px;padding:3px 7px;}
 .brand-btns .sw{width:9px;height:9px;border-radius:2px;border:1px solid rgba(255,255,255,.3);display:inline-block;}
 .check-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted2);padding:4px 0;cursor:pointer;}
 .kv{font-size:12px;color:var(--muted2);line-height:1.6;}
 .kv b{color:var(--text);font-weight:600;}
+.slider-row{display:flex;align-items:center;gap:7px;margin-bottom:6px;}
+.slider-row label{font-size:11px;color:var(--muted);width:88px;flex-shrink:0;}
+.slider-row input[type=range]{flex:1;}
+.slider-row .v{font-size:11px;color:var(--muted2);width:36px;text-align:right;font-family:ui-monospace,monospace;}
+.multi-hint{background:var(--accent-dim);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--accent2);margin:8px 0;}
+.preset-list{display:flex;flex-wrap:wrap;gap:5px;}
+.preset-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border2);background:var(--surface2);border-radius:20px;padding:3px 6px 3px 10px;font-size:11px;color:var(--text);cursor:pointer;}
+.preset-chip:hover{background:var(--surface3);}
+.asset-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.asset-card{position:relative;border:1px solid var(--border);border-radius:8px;background:var(--surface3);padding:4px;cursor:pointer;text-align:center;}
+.asset-card:hover{border-color:var(--accent);}
+.asset-card img{width:100%;height:44px;object-fit:contain;display:block;}
+.asset-card .an{font-size:10px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px;}
+.asset-card .del{position:absolute;top:-6px;right:-6px;background:var(--danger);color:white;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:1;cursor:pointer;display:none;}
+.asset-card:hover .del{display:block;}
 
 /* Vorschau-Panel */
 .preview-panel{height:250px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:height .15s;}
 .preview-panel.collapsed{height:44px;}
 .preview-panel.collapsed .preview-body{display:none;}
 .preview-head{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
-.preview-head select{width:180px;padding:5px 8px;}
+.preview-head select{width:170px;padding:5px 8px;}
 .preview-body{flex:1;display:flex;gap:14px;padding:10px 14px;min-height:0;}
 .preview-imgs{display:flex;gap:10px;flex:1;min-width:0;overflow-x:auto;}
 .preview-imgs figure{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;}
 .preview-imgs img{height:150px;border-radius:6px;border:1px solid var(--border2);background:#000;}
-.preview-imgs figcaption{font-size:11px;color:var(--muted2);}
+.preview-imgs figcaption{font-size:11px;color:var(--muted2);text-align:center;max-width:170px;}
+.preview-imgs figcaption .miss{color:var(--warning);display:block;font-size:10px;}
+.preview-imgs .failed{height:150px;width:120px;border:1px dashed rgba(239,68,68,.5);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#f87171;text-align:center;padding:6px;}
 .preview-empty{color:var(--muted);font-size:12px;display:flex;align-items:center;}
-.ai-info{width:340px;flex-shrink:0;overflow-y:auto;font-size:12px;color:var(--muted2);line-height:1.5;}
+.ai-info{width:320px;flex-shrink:0;overflow-y:auto;font-size:12px;color:var(--muted2);line-height:1.5;}
 .ai-info table{width:100%;border-collapse:collapse;margin-top:4px;}
 .ai-info td{padding:2px 4px;border-bottom:1px solid var(--border);vertical-align:top;}
 .ai-info td:first-child{color:var(--accent2);white-space:nowrap;font-family:ui-monospace,monospace;font-size:11px;}
 .pv-status{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap;}
 .spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border2);border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;}
 @keyframes spin{to{transform:rotate(360deg);}}
+.citypick{display:flex;flex-wrap:wrap;gap:4px;max-height:60px;overflow-y:auto;padding:2px 0;}
+.citypick label{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;cursor:pointer;}
+.citypick label.on{border-color:rgba(59,130,246,.5);color:var(--accent2);background:var(--accent-dim);}
+
+/* Modal */
+.modal-back{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:20px;width:100%;max-width:420px;max-height:86vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+.modal h3{font-family:var(--font-display);font-size:19px;letter-spacing:1.5px;margin-bottom:12px;color:white;}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
 
 /* Toast */
 #toast-container{position:fixed;top:64px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
@@ -186,7 +276,7 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
 
 <header class="topbar">
   <div class="brand">MEME<span>OS</span></div>
-  <a class="back" href="/?tab=templates">← Zurück zur Bibliothek</a>
+  <a class="back" href="/?tab=templates">← Bibliothek</a>
   <input type="text" class="name-input" id="tpl-name" placeholder="Template-Name" title="Template-Name (wird beim Speichern übernommen)">
   <div class="series-wrap">
     <input type="text" id="tpl-series" placeholder="Serie" title="Serienname">
@@ -196,46 +286,123 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
   <div class="grow"></div>
   <span class="save-state clean" id="save-state">gespeichert</span>
   <button class="btn btn-ghost btn-sm" id="btn-help" type="button">Hilfe</button>
+  <button class="btn btn-ghost btn-sm" id="btn-new" type="button" title="Leere Vorlage anlegen">Neu</button>
   <button class="btn btn-ghost btn-sm" id="btn-duplicate" type="button" title="Template kopieren">Duplizieren</button>
   <button class="btn btn-primary btn-sm" id="btn-save" type="button" title="Strg+S">Speichern</button>
 </header>
 
 <div class="help-box" id="help-box" hidden>
-  <strong>So funktioniert es:</strong> Box aufziehen, Variable wählen, Schrift und Farbe setzen. Variablen kommen beim Rendern aus dem Stadtwissen.
-  Feste Texte bleiben in jeder Stadt gleich. Abdeckungen verstecken alte Schrift auf fertigen Meme-Bildern.<br>
-  Bühne: Klick wählt aus, Ziehen bewegt, die acht Griffe ändern die Größe. <kbd>Pfeiltasten</kbd> verschieben um 1 px (<kbd>Shift</kbd> 10 px),
-  <kbd>Entf</kbd> löscht, <kbd>Strg+D</kbd> dupliziert, <kbd>Strg+Z</kbd>/<kbd>Strg+Y</kbd> Rückgängig/Wiederholen, <kbd>Strg+S</kbd> speichert, <kbd>Esc</kbd> hebt die Auswahl auf.
-  Die Textdarstellung in der Bühne ist eine Annäherung – verbindlich ist die Vorschau unten (vom Server gerendert).
+  <strong>Von Null anfangen:</strong> „Hintergrund“ → Farbe oder Verlauf wählen (oder ein Bild hochladen), Leinwandgröße setzen, dann Elemente einfügen.
+  Ohne Hintergrundbild trägt allein die Leinwandfarbe.<br>
+  <strong>Stadtspezifisch:</strong> Alles, was pro Stadt wechselt (Variable, Farbe <kbd>brand:…</kbd>, Bedingung), bekommt auf der Bühne einen orangen Rahmen
+  und steht links unter „Was ändert sich pro Stadt“. Der Schalter „Nur Stadtspezifisches“ dimmt den Rest ab.<br>
+  <strong>Bühne:</strong> Klick wählt aus, <kbd>Umschalt+Klick</kbd> wählt mehrere, Ziehen im Leeren zieht einen Auswahlrahmen auf.
+  Acht Griffe ändern die Größe, der runde Griff darüber dreht (<kbd>Umschalt</kbd> rastet in 15°-Schritten).
+  <kbd>Alt+Ziehen</kbd> dupliziert. Gesperrte Elemente lassen sich nur über die Ebenenliste anfassen.<br>
+  <strong>Tasten:</strong> <kbd>Pfeile</kbd> 1 px (<kbd>Umschalt</kbd> 10 px), <kbd>Entf</kbd> löschen, <kbd>Strg+C</kbd>/<kbd>Strg+V</kbd> kopieren/einfügen (auch in eine andere Vorlage),
+  <kbd>Strg+D</kbd> duplizieren, <kbd>Strg+G</kbd> gruppieren, <kbd>Strg+Umschalt+G</kbd> auflösen, <kbd>Strg+A</kbd> alles, <kbd>Strg+Z</kbd>/<kbd>Strg+Umschalt+Z</kbd> rückgängig/wiederholen,
+  <kbd>Strg+S</kbd> speichern, <kbd>Esc</kbd> Auswahl aufheben. Rechtsklick öffnet das Menü.<br>
+  <strong>Wichtig:</strong> Die Bühne ist eine Annäherung mit HTML und CSS – Zeilenumbruch, Schriftmaße, Verläufe und Filter können im Browser leicht anders
+  aussehen als im fertigen Bild. Verbindlich ist immer die Vorschau unten, die der Server rendert.
   Ebenen weiter unten in der Liste liegen hinten, weiter oben vorne.
 </div>
 <div class="errors-box" id="errors-box" hidden></div>
 
 <div class="workspace">
   <aside class="panel">
-    <div class="panel-title">EBENEN</div>
+    <div class="panel-title">EBENEN <span class="cnt" id="layer-count"></span></div>
     <div class="panel-body" id="layers"></div>
+    <div class="panel-split">
+      <div class="panel-title">WAS ÄNDERT SICH PRO STADT <span class="cnt" id="city-count"></span></div>
+      <div class="panel-body" id="citybar"></div>
+    </div>
   </aside>
 
   <section class="center">
     <div class="toolbar">
       <button class="btn btn-ghost btn-sm" type="button" data-add="text">+ Text</button>
-      <button class="btn btn-ghost btn-sm" type="button" data-add="cover">+ Abdeckung</button>
       <button class="btn btn-ghost btn-sm" type="button" data-add="image">+ Bild</button>
-      <button class="btn btn-ghost btn-sm" type="button" data-add="rect">+ Rechteck</button>
+      <div class="dd" id="dd-sticker">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-sticker">+ Aufkleber ▾</button>
+        <div class="dd-menu">
+          <div class="hd">Aufkleber-Bibliothek</div>
+          <div id="asset-list" style="padding:4px 6px;"></div>
+          <div class="row"><button type="button" class="btn btn-ghost btn-xs" id="btn-asset-up" style="justify-content:center;">Aufkleber hochladen …</button></div>
+        </div>
+      </div>
+      <div class="dd" id="dd-shape">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-shape">+ Form ▾</button>
+        <div class="dd-menu">
+          <button type="button" data-add-shape="rect">▭ Rechteck</button>
+          <button type="button" data-add-shape="ellipse">◯ Ellipse</button>
+          <button type="button" data-add-shape="triangle">△ Dreieck</button>
+          <button type="button" data-add-shape="star">★ Stern</button>
+          <button type="button" data-add-shape="line">— Linie</button>
+          <button type="button" data-add-shape="arrow">→ Pfeil</button>
+          <button type="button" data-add-shape="bubble">▢ Sprechblase</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" data-add="cover">+ Abdeckung</button>
       <span class="sep"></span>
-      <button class="btn btn-ghost btn-sm" type="button" id="btn-bg">Hintergrund ersetzen</button>
+      <div class="dd" id="dd-bg">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-bg">Hintergrund ▾</button>
+        <div class="dd-menu">
+          <div class="hd">Hintergrundbild</div>
+          <button type="button" id="btn-bg">Bild hochladen …</button>
+          <button type="button" id="btn-bg-off">Bild in der Bühne ausblenden</button>
+          <div class="hd">Leinwandfarbe (unter dem Bild)</div>
+          <div id="canvas-bg-field" style="padding:2px 6px 6px;"></div>
+        </div>
+      </div>
+      <div class="dd" id="dd-size">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-size">Leinwand ▾</button>
+        <div class="dd-menu">
+          <div class="hd">Voreinstellungen</div>
+          <div id="canvas-presets"></div>
+          <div class="hd">Frei</div>
+          <div class="row">
+            <input type="number" class="num" id="cv-w" min="64" max="8000" title="Breite">
+            <input type="number" class="num" id="cv-h" min="64" max="8000" title="Höhe">
+            <button type="button" class="btn btn-primary btn-xs" id="btn-cv-apply">Setzen</button>
+          </div>
+          <div class="row"><button type="button" class="btn btn-ghost btn-xs" id="btn-cv-img" style="justify-content:center;">Auf Bildgröße setzen</button></div>
+        </div>
+      </div>
       <button class="btn btn-ghost btn-sm" type="button" id="btn-font">Schrift hochladen</button>
       <span class="sep"></span>
-      <button class="btn btn-ghost btn-sm" type="button" id="btn-undo" title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
-      <button class="btn btn-ghost btn-sm" type="button" id="btn-redo" title="Wiederholen (Strg+Y)">↷ Wiederholen</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-undo" title="Rückgängig (Strg+Z)">↶</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)">↷</button>
       <span class="sep"></span>
       <label class="small muted">Zoom</label>
       <select id="zoom">
         <option value="fit">Anpassen</option>
+        <option value="0.25">25 %</option>
         <option value="0.5">50 %</option>
         <option value="0.75">75 %</option>
         <option value="1">100 %</option>
+        <option value="1.5">150 %</option>
+        <option value="2">200 %</option>
       </select>
+    </div>
+    <div class="toolbar">
+      <span class="small muted" id="sel-info" style="min-width:96px;">nichts gewählt</span>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="left" title="Links ausrichten">⇤</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="hcenter" title="Waagerecht zentrieren">↔</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="right" title="Rechts ausrichten">⇥</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="top" title="Oben ausrichten">⤒</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="vcenter" title="Senkrecht zentrieren">↕</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-align="bottom" title="Unten ausrichten">⤓</button>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm" type="button" data-dist="h" title="Waagerecht gleichmäßig verteilen (ab 3)">⇹ waagerecht</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-dist="v" title="Senkrecht gleichmäßig verteilen (ab 3)">⇳ senkrecht</button>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-group" title="Gruppieren (Strg+G)">Gruppieren</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-ungroup" title="Gruppe auflösen (Strg+Umschalt+G)">Auflösen</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-lock" title="Sperren / entsperren">Sperren</button>
+      <span class="sep"></span>
+      <button class="btn btn-ghost btn-sm on" type="button" id="btn-snap" title="Am Raster und an anderen Elementen einrasten">Fangen ●</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-cityonly" title="Alles andere abdunkeln">Nur Stadtspezifisches</button>
     </div>
     <div class="stage-wrap" id="stage-wrap">
       <div class="stage" id="stage"></div>
@@ -257,6 +424,18 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
     <button class="btn btn-ghost btn-sm" id="btn-preview" type="button">Vorschau rendern</button>
     <button class="btn btn-ghost btn-sm" id="btn-ai" type="button" title="Echte Werte per KI holen und rendern">KI-Werte</button>
     <button class="btn btn-ghost btn-sm" id="btn-three" type="button" title="Drei zufällige Städte nebeneinander">Drei Städte</button>
+    <div class="dd" id="dd-grid">
+      <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-grid">Mehrere Städte ▾</button>
+      <div class="dd-menu" style="right:0;left:auto;min-width:280px;">
+        <div class="hd">Städte für das Raster</div>
+        <div class="citypick" id="grid-cities" style="max-height:190px;"></div>
+        <div class="row">
+          <button type="button" class="btn btn-ghost btn-xs" id="btn-grid-all">Alle</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="btn-grid-none">Keine</button>
+          <button type="button" class="btn btn-primary btn-xs" id="btn-grid-go">Raster rendern</button>
+        </div>
+      </div>
+    </div>
     <label class="check-row"><input type="checkbox" id="pv-auto" checked> Auto-Vorschau</label>
     <span class="pv-status" id="pv-status"></span>
   </div>
@@ -268,29 +447,383 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:po
 
 <input type="file" id="bg-file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
 <input type="file" id="font-file" accept=".ttf,.otf,font/ttf,font/otf" hidden>
+<input type="file" id="asset-file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml" hidden>
 <div id="toast-container"></div>
+<div id="modal-root"></div>
 
 <script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 1: reine Funktionen (kein DOM, kein Jinja).
+   Der Block ist DOM-frei: er lässt sich einzeln extrahieren und in Node prüfen
+   (module.exports am Ende, im Browser wirkungslos).
+   ───────────────────────────────────────────────────────────────────────────── */
+'use strict';
+
+const KNOWN_TYPES = ['text', 'image', 'cover', 'shape', 'rect'];
+const SHAPES = ['rect', 'ellipse', 'triangle', 'star', 'line', 'arrow', 'bubble'];
+const SHAPE_LABEL = {rect: 'Rechteck', ellipse: 'Ellipse', triangle: 'Dreieck', star: 'Stern', line: 'Linie', arrow: 'Pfeil', bubble: 'Sprechblase'};
+const SHAPE_GLYPH = {rect: '▭', ellipse: '◯', triangle: '△', star: '★', line: '—', arrow: '→', bubble: '▢'};
+const TYPE_LABEL = {text: 'Text', image: 'Bild', cover: 'Abdeckung', shape: 'Form', rect: 'Form'};
+const TYPE_GLYPH = {text: 'T', image: '▣', cover: '▤', shape: '▭', rect: '▭'};
+const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'];
+const FIT_MODES = ['shrink', 'wrap', 'clip'];
+const SNAP_TOL = 6;           // Bühnenpixel
+const MIN_CANVAS = 64;
+const MAX_CANVAS = 8000;
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+function num(v, d) { const n = parseFloat(v); return isFinite(n) ? n : d; }
+function isNum(v) { return v !== null && v !== undefined && v !== '' && isFinite(parseFloat(v)); }
+function deg2rad(d) { return (num(d, 0) * Math.PI) / 180; }
+
+// ── Formtyp ───────────────────────────────────────────────────────────────────
+// 'rect' bleibt als eigener Typ gültig (alte Vorlagen) und zählt als Form.
+function isShape(el) { return el && (el.type === 'shape' || el.type === 'rect'); }
+function shapeOf(el) {
+  if (!el) return 'rect';
+  if (el.type === 'rect') return 'rect';
+  const s = String(el.shape || 'rect');
+  return SHAPES.includes(s) ? s : 'rect';
+}
+
+// ── Geometrie ─────────────────────────────────────────────────────────────────
+function rectOf(el) {
+  return {x: num(el.x, 0), y: num(el.y, 0), w: Math.max(1, num(el.width, 1)), h: Math.max(1, num(el.height, 1))};
+}
+/** Achsenparalleler Umriss einer gedrehten Box. */
+function aabbOf(el) {
+  const r = rectOf(el); const a = num(el.rotation, 0);
+  if (!a) return r;
+  const rad = deg2rad(a), c = Math.abs(Math.cos(rad)), s = Math.abs(Math.sin(rad));
+  const w = r.w * c + r.h * s, h = r.w * s + r.h * c;
+  return {x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h};
+}
+function groupBounds(rects) {
+  if (!rects.length) return {x: 0, y: 0, w: 0, h: 0};
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rects) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h); }
+  return {x: x0, y: y0, w: x1 - x0, h: y1 - y0};
+}
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+/** Punkt um ein Zentrum drehen (Grad, Bildschirm-Koordinaten). */
+function rotatePoint(px, py, cx, cy, degv) {
+  const r = deg2rad(degv), co = Math.cos(r), si = Math.sin(r);
+  const dx = px - cx, dy = py - cy;
+  return {x: cx + dx * co - dy * si, y: cy + dx * si + dy * co};
+}
+function snapAngle(a, step) {
+  step = step || 15;
+  let v = Math.round(a / step) * step;
+  while (v > 180) v -= 360;
+  while (v < -180) v += 360;
+  return v;
+}
+function normAngle(a) {
+  let v = num(a, 0) % 360;
+  if (v > 180) v -= 360;
+  if (v < -180) v += 360;
+  return v;
+}
+
+// ── Fangen ────────────────────────────────────────────────────────────────────
+/**
+ * Rastet eine bewegte Box an Leinwandmitte, Leinwandrändern und den Kanten
+ * anderer Boxen ein. Gibt die korrigierte Position und die Hilfslinien zurück.
+ */
+function computeSnap(rect, targets, canvas, tol) {
+  tol = tol == null ? 6 : tol;
+  const guides = [];
+  const linesX = [0, canvas.width / 2, canvas.width];
+  const linesY = [0, canvas.height / 2, canvas.height];
+  for (const t of (targets || [])) {
+    linesX.push(t.x, t.x + t.w / 2, t.x + t.w);
+    linesY.push(t.y, t.y + t.h / 2, t.y + t.h);
+  }
+  const pick = (own, lines) => {
+    let best = null;
+    for (const o of own) for (const l of lines) {
+      const d = l - o.v;
+      if (Math.abs(d) <= tol && (!best || Math.abs(d) < Math.abs(best.d))) best = {d, at: l};
+    }
+    return best;
+  };
+  const bx = pick([{v: rect.x}, {v: rect.x + rect.w / 2}, {v: rect.x + rect.w}], linesX);
+  const by = pick([{v: rect.y}, {v: rect.y + rect.h / 2}, {v: rect.y + rect.h}], linesY);
+  const out = {x: rect.x, y: rect.y, guides};
+  if (bx) { out.x = rect.x + bx.d; guides.push({axis: 'v', at: bx.at}); }
+  if (by) { out.y = rect.y + by.d; guides.push({axis: 'h', at: by.at}); }
+  return out;
+}
+
+// ── Ausrichten und Verteilen ──────────────────────────────────────────────────
+/**
+ * Ein Element richtet sich an der Leinwand aus, mehrere am gemeinsamen Umriss.
+ * Rückgabe: neue Positionen in der Reihenfolge der Eingabe.
+ */
+function alignRects(rects, mode, canvas) {
+  if (!rects.length) return [];
+  const b = rects.length > 1 ? groupBounds(rects) : {x: 0, y: 0, w: canvas.width, h: canvas.height};
+  return rects.map(r => {
+    let x = r.x, y = r.y;
+    if (mode === 'left') x = b.x;
+    else if (mode === 'hcenter') x = b.x + (b.w - r.w) / 2;
+    else if (mode === 'right') x = b.x + b.w - r.w;
+    else if (mode === 'top') y = b.y;
+    else if (mode === 'vcenter') y = b.y + (b.h - r.h) / 2;
+    else if (mode === 'bottom') y = b.y + b.h - r.h;
+    return {x: Math.round(x), y: Math.round(y)};
+  });
+}
+/** Gleiche Abstände zwischen den Boxen; die äußeren beiden bleiben stehen. */
+function distributeRects(rects, axis) {
+  if (rects.length < 3) return rects.map(r => ({x: Math.round(r.x), y: Math.round(r.y)}));
+  const horiz = axis === 'h';
+  const idx = rects.map((r, i) => i).sort((a, b) => (horiz ? rects[a].x - rects[b].x : rects[a].y - rects[b].y));
+  const first = rects[idx[0]], last = rects[idx[idx.length - 1]];
+  const start = horiz ? first.x : first.y;
+  const end = horiz ? last.x + last.w : last.y + last.h;
+  let sum = 0;
+  for (const i of idx) sum += horiz ? rects[i].w : rects[i].h;
+  const gap = (end - start - sum) / (idx.length - 1);
+  const out = rects.map(r => ({x: Math.round(r.x), y: Math.round(r.y)}));
+  let cur = start;
+  for (const i of idx) {
+    if (horiz) { out[i] = {x: Math.round(cur), y: Math.round(rects[i].y)}; cur += rects[i].w + gap; }
+    else { out[i] = {x: Math.round(rects[i].x), y: Math.round(cur)}; cur += rects[i].h + gap; }
+  }
+  return out;
+}
+/** Verschiebt eine ganze Auswahl und hält sie dabei in der Leinwand. */
+function moveGroup(rects, dx, dy, canvas, keepInside) {
+  const b = groupBounds(rects);
+  if (keepInside && canvas) {
+    dx = clamp(dx, -b.x - b.w + 10, canvas.width - b.x - 10);
+    dy = clamp(dy, -b.y - b.h + 10, canvas.height - b.y - 10);
+  }
+  return rects.map(r => ({x: Math.round(r.x + dx), y: Math.round(r.y + dy)}));
+}
+
+// ── Farben und Verläufe ───────────────────────────────────────────────────────
+function isGradient(v) { return !!v && typeof v === 'object' && (v.type === 'linear' || v.type === 'radial') && Array.isArray(v.stops); }
+function isBrandRef(v) { return typeof v === 'string' && v.indexOf('brand:') === 0; }
+function brandKey(v) { return isBrandRef(v) ? String(v).slice(6) : null; }
+/** brand:… auflösen, Hex durchreichen. */
+function resolveColor(c, brand, fallback) {
+  // fallback darf ausdrücklich null sein ("keine Farbe") – deshalb auf undefined prüfen
+  if (c == null || c === '') return fallback === undefined ? 'transparent' : fallback;
+  if (isGradient(c)) return fallback === undefined ? 'transparent' : fallback;
+  const s = String(c);
+  if (isBrandRef(s)) { const k = brandKey(s); return (brand && brand[k]) || fallback || '#000000'; }
+  return s;
+}
+/** Winkelkonvention: 0° = von links nach rechts, gegen den Uhrzeigersinn steigend. */
+function gradientCss(g, brand) {
+  const stops = (g.stops || []).slice().sort((a, b) => num(a.at, 0) - num(b.at, 0))
+    .map(s => `${resolveColor(s.color, brand, '#000000')} ${(clamp(num(s.at, 0), 0, 1) * 100).toFixed(1)}%`);
+  if (stops.length < 2) stops.push(stops[0] || '#000000');
+  if (g.type === 'radial') return `radial-gradient(circle at 50% 50%, ${stops.join(', ')})`;
+  const cssAngle = 90 - num(g.angle, 0);
+  return `linear-gradient(${cssAngle}deg, ${stops.join(', ')})`;
+}
+/** CSS-Wert für background: Farbe oder Verlauf. Leere Werte geben null. */
+function paintCss(v, brand) {
+  if (v == null || v === '') return null;
+  if (isGradient(v)) return gradientCss(v, brand);
+  return resolveColor(v, brand, null);
+}
+/** Serialisiert einen Verlauf so, wie er in die Konfiguration geschrieben wird. */
+function serializeGradient(type, angle, stops) {
+  const out = {type: type === 'radial' ? 'radial' : 'linear',
+    stops: (stops || []).map(s => ({at: Math.round(clamp(num(s.at, 0), 0, 1) * 1000) / 1000, color: String(s.color || '#000000')}))};
+  if (out.type === 'linear') out.angle = Math.round(clamp(num(angle, 0), 0, 360));
+  return out;
+}
+function defaultGradient(from) {
+  const base = typeof from === 'string' && /^#/.test(from) ? from : '#3b82f6';
+  return {type: 'linear', angle: 90, stops: [{at: 0, color: base}, {at: 1, color: '#000000'}]};
+}
+
+// ── Stadtspezifisch erkennen ──────────────────────────────────────────────────
+function colorSlots(el) {
+  const out = [];
+  if (!el) return out;
+  const push = (key, val) => { if (val != null && val !== '') out.push({key, val}); };
+  push('color', el.color); push('stroke', el.stroke); push('fill', el.fill);
+  if (el.shadow && typeof el.shadow === 'object') push('shadow.color', el.shadow.color);
+  if (el.box && typeof el.box === 'object') { push('box.fill', el.box.fill); push('box.stroke', el.box.stroke); }
+  return out;
+}
+function paintUsesBrand(v) {
+  if (isBrandRef(v)) return true;
+  if (isGradient(v)) return (v.stops || []).some(s => isBrandRef(s.color));
+  return false;
+}
+/**
+ * Was macht ein Element stadtspezifisch? Variable, brand:-Farbe oder Bedingung.
+ * Rückgabe: {city, vars:[…], reasons:[…]}
+ */
+function cityBinding(el) {
+  const vars = [], reasons = [];
+  if (!el) return {city: false, vars, reasons};
+  if (el.var && String(el.var).trim()) { vars.push(String(el.var).trim()); reasons.push('Variable'); }
+  if (el.type === 'text' && el.text) {
+    for (const m of String(el.text).matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) { vars.push(m[1]); }
+    if (vars.length && reasons.indexOf('Variable') < 0) reasons.push('Variable im Text');
+  }
+  for (const slot of colorSlots(el)) if (paintUsesBrand(slot.val)) { reasons.push('Stadtfarbe'); break; }
+  if (el.only_if && String(el.only_if).trim()) { vars.push(String(el.only_if).trim()); reasons.push('nur wenn ' + el.only_if); }
+  if (el.skip_if && String(el.skip_if).trim()) { vars.push(String(el.skip_if).trim()); reasons.push('nicht wenn ' + el.skip_if); }
+  const uniq = Array.from(new Set(vars));
+  return {city: reasons.length > 0, vars: uniq, reasons: Array.from(new Set(reasons))};
+}
+const CITY_ASSET_PREFIX = 'bild_';
+function isCityVar(name) { return typeof name === 'string' && name.indexOf(CITY_ASSET_PREFIX) === 0 && name.length > CITY_ASSET_PREFIX.length; }
+function collectVars(config, includeHidden) {
+  const out = new Set();
+  for (const el of ((config && config.elements) || [])) {
+    if (!includeHidden && el.hidden) continue;
+    const b = cityBinding(el);
+    b.vars.forEach(v => out.add(v));
+  }
+  return Array.from(out).sort();
+}
+
+// ── Text ──────────────────────────────────────────────────────────────────────
+function paddingOf(p) {
+  if (p == null || p === '') return {top: 0, right: 0, bottom: 0, left: 0};
+  if (typeof p === 'object') return {top: num(p.top, 0), right: num(p.right, 0), bottom: num(p.bottom, 0), left: num(p.left, 0)};
+  const v = num(p, 0);
+  return {top: v, right: v, bottom: v, left: v};
+}
+function textValue(el, vals) {
+  vals = vals || {};
+  if (el.var) { const v = vals[el.var]; return v != null && String(v).trim() ? String(v) : (el.fallback || null); }
+  if (el.text != null && el.text !== '') {
+    const out = String(el.text).replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, k) => (vals[k] != null ? vals[k] : ''));
+    return out.trim() ? out : (el.fallback || null);
+  }
+  return el.fallback || null;
+}
+/**
+ * Zeilen und Schriftgröße bestimmen. `measure(size, str)` liefert die Breite.
+ * fit: 'shrink' verkleinert bis es passt, 'wrap' bricht nur um, 'clip' schneidet ab.
+ */
+function fitTextLines(text, o, measure) {
+  o = o || {};
+  const maxSize = Math.max(4, Math.round(num(o.maxSize, 48)));
+  const minSize = clamp(Math.round(num(o.minSize, 12)), 4, maxSize);
+  const maxWidth = Math.max(1, num(o.maxWidth, 100));
+  const maxHeight = isNum(o.maxHeight) ? num(o.maxHeight, 0) : null;
+  const maxLines = o.maxLines ? parseInt(o.maxLines, 10) : null;
+  const lh = num(o.lineHeight, 1.15);
+  const ls = num(o.letterSpacing, 0);
+  const mode = FIT_MODES.includes(o.fit) ? o.fit : 'shrink';
+  const paras = String(text == null ? '' : text).split('\n');
+  const width = (size, s) => measure(size, s) + Math.max(0, s.length - 1) * ls;
+  const wrap = (p, size) => {
+    const words = p.split(/\s+/).filter(Boolean); const lines = []; let cur = '';
+    if (!words.length) return [''];
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (width(size, test) <= maxWidth || !cur) cur = test; else { lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  const cut = res => {
+    let limit = maxLines || Infinity;
+    if (maxHeight) limit = Math.min(limit, Math.max(1, Math.floor(maxHeight / (res.size * lh))));
+    if (res.lines.length > limit) {
+      res.lines = res.lines.slice(0, limit);
+      res.lines[res.lines.length - 1] = res.lines[res.lines.length - 1].replace(/\s*$/, '') + '…';
+      res.clipped = true;
+    }
+    return res;
+  };
+  if (mode === 'clip') return cut({size: maxSize, lines: paras.slice(), clipped: false});
+  if (mode === 'wrap') return cut({size: maxSize, lines: paras.flatMap(p => wrap(p, maxSize)), clipped: false});
+  const step = Math.max(1, Math.round(maxSize / 40));
+  const sizes = []; for (let s = maxSize; s > minSize; s -= step) sizes.push(s);
+  sizes.push(minSize);
+  let last = null;
+  for (const size of sizes) {
+    const lines = paras.flatMap(p => wrap(p, size));
+    last = {size, lines, clipped: false};
+    const h = lines.length * size * lh;
+    const wideOk = lines.every(l => width(size, l) <= maxWidth * 1.02);
+    if (wideOk && (!maxLines || lines.length <= maxLines) && (!maxHeight || h <= maxHeight)) return last;
+  }
+  return cut(last || {size: minSize, lines: [''], clipped: false});
+}
+
+// ── Prüfungen ─────────────────────────────────────────────────────────────────
+function quickErrors(el) {
+  const errs = [];
+  if (!KNOWN_TYPES.includes(el.type)) errs.push('unbekannter Typ');
+  if (!(num(el.width, 0) > 0)) errs.push('Breite fehlt');
+  if (el.type !== 'text' && !(num(el.height, 0) > 0)) errs.push('Höhe fehlt');
+  if (el.type === 'text' && !el.var && !(el.text && String(el.text).trim()) && !(el.fallback && String(el.fallback).trim())) errs.push('Variable oder Text fehlt');
+  if (el.type === 'image' && !el.var && !el.src) errs.push('Quelle fehlt');
+  if (isShape(el) && !el.fill && !el.stroke) errs.push('Füllung oder Kontur fehlt');
+  if (el.type === 'text' && isNum(el.max_size) && isNum(el.min_size) && num(el.min_size) > num(el.max_size)) errs.push('min. Größe größer als max.');
+  if (isNum(el.opacity) && (num(el.opacity, 1) < 0 || num(el.opacity, 1) > 1)) errs.push('Deckkraft außerhalb 0–1');
+  return errs;
+}
+function layerName(el) {
+  if (el.name && String(el.name).trim()) return String(el.name).trim();
+  if (el.type === 'text') return el.var ? '{' + el.var + '}' : (el.text ? String(el.text).replace(/\s+/g, ' ').slice(0, 28) : el.id);
+  if (el.type === 'image') return el.var ? '{' + el.var + '}' : (el.src ? String(el.src).split('/').pop().slice(0, 28) : el.id);
+  if (el.type === 'cover') return 'Abdeckung ' + (el.fill && el.fill !== 'auto' ? (isGradient(el.fill) ? 'Verlauf' : el.fill) : 'auto');
+  if (isShape(el)) return SHAPE_LABEL[shapeOf(el)] || 'Form';
+  return el.id;
+}
+/** Fehlende Pflichtangaben ergänzen, ohne bestehende Werte zu verändern. */
+function normalizeElement(el, i) {
+  if (!el.id) el.id = 'el' + (i + 1);
+  if (!el.type) el.type = 'text';
+  return el;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {KNOWN_TYPES, SHAPES, SHAPE_LABEL, TYPE_LABEL, BLEND_MODES, FIT_MODES, SNAP_TOL, MIN_CANVAS, MAX_CANVAS,
+    clamp, esc, num, isNum, deg2rad, isShape, shapeOf, rectOf, aabbOf, groupBounds, rectsOverlap, rotatePoint,
+    snapAngle, normAngle, computeSnap, alignRects, distributeRects, moveGroup, isGradient, isBrandRef, brandKey,
+    resolveColor, gradientCss, paintCss, serializeGradient, defaultGradient, colorSlots, paintUsesBrand,
+    cityBinding, isCityVar, collectVars, paddingOf, textValue, fitTextLines, quickErrors, layerName, normalizeElement};
+}
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 2: Editor (braucht DOM). Nutzt die reinen Funktionen aus Teil 1.
+   ───────────────────────────────────────────────────────────────────────────── */
 'use strict';
 const TID = {{ template_id|tojson }};
 const CSRF = '{{ csrf_token }}';
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
-const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const KNOWN_TYPES = ['text', 'image', 'cover', 'rect'];
-const TYPE_LABEL = {text: 'Text', image: 'Bild', cover: 'Abdeckung', rect: 'Rechteck'};
-const TYPE_GLYPH = {text: 'T', image: '▣', cover: '▤', rect: '▭'};
 // Canva-Schriftnamen -> eingebaute Keys (Spiegel von CANVA_FONT_MAP im Renderer, nur für die Bühne)
 const FONT_ALIAS = {'bebasneue': 'anton', 'impact': 'anton', 'leaguegothic': 'anton', 'oswald': 'bold', 'oswaldbold': 'bold',
   'arialblack': 'bold', 'montserrat': 'bold', 'arialroundedmtbold': 'arial_rounded_bold', 'arialroundedbold': 'arial_rounded_bold'};
+const FALLBACK_CANVAS_PRESETS = [
+  {key: 'ig_portrait', label: 'Instagram Hochformat 1080 × 1350', width: 1080, height: 1350},
+  {key: 'ig_square', label: 'Instagram Quadrat 1080 × 1080', width: 1080, height: 1080},
+  {key: 'story', label: 'Story / Reel 1080 × 1920', width: 1080, height: 1920},
+  {key: 'landscape', label: 'Querformat 1200 × 630', width: 1200, height: 630},
+];
 
 // ── Zustand ───────────────────────────────────────────────────────────────────
 const S = {
   template: null, config: {elements: []}, canvas: {width: 1080, height: 1350}, imageSize: null,
-  bgUrl: null, fonts: [], variables: [], cities: [], brand: {bg: '#ffffff', text: '#000000', accent: '#3b82f6', font: 'Arial'},
-  aiAvailable: false, selectedId: null, zoom: 'fit', scale: 1, saved: '', saving: false,
+  bgUrl: null, bgVisible: true, fonts: [], variables: [], cities: [],
+  brand: {bg: '#ffffff', text: '#000000', accent: '#3b82f6', font: 'Arial'},
+  cityAssets: [], assets: [], presets: [], canvasPresets: FALLBACK_CANVAS_PRESETS.slice(),
+  aiAvailable: false, sel: [], zoom: 'fit', scale: 1, saved: '', saving: false,
   undo: [], redo: [], propsKey: '', focusSnap: false, arrowSnapAt: 0,
+  snapOn: true, cityOnly: false, gridSel: [], aiValues: {}, gridMissing: {}, gridMax: 12,
 };
 const measureCtx = document.createElement('canvas').getContext('2d');
 const registeredFonts = new Set();
@@ -319,20 +852,17 @@ async function api(method, url, body, opts) {
   if (!r.ok) { const err = new Error(data.error || (data.errors || []).join('; ') || ('Fehler ' + r.status)); err.data = data; throw err; }
   return data;
 }
-function num(v, d) { const n = parseFloat(v); return isFinite(n) ? n : d; }
-function isNum(v) { return v !== null && v !== '' && isFinite(parseFloat(v)); }
-function selected() { return S.config.elements.find(e => e.id === S.selectedId) || null; }
-function newId() {
-  let n = S.config.elements.length + 1;
-  while (S.config.elements.some(e => e.id === 'el' + n)) n++;
+function els() { return S.config.elements; }
+function byId(id) { return els().find(e => e.id === id) || null; }
+function selected() { return S.sel.length ? byId(S.sel[S.sel.length - 1]) : null; }
+function selEls() { return S.sel.map(byId).filter(Boolean); }
+function newId(taken) {
+  const used = new Set(els().map(e => e.id).concat(taken || []));
+  let n = used.size + 1;
+  while (used.has('el' + n)) n++;
   return 'el' + n;
 }
-function resolveColor(c, fallback) {
-  if (c == null || c === '') return fallback || 'transparent';
-  c = String(c);
-  if (c.startsWith('brand:')) return S.brand[c.slice(6)] || fallback || '#000';
-  return c;
-}
+function brandColor(c, fallback) { return resolveColor(c, S.brand, fallback); }
 function fontEntry(key) {
   if (!key || key === 'brand') return null;
   const norm = String(key).toLowerCase().replace(/\.(ttf|otf)$/, '').replace(/[\s\-_]+/g, '');
@@ -343,34 +873,44 @@ function fontEntry(key) {
 }
 function fontCss(key) {
   if (key === 'brand') return `"${S.brand.font}", "mf_anton", Impact, sans-serif`;
-  const f = fontEntry(key) || S.fonts.find(f => f.key === 'anton') || S.fonts[0];
-  return f ? `"mf_${f.key}", Impact, sans-serif` : 'Impact, sans-serif';
+  const f = fontEntry(key) || S.fonts.find(x => x.key === 'anton') || S.fonts[0];
+  // Der Schlüssel stammt aus einem hochgeladenen Dateinamen und landet in einer
+  // CSS-Angabe. Alles außer Buchstaben, Ziffern, Strich und Unterstrich entfernen,
+  // sonst ließe sich mit einem Anführungszeichen aus der Angabe ausbrechen.
+  const sicher = f ? String(f.key).replace(/[^A-Za-z0-9_-]/g, '') : '';
+  return sicher ? `"mf_${sicher}", Impact, sans-serif` : 'Impact, sans-serif';
 }
-function varLabel(key) { const v = S.variables.find(v => v.key === key); return v ? v.label : key; }
-function collectVars(cfg, includeHidden) {
-  const out = new Set();
-  for (const el of (cfg || S.config).elements) {
-    if (!includeHidden && el.hidden) continue;
-    if (el.type !== 'text' && el.type !== 'image') continue;
-    if (el.var && String(el.var).trim()) out.add(String(el.var).trim());
-    if (el.type === 'text' && el.text) for (const m of String(el.text).matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) out.add(m[1]);
-  }
-  return Array.from(out).sort();
+function varLabel(key) { const v = S.variables.find(x => x.key === key); return v ? v.label : key; }
+function varKind(key) {
+  if (isCityVar(key)) return 'asset';
+  const v = S.variables.find(x => x.key === key);
+  if (!v) return 'free';
+  return v.kind === 'stadtbild' ? 'asset' : v.kind;
 }
-function varKind(key) { const v = S.variables.find(v => v.key === key); return v ? v.kind : 'free'; }
+/** Das Backend liefert Stadtbild-Schlüssel als Objekte ({key, var, cities, total_cities}),
+    ältere Fassungen als reine Zeichenketten – beides hier auf eine Form bringen. */
+function normCityAssets(list) {
+  return (Array.isArray(list) ? list : []).map(x => (typeof x === 'string'
+    ? {key: x, var: CITY_ASSET_PREFIX + x, cities: null, total_cities: null}
+    : {key: String(x.key || ''), var: x.var || (CITY_ASSET_PREFIX + x.key), cities: x.cities, total_cities: x.total_cities}))
+    .filter(x => x.key);
+}
+function cityAssetInfo(key) { return S.cityAssets.find(a => a.key === key) || null; }
+function assetUrl(a) { return (a && (a.vorschau_url || a.url || a.datei_url)) || ''; }
 function ensureVariable(key) {
-  if (!S.variables.some(v => v.key === key)) S.variables.push({key, label: key, kind: 'free'});
+  if (!S.variables.some(v => v.key === key)) S.variables.push({key, label: key, kind: isCityVar(key) ? 'asset' : 'free'});
 }
-function quickErrors(el) {
-  const errs = [];
-  if (!KNOWN_TYPES.includes(el.type)) errs.push('unbekannter Typ');
-  if (!(num(el.width, 0) > 0)) errs.push('Breite fehlt');
-  if (el.type !== 'text' && !(num(el.height, 0) > 0)) errs.push('Höhe fehlt');
-  if (el.type === 'text' && !el.var && !(el.text && String(el.text).trim()) && !(el.fallback && String(el.fallback).trim())) errs.push('Variable oder Text fehlt');
-  if (el.type === 'image' && !el.var && !el.src) errs.push('Quelle fehlt');
-  if (el.type === 'rect' && !el.fill && !el.stroke) errs.push('Füllung oder Kontur fehlt');
-  if (el.type === 'text' && isNum(el.max_size) && isNum(el.min_size) && num(el.min_size) > num(el.max_size)) errs.push('min. Größe größer als max.');
-  return errs;
+function allVarKeys() {
+  const set = new Set(S.variables.map(v => v.key));
+  collectVars(S.config, true).forEach(v => set.add(v));
+  S.cityAssets.forEach(a => set.add(a.var));
+  // brand:bg & Co. kommen als Farbwerte, nicht als Variablen – nicht in Bedingungen anbieten
+  const marken = new Set(S.variables.filter(v => v.kind === 'marke').map(v => v.key));
+  return Array.from(set).filter(k => !marken.has(k)).sort();
+}
+function currentCity() {
+  const id = parseInt($('#pv-city').value, 10);
+  return S.cities.find(c => c.id === id) || S.cities[0] || null;
 }
 function serialize() {
   return JSON.stringify({config: S.config, name: $('#tpl-name').value, series: $('#tpl-series').value, pos: $('#tpl-series-pos').value});
@@ -384,30 +924,30 @@ function updateSaveState(state) {
   el.textContent = dirty ? 'ungespeichert' : 'gespeichert';
   document.title = (dirty ? '● ' : '') + 'Template-Studio – ' + ($('#tpl-name').value || '');
 }
+/** Platzhalterwerte für die Bühne – die echten Werte kennt nur der Server. */
 function stageValues() {
   const city = currentCity();
   const vals = {};
-  for (const v of collectVars(S.config, true)) vals[v] = '[' + v + ']';
+  for (const v of collectVars(S.config, true)) {
+    if (isCityVar(v)) vals[v] = '';
+    else vals[v] = '[' + v + ']';
+  }
+  const ai = city ? (S.aiValues[city.id] || null) : null;
+  if (ai) for (const k of Object.keys(ai)) if (ai[k] != null && String(ai[k]).trim()) vals[k] = String(ai[k]);
   vals.city_name = city ? city.name : '[city_name]';
   return vals;
 }
-function textValue(el, vals) {
-  if (el.var) { const v = vals[el.var]; return v != null && String(v).trim() ? String(v) : (el.fallback || null); }
-  if (el.text != null && el.text !== '') {
-    const out = String(el.text).replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, k) => vals[k] != null ? vals[k] : '');
-    return out.trim() ? out : (el.fallback || null);
-  }
-  return el.fallback || null;
-}
-function currentCity() {
-  const id = parseInt($('#pv-city').value, 10);
-  return S.cities.find(c => c.id === id) || S.cities[0] || null;
+/** Wird das Element in der Vorschau-Stadt überhaupt gezeichnet? */
+function conditionSkips(el, vals) {
+  if (el.only_if && !(vals[el.only_if] != null && String(vals[el.only_if]).trim())) return 'nur wenn ' + el.only_if;
+  if (el.skip_if && vals[el.skip_if] != null && String(vals[el.skip_if]).trim()) return 'ausgelassen wegen ' + el.skip_if;
+  return null;
 }
 
-// ── Undo / Redo ────────────────────────────────────────────────────────────────
+// ── Undo / Redo ───────────────────────────────────────────────────────────────
 function snapshot() {
   S.undo.push(JSON.stringify(S.config));
-  if (S.undo.length > 50) S.undo.shift();
+  if (S.undo.length > 60) S.undo.shift();
   S.redo.length = 0;
   updateUndoButtons();
 }
@@ -432,16 +972,17 @@ function afterStructuralChange() {
   const cc = S.config.canvas;
   if (cc && isNum(cc.width) && isNum(cc.height)) S.canvas = {width: num(cc.width, 1080), height: num(cc.height, 1350)};
   else S.canvas = S.imageSize || S.canvas || {width: 1080, height: 1350};
-  if (S.selectedId && !selected()) S.selectedId = null;
+  S.sel = S.sel.filter(byId);
   S.propsKey = '';
   renderAll();
   updateUndoButtons();
 }
 
-// ── Änderungen anwenden ────────────────────────────────────────────────────────
+// ── Änderungen anwenden ───────────────────────────────────────────────────────
 function commit(opts) {
   opts = opts || {};
   renderLayers();
+  renderCityBar();
   renderStage();
   if (!opts.keepProps) renderProps(true);
   else syncPropsGeometry();
@@ -449,35 +990,58 @@ function commit(opts) {
   updateSaveState();
   schedulePreview();
 }
-function renderAll() { renderLayers(); renderStage(); renderProps(true); renderChips(); updateSaveState(); schedulePreview(); }
+function renderAll() {
+  renderLayers(); renderCityBar(); renderStage(); renderProps(true); renderChips();
+  renderCanvasBgField(); renderCanvasPresets(); renderAssets(); renderSelInfo();
+  updateSaveState(); schedulePreview();
+}
 
-// ── Laden ──────────────────────────────────────────────────────────────────────
+// ── Laden ─────────────────────────────────────────────────────────────────────
 async function load() {
   let d;
   try { d = await api('GET', `/api/studio/${TID}`); }
   catch (e) { toast('Laden fehlgeschlagen: ' + e.message, 'error'); return; }
   S.template = d.template; S.config = d.config || {elements: []};
   if (!Array.isArray(S.config.elements)) S.config.elements = [];
-  S.config.elements.forEach((el, i) => { if (!el.id) el.id = 'el' + (i + 1); if (!el.type) el.type = 'text'; });
+  S.config.elements.forEach(normalizeElement);
   S.imageSize = d.image_size || null;
   S.canvas = d.canvas || S.imageSize || (S.config.canvas || {width: 1080, height: 1350});
   // Canvas immer in der Konfiguration führen: sonst kennt ein Undo-Schnappschuss ihn nicht
+  const bgKeep = S.config.canvas && S.config.canvas.background !== undefined ? S.config.canvas.background : undefined;
   S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
+  if (bgKeep !== undefined) S.config.canvas.background = bgKeep;
   S.bgUrl = d.background_url;
   S.fonts = d.fonts || []; S.variables = d.variables || []; S.cities = d.cities || [];
   S.brand = d.brand_example || S.brand; S.aiAvailable = !!d.ai_available;
+  S.cityAssets = normCityAssets(d.city_assets);
+  S.assets = Array.isArray(d.assets) ? d.assets : [];
+  S.presets = Array.isArray(d.presets) ? d.presets : [];
+  if (Array.isArray(d.canvas_presets) && d.canvas_presets.length) S.canvasPresets = d.canvas_presets;
   $('#tpl-name').value = d.template.name || '';
   $('#tpl-series').value = d.template.series || '';
   $('#tpl-series-pos').value = d.template.series_position || '';
   const sel = $('#pv-city'); sel.innerHTML = S.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   if (!S.cities.length) sel.innerHTML = '<option value="">Keine Stadt</option>';
+  S.gridSel = S.cities.slice(0, 6).map(c => c.id);
+  if (d.city_count) S.cityCount = d.city_count;
   $('#btn-ai').title = S.aiAvailable ? 'Echte Werte per KI holen und rendern' : 'Kein Anthropic-Key hinterlegt';
+  $('#cv-w').value = S.canvas.width; $('#cv-h').value = S.canvas.height;
   S.saved = serialize();
-  try { const a = localStorage.getItem('studio_auto_preview'); if (a !== null) $('#pv-auto').checked = a === '1'; } catch (_) {}
-  try { const z = localStorage.getItem('studio_zoom'); if (z) { S.zoom = z; $('#zoom').value = z; } } catch (_) {}
-  renderAll();
+  try {
+    const a = localStorage.getItem('studio_auto_preview'); if (a !== null) $('#pv-auto').checked = a === '1';
+    const z = localStorage.getItem('studio_zoom'); if (z) { S.zoom = z; $('#zoom').value = z; }
+    const sn = localStorage.getItem('studio_snap'); if (sn !== null) S.snapOn = sn === '1';
+  } catch (_) {}
+  $('#btn-snap').classList.toggle('on', S.snapOn);
+  $('#btn-snap').textContent = 'Fangen ' + (S.snapOn ? '●' : '○');
+  renderAll(); renderGridCities();
   registerFonts();
-  if (!S.bgUrl) toast('Dieses Template hat noch kein Hintergrundbild – „Hintergrund ersetzen“ klicken.', 'info');
+  // Bibliothek und Stile nachladen, falls der GET sie (noch) nicht mitliefert
+  if (!d.assets) loadAssets();
+  if (!d.presets) loadPresets();
+  if (!S.bgUrl && !(S.config.canvas && S.config.canvas.background)) {
+    toast('Leere Vorlage: unter „Hintergrund“ eine Farbe wählen oder ein Bild hochladen.', 'info');
+  }
 }
 async function registerFonts() {
   let changed = false;
@@ -492,163 +1056,290 @@ async function registerFonts() {
   if (changed) renderStage();
 }
 
-// ── Ebenen ─────────────────────────────────────────────────────────────────────
-function layerName(el) {
-  if (el.type === 'text') return el.var ? '{' + el.var + '}' : (el.text ? String(el.text).replace(/\s+/g, ' ').slice(0, 28) : el.id);
-  if (el.type === 'image') return el.var ? '{' + el.var + '}' : (el.src ? String(el.src).split('/').pop().slice(0, 28) : el.id);
-  if (el.type === 'cover') return 'Abdeckung ' + (el.fill && el.fill !== 'auto' ? el.fill : 'auto');
-  return el.fill ? 'Rechteck ' + el.fill : el.id;
+// ── Auswahl ───────────────────────────────────────────────────────────────────
+function groupMembers(id) {
+  const el = byId(id); if (!el || !el.group) return [id];
+  return els().filter(e => e.group === el.group).map(e => e.id);
 }
+function setSelection(ids, opts) {
+  opts = opts || {};
+  const out = [];
+  for (const id of ids) for (const m of (opts.raw ? [id] : groupMembers(id))) if (out.indexOf(m) < 0 && byId(m)) out.push(m);
+  S.sel = out; S.propsKey = '';
+  renderLayers(); renderCityBar(); renderStage(); renderProps(true); renderSelInfo();
+}
+function select(id, additive) {
+  if (!id) { setSelection([]); return; }
+  if (additive) {
+    const members = groupMembers(id);
+    const has = members.every(m => S.sel.indexOf(m) >= 0);
+    const next = has ? S.sel.filter(x => members.indexOf(x) < 0) : S.sel.concat(members.filter(m => S.sel.indexOf(m) < 0));
+    setSelection(next, {raw: true});
+    return;
+  }
+  setSelection([id]);
+}
+function renderSelInfo() {
+  const n = S.sel.length;
+  const info = $('#sel-info');
+  if (!n) info.textContent = 'nichts gewählt';
+  else if (n === 1) { const el = selected(); info.textContent = layerName(el) + ' · ' + (TYPE_LABEL[el.type] || el.type); }
+  else info.textContent = n + ' Elemente gewählt';
+  const one = n === 1, many = n > 1;
+  $$('[data-align]').forEach(b => b.disabled = !n);
+  $$('[data-dist]').forEach(b => b.disabled = n < 3);
+  $('#btn-group').disabled = !many;
+  $('#btn-ungroup').disabled = !selEls().some(e => e.group);
+  $('#btn-lock').disabled = !n;
+  $('#btn-lock').textContent = n && selEls().every(e => e.locked) ? 'Entsperren' : 'Sperren';
+  void one;
+}
+
+// ── Ebenenliste ───────────────────────────────────────────────────────────────
 function renderLayers() {
-  const box = $('#layers'); const els = S.config.elements;
-  if (!els.length) { box.innerHTML = '<div class="empty-hint">Noch keine Ebenen. Oben „+ Text“ klicken, um die erste Box anzulegen.</div>'; return; }
+  const box = $('#layers'); const list = els();
+  $('#layer-count').textContent = list.length ? list.length + ' Stück' : '';
+  if (!list.length) { box.innerHTML = '<div class="empty-hint">Noch keine Ebenen. Oben in der Werkzeugleiste „+ Text“, „+ Bild“ oder „+ Form“ klicken.</div>'; return; }
   const rows = [];
-  for (let i = els.length - 1; i >= 0; i--) {
-    const el = els[i]; const errs = quickErrors(el);
-    rows.push(`<div class="layer ${el.id === S.selectedId ? 'selected' : ''}" data-id="${esc(el.id)}" title="${esc(errs.join(', ') || el.id)}">
-      <span class="glyph">${TYPE_GLYPH[el.type] || '?'}</span>
-      <span class="lname ${el.hidden ? 'hiddenel' : ''}">${esc(layerName(el))}</span>
+  for (let i = list.length - 1; i >= 0; i--) {
+    const el = list[i]; const errs = quickErrors(el); const cb = cityBinding(el);
+    rows.push(`<div class="layer ${S.sel.indexOf(el.id) >= 0 ? 'selected' : ''} ${el.locked ? 'locked' : ''}" data-id="${esc(el.id)}" data-idx="${i}" draggable="true" title="${esc(errs.join(', ') || cb.reasons.join(', ') || el.id)}">
+      <span class="glyph">${isShape(el) ? (SHAPE_GLYPH[shapeOf(el)] || '▭') : (TYPE_GLYPH[el.type] || '?')}</span>
+      <span class="lname ${el.hidden ? 'hiddenel' : ''}" data-rename="${esc(el.id)}">${esc(layerName(el))}</span>
+      ${el.group ? '<span class="lgrp" title="Gruppe ' + esc(el.group) + '">⧉</span>' : ''}
+      ${cb.city ? '<span class="lcity" title="' + esc(cb.reasons.join(', ')) + '">Stadt</span>' : ''}
       ${errs.length ? '<span class="lerr"></span>' : ''}
       <span class="lbtns">
-        <button class="ibtn" data-act="up" title="Nach vorne" ${i === els.length - 1 ? 'disabled' : ''}>↑</button>
+        <button class="ibtn" data-act="up" title="Nach vorne" ${i === list.length - 1 ? 'disabled' : ''}>↑</button>
         <button class="ibtn" data-act="down" title="Nach hinten" ${i === 0 ? 'disabled' : ''}>↓</button>
-        <button class="ibtn" data-act="eye" title="${el.hidden ? 'Einblenden' : 'Ausblenden'}">${el.hidden ? '◌' : '◉'}</button>
+        <button class="ibtn always ${el.hidden ? '' : 'on'}" data-act="eye" title="${el.hidden ? 'Einblenden' : 'Ausblenden'}">${el.hidden ? '◌' : '◉'}</button>
+        <button class="ibtn always ${el.locked ? 'on' : ''}" data-act="lock" title="${el.locked ? 'Entsperren' : 'Sperren'}">${el.locked ? '▣' : '▢'}</button>
         <button class="ibtn" data-act="dup" title="Duplizieren">⧉</button>
         <button class="ibtn" data-act="del" title="Löschen">✕</button>
       </span></div>`);
   }
   box.innerHTML = rows.join('');
 }
-$('#layers').addEventListener('click', e => {
-  const row = e.target.closest('.layer'); if (!row) return;
-  const id = row.dataset.id; const act = e.target.closest('[data-act]');
-  if (!act) { select(id); return; }
-  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
-  const a = act.dataset.act;
-  if (a === 'up' || a === 'down') moveElement(idx, a === 'up' ? 1 : -1);
-  else if (a === 'eye') { snapshot(); S.config.elements[idx].hidden = !S.config.elements[idx].hidden; if (!S.config.elements[idx].hidden) delete S.config.elements[idx].hidden; commit(); }
-  else if (a === 'dup') duplicateElement(id);
-  else if (a === 'del') deleteElement(id);
-});
-function moveElement(idx, dir) {
-  const els = S.config.elements; const j = idx + dir;
-  if (j < 0 || j >= els.length) return;
-  snapshot(); [els[idx], els[j]] = [els[j], els[idx]]; commit();
+
+// ── Leiste „Was ändert sich pro Stadt" ────────────────────────────────────────
+function cityValuePreview(v) {
+  const city = currentCity();
+  const ai = city ? (S.aiValues[city.id] || {}) : {};
+  if (v === 'city_name') return city ? city.name : '(keine Stadt)';
+  if (ai[v] != null && String(ai[v]).trim()) return String(ai[v]);
+  if (isCityVar(v)) {
+    const key = v.slice(CITY_ASSET_PREFIX.length); const info = cityAssetInfo(key);
+    if (!info) return 'Stadtbild „' + key + '“ – bei keiner Stadt hinterlegt';
+    if (info.cities == null) return 'Stadtbild „' + key + '“';
+    return 'Stadtbild „' + key + '“ – bei ' + info.cities + ' von ' + (info.total_cities || '?') + ' Städten';
+  }
+  const kind = varKind(v);
+  if (kind === 'knowledge') return varLabel(v) + ' aus dem Stadtwissen';
+  return 'freier Wert – kommt beim Rendern von außen';
 }
-function duplicateElement(id) {
-  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
-  snapshot();
-  const copy = JSON.parse(JSON.stringify(S.config.elements[idx]));
-  copy.id = newId(); copy.x = num(copy.x, 0) + 20; copy.y = num(copy.y, 0) + 20;
-  S.config.elements.splice(idx + 1, 0, copy);
-  S.selectedId = copy.id; S.propsKey = ''; commit();
-}
-function deleteElement(id) {
-  const idx = S.config.elements.findIndex(x => x.id === id); if (idx < 0) return;
-  snapshot(); S.config.elements.splice(idx, 1);
-  if (S.selectedId === id) S.selectedId = null;
-  S.propsKey = ''; commit();
-}
-function select(id) {
-  if (S.selectedId === id) return;
-  S.selectedId = id; S.propsKey = '';
-  renderLayers(); renderStage(); renderProps(true);
+function renderCityBar() {
+  const box = $('#citybar');
+  const city = currentCity();
+  const rows = [];
+  for (const el of els()) {
+    const cb = cityBinding(el);
+    if (!cb.city) continue;
+    const missing = (S.gridMissing[city ? city.id : 0] || []);
+    const parts = cb.vars.map(v => `<span class="cvar">{${esc(v)}}</span><span class="cval ${missing.indexOf(v) >= 0 ? 'miss' : ''}">${esc(cityValuePreview(v))}</span>`);
+    if (!cb.vars.length) parts.push(`<span class="cval">${esc(cb.reasons.join(', '))}</span>`);
+    rows.push(`<div class="cityrow ${S.sel.indexOf(el.id) >= 0 ? 'selected' : ''}" data-goto="${esc(el.id)}" title="Zum Element springen">
+      <span class="cname"><b>${esc(layerName(el))}</b>${parts.join('')}</span></div>`);
+  }
+  $('#city-count').textContent = rows.length ? rows.length + ' Stück' : '';
+  box.innerHTML = rows.length ? rows.join('')
+    : '<div class="empty-hint">Nichts wechselt bisher pro Stadt. Setze bei einem Element eine Variable, eine Stadtfarbe (brand:…) oder eine Bedingung.</div>';
 }
 
-// ── Elemente anlegen ───────────────────────────────────────────────────────────
-function addElement(type) {
-  const W = S.canvas.width, H = S.canvas.height;
-  const base = {id: newId(), type, x: Math.round(W * 0.08), y: Math.round(H * 0.08), width: Math.round(W * 0.84), height: Math.round(H * 0.14)};
-  if (type === 'text') Object.assign(base, {text: 'Neuer Text', font: 'anton', max_size: Math.round(W / 12), min_size: Math.round(W / 36),
-    color: '#ffffff', stroke: '#000000', stroke_width: Math.max(2, Math.round(W / 270)), align: 'center', valign: 'middle', uppercase: false});
-  else if (type === 'cover') Object.assign(base, {fill: 'auto', feather: 6});
-  else if (type === 'image') Object.assign(base, {width: Math.round(W * 0.3), height: Math.round(W * 0.3), fit: 'contain', radius: 0, src: ''});
-  else if (type === 'rect') Object.assign(base, {fill: 'brand:accent', radius: 0});
-  // gestapelt einfügen, damit neue Boxen nicht exakt übereinander liegen
-  const n = S.config.elements.length; base.x += (n % 5) * 12; base.y += (n % 5) * 12;
-  snapshot(); S.config.elements.push(base); S.selectedId = base.id; S.propsKey = ''; commit();
-}
-$$('[data-add]').forEach(b => b.addEventListener('click', () => addElement(b.dataset.add)));
-
-// ── Bühne ──────────────────────────────────────────────────────────────────────
+// ── Bühne: Malen ──────────────────────────────────────────────────────────────
 function computeScale() {
   if (S.zoom !== 'fit') return parseFloat(S.zoom) || 1;
   const wrap = $('#stage-wrap'); const pad = 48;
   const sw = (wrap.clientWidth - pad) / S.canvas.width, sh = (wrap.clientHeight - pad) / S.canvas.height;
   return clamp(Math.min(sw, sh), 0.05, 2);
 }
-function fitTextLines(text, css, maxSize, minSize, maxWidth, maxHeight, maxLines, lh, ls) {
-  maxSize = Math.max(4, Math.round(num(maxSize, 48))); minSize = clamp(Math.round(num(minSize, 12)), 4, maxSize);
-  const paras = String(text).split('\n');
-  const width = s => { measureCtx.font = css; return measureCtx.measureText(s).width + Math.max(0, s.length - 1) * ls; };
-  const wrap = (p, size) => {
-    const words = p.split(/\s+/).filter(Boolean); const lines = []; let cur = '';
-    if (!words.length) return [''];
-    for (const w of words) {
-      const test = cur ? cur + ' ' + w : w;
-      if (width(test) <= maxWidth || !cur) cur = test; else { lines.push(cur); cur = w; }
-    }
-    if (cur) lines.push(cur);
-    return lines;
-  };
-  const step = Math.max(1, Math.round(maxSize / 40));
-  const sizes = []; for (let s = maxSize; s > minSize; s -= step) sizes.push(s); sizes.push(minSize);
-  let last = null;
-  for (const size of sizes) {
-    measureCtx.font = `${size}px ${css}`;
-    const lines = paras.flatMap(p => wrap(p, size));
-    last = {size, lines};
-    const h = lines.length * size * lh;
-    const wideOk = lines.every(l => width(l) <= maxWidth * 1.02);
-    if (wideOk && (!maxLines || lines.length <= maxLines) && (!maxHeight || h <= maxHeight)) return last;
+function measure(size, str) { measureCtx.font = `${size}px ${measure._css || 'sans-serif'}`; return measureCtx.measureText(str).width; }
+function fitFor(el, value, sc) {
+  const css = fontCss(el.font || 'anton');
+  measure._css = css;
+  const pad = paddingOf(el.padding);
+  return {css, pad, fit: fitTextLines(el.uppercase && value ? String(value).toUpperCase() : value, {
+    maxSize: el.max_size, minSize: el.min_size,
+    maxWidth: Math.max(1, num(el.width, 100) - pad.left - pad.right),
+    maxHeight: isNum(el.height) ? Math.max(1, num(el.height) - pad.top - pad.bottom) : null,
+    maxLines: el.max_lines, lineHeight: num(el.line_height, 1.15), letterSpacing: num(el.letter_spacing, 0), fit: el.fit,
+  }, measure)};
+}
+function gradientSvgDefs(v, id) {
+  if (!isGradient(v)) return '';
+  const stops = (v.stops || []).slice().sort((a, b) => num(a.at, 0) - num(b.at, 0))
+    .map(s => `<stop offset="${(clamp(num(s.at, 0), 0, 1) * 100).toFixed(1)}%" stop-color="${esc(brandColor(s.color, '#000000'))}"/>`).join('');
+  if (v.type === 'radial') return `<radialGradient id="${id}" cx="50%" cy="50%" r="70%">${stops}</radialGradient>`;
+  const a = deg2rad(num(v.angle, 0)), co = Math.cos(a), si = Math.sin(a);
+  const x1 = (0.5 - co / 2) * 100, y1 = (0.5 + si / 2) * 100, x2 = (0.5 + co / 2) * 100, y2 = (0.5 - si / 2) * 100;
+  return `<linearGradient id="${id}" x1="${x1.toFixed(2)}%" y1="${y1.toFixed(2)}%" x2="${x2.toFixed(2)}%" y2="${y2.toFixed(2)}%">${stops}</linearGradient>`;
+}
+function svgPaint(v, id) {
+  if (v == null || v === '') return {defs: '', paint: 'none'};
+  if (isGradient(v)) return {defs: gradientSvgDefs(v, id), paint: `url(#${id})`};
+  return {defs: '', paint: brandColor(v, 'none')};
+}
+function starPoints(w, h, points, inner) {
+  const n = Math.max(3, Math.round(num(points, 5))), ratio = clamp(num(inner, 0.5), 0.05, 1);
+  const cx = w / 2, cy = h / 2, rx = w / 2, ry = h / 2, out = [];
+  for (let i = 0; i < n * 2; i++) {
+    const ang = (Math.PI / n) * i - Math.PI / 2;
+    const f = i % 2 === 0 ? 1 : ratio;
+    out.push((cx + Math.cos(ang) * rx * f).toFixed(2) + ',' + (cy + Math.sin(ang) * ry * f).toFixed(2));
   }
-  let limit = maxLines || Infinity;
-  if (maxHeight) limit = Math.min(limit, Math.max(1, Math.floor(maxHeight / (last.size * lh))));
-  if (last.lines.length > limit) { last.lines = last.lines.slice(0, limit); last.lines[last.lines.length - 1] = last.lines[last.lines.length - 1].replace(/\s*$/, '') + '…'; }
-  return last;
+  return out.join(' ');
+}
+function shapeSvg(el) {
+  const w = Math.max(1, num(el.width, 10)), h = Math.max(1, num(el.height, 10));
+  const kind = shapeOf(el);
+  const sw = num(el.stroke_width, el.stroke ? 2 : 0);
+  const fid = 'gf_' + el.id, sid = 'gs_' + el.id;
+  const f = svgPaint(el.fill, fid), s = svgPaint(el.stroke, sid);
+  const strokeAttr = sw > 0 && s.paint !== 'none' ? ` stroke="${s.paint}" stroke-width="${sw}"` : '';
+  const i = sw / 2;
+  let body = '';
+  if (kind === 'rect') body = `<rect x="${i}" y="${i}" width="${Math.max(0, w - sw)}" height="${Math.max(0, h - sw)}" rx="${num(el.radius, 0)}" fill="${f.paint}"${strokeAttr}/>`;
+  else if (kind === 'ellipse') body = `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${Math.max(0, w / 2 - i)}" ry="${Math.max(0, h / 2 - i)}" fill="${f.paint}"${strokeAttr}/>`;
+  else if (kind === 'triangle') body = `<polygon points="${w / 2},${i} ${w - i},${h - i} ${i},${h - i}" fill="${f.paint}"${strokeAttr}/>`;
+  else if (kind === 'star') body = `<polygon points="${starPoints(w, h, el.points, el.inner)}" fill="${f.paint}"${strokeAttr}/>`;
+  else if (kind === 'line') {
+    const col = s.paint !== 'none' ? s.paint : f.paint;
+    body = `<line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="${col === 'none' ? '#ffffff' : col}" stroke-width="${Math.max(1, sw || Math.max(2, h / 4))}" stroke-linecap="round"/>`;
+  } else if (kind === 'arrow') {
+    const head = Math.min(w * 0.35, h);
+    const t = h * 0.32;
+    body = `<polygon points="0,${h / 2 - t / 2} ${w - head},${h / 2 - t / 2} ${w - head},0 ${w},${h / 2} ${w - head},${h} ${w - head},${h / 2 + t / 2} 0,${h / 2 + t / 2}" fill="${f.paint === 'none' ? '#ffffff' : f.paint}"${strokeAttr}/>`;
+  } else if (kind === 'bubble') {
+    const r = Math.min(num(el.radius, Math.min(w, h) * 0.22), Math.min(w, h) / 2);
+    const tl = el.tail && typeof el.tail === 'object' ? {x: num(el.tail.x, num(el.x, 0) + w * 0.25) - num(el.x, 0), y: num(el.tail.y, num(el.y, 0) + h * 1.25) - num(el.y, 0)} : {x: w * 0.25, y: h * 1.3};
+    const bx = clamp(tl.x, w * 0.12, w * 0.78);
+    body = `<path d="M ${bx - w * 0.09} ${h - i} L ${tl.x} ${tl.y} L ${bx + w * 0.09} ${h - i} Z" fill="${f.paint}"${strokeAttr}/>`
+         + `<rect x="${i}" y="${i}" width="${Math.max(0, w - sw)}" height="${Math.max(0, h - sw)}" rx="${r}" fill="${f.paint}"${strokeAttr}/>`
+         + `<path d="M ${bx - w * 0.09} ${h - sw} L ${tl.x} ${tl.y} L ${bx + w * 0.09} ${h - sw} Z" fill="${f.paint}"/>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><defs>${f.defs}${s.defs}</defs>${body}</svg>`;
+}
+function imageInner(el, sc) {
+  const cr = el.crop && typeof el.crop === 'object' ? el.crop : null;
+  const cx = cr ? clamp(num(cr.x, 0), 0, 0.99) : 0, cy = cr ? clamp(num(cr.y, 0), 0, 0.99) : 0;
+  const cw = cr ? clamp(num(cr.w, 1), 0.01, 1) : 1, ch = cr ? clamp(num(cr.h, 1), 0.01, 1) : 1;
+  const a = el.adjust && typeof el.adjust === 'object' ? el.adjust : {};
+  const filters = [];
+  if (isNum(a.brightness) && num(a.brightness, 1) !== 1) filters.push(`brightness(${num(a.brightness, 1)})`);
+  if (isNum(a.contrast) && num(a.contrast, 1) !== 1) filters.push(`contrast(${num(a.contrast, 1)})`);
+  if (isNum(a.saturation) && num(a.saturation, 1) !== 1) filters.push(`saturate(${num(a.saturation, 1)})`);
+  if (num(a.blur, 0) > 0) filters.push(`blur(${(num(a.blur, 0) * sc).toFixed(2)}px)`);
+  if (num(a.grayscale, 0) > 0) filters.push(`grayscale(${clamp(num(a.grayscale, 0), 0, 1)})`);
+  const mask = el.mask || 'none';
+  let radius = num(el.radius, 0) * sc + 'px';
+  if (mask === 'circle') radius = '50%';
+  else if (mask === 'rounded' && !num(el.radius, 0)) radius = (Math.min(num(el.width, 10), num(el.height, 10)) * 0.14 * sc) + 'px';
+  const objfit = el.fit === 'cover' ? 'cover' : (el.fit === 'stretch' ? 'fill' : 'contain');
+  const src = el.src && /^(https?:\/\/|\/|data:)/.test(el.src) ? el.src : null;
+  const style = `border-radius:${radius};${filters.length ? 'filter:' + filters.join(' ') + ';' : ''}`;
+  const imgStyle = `width:${(100 / cw).toFixed(3)}%;height:${(100 / ch).toFixed(3)}%;left:${(-cx / cw * 100).toFixed(3)}%;top:${(-cy / ch * 100).toFixed(3)}%;object-fit:${objfit};`;
+  const label = el.var ? (isCityVar(el.var) ? 'Stadtbild ' + esc(el.var.slice(CITY_ASSET_PREFIX.length)) : 'Bild {' + esc(el.var) + '}') : 'Bild (keine Quelle)';
+  return `<div class="img" style="${style}">${src ? `<img src="${esc(src)}" style="${imgStyle}" alt="">` : `<div class="ph">${label}</div>`}</div>`;
+}
+function textInner(el, sc, vals) {
+  const value = textValue(el, vals);
+  const {css, pad, fit} = fitFor(el, value == null ? '' : value, sc);
+  const justify = {top: 'flex-start', middle: 'center', bottom: 'flex-end'}[el.valign || 'top'] || 'flex-start';
+  const items = {left: 'flex-start', center: 'center', right: 'flex-end'}[el.align || 'left'] || 'flex-start';
+  const sw = num(el.stroke_width, 0);
+  const stroke = sw > 0 && el.stroke ? `-webkit-text-stroke:${(sw * 2 * sc).toFixed(2)}px ${esc(brandColor(el.stroke, '#000'))};paint-order:stroke fill;` : '';
+  let shadow = '';
+  if (el.shadow && typeof el.shadow === 'object') shadow = `text-shadow:${num(el.shadow.dx, 2) * sc}px ${num(el.shadow.dy, 2) * sc}px ${num(el.shadow.blur, 0) * sc}px ${esc(brandColor(el.shadow.color, '#000'))};`;
+  let colorCss = `color:${esc(brandColor(el.color, '#fff'))};`;
+  if (isGradient(el.color)) colorCss = `background-image:${esc(gradientCss(el.color, S.brand))};-webkit-background-clip:text;background-clip:text;color:transparent;`;
+  const boxCfg = el.box && typeof el.box === 'object' ? el.box : null;
+  let boxStyle = '';
+  if (boxCfg) {
+    const bp = paddingOf(boxCfg.padding == null ? 8 : boxCfg.padding);
+    const bfill = paintCss(boxCfg.fill, S.brand);
+    const bsw = num(boxCfg.stroke_width, boxCfg.stroke ? 2 : 0);
+    boxStyle = `${bfill ? (isGradient(boxCfg.fill) ? 'background-image:' : 'background:') + esc(bfill) + ';' : ''}`
+      + `border-radius:${num(boxCfg.radius, 0) * sc}px;`
+      + `padding:${bp.top * sc}px ${bp.right * sc}px ${bp.bottom * sc}px ${bp.left * sc}px;`
+      + (bsw > 0 && boxCfg.stroke ? `box-shadow:inset 0 0 0 ${(bsw * sc).toFixed(2)}px ${esc(brandColor(boxCfg.stroke))};` : '');
+  }
+  const lineHtml = l => `<div class="tline">${esc(l) || '&nbsp;'}</div>`;
+  let body;
+  if (value == null) body = '<div class="tline">(leer – kein Wert)</div>';
+  else if (boxCfg && boxCfg.per_line) body = fit.lines.map(l => `<div class="tbox" style="${boxStyle}">${lineHtml(l)}</div>`).join('');
+  else if (boxCfg) body = `<div class="tbox" style="${boxStyle}">${fit.lines.map(lineHtml).join('')}</div>`;
+  else body = fit.lines.map(lineHtml).join('');
+  return `<div class="txt" style="justify-content:${justify};align-items:${items};text-align:${esc(el.align || 'left')};`
+    + `padding:${pad.top * sc}px ${pad.right * sc}px ${pad.bottom * sc}px ${pad.left * sc}px;`
+    + `font-family:${esc(css)};font-size:${(fit.size * sc).toFixed(2)}px;line-height:${num(el.line_height, 1.15)};`
+    + `letter-spacing:${(num(el.letter_spacing, 0) * sc).toFixed(2)}px;${colorCss}${stroke}${shadow}`
+    + `${value == null ? 'opacity:.35;font-style:italic;' : ''}">${body}</div>`;
 }
 function renderStage() {
   const stage = $('#stage'); S.scale = computeScale(); const sc = S.scale;
   stage.style.width = (S.canvas.width * sc) + 'px'; stage.style.height = (S.canvas.height * sc) + 'px';
+  stage.classList.toggle('dim-others', S.cityOnly);
   const parts = [];
-  if (S.bgUrl) parts.push(`<img class="stage-bg" src="${esc(S.bgUrl)}" alt="">`);
-  else parts.push(`<div class="stage-nobg">Kein Hintergrundbild<br><span class="small">„Hintergrund ersetzen“ in der Werkzeugleiste</span></div>`);
+  const cvBg = S.config.canvas ? paintCss(S.config.canvas.background, S.brand) : null;
+  stage.style.background = cvBg || '#222';
+  if (S.bgUrl && S.bgVisible) parts.push(`<img class="stage-bg" src="${esc(S.bgUrl)}" alt="">`);
+  else if (!cvBg) parts.push(`<div class="stage-nobg">Kein Hintergrund<br><span class="small">„Hintergrund“ in der Werkzeugleiste: Bild oder Farbe</span></div>`);
   const vals = stageValues();
-  S.config.elements.forEach(el => {
+  els().forEach(el => {
+    const isSel = S.sel.indexOf(el.id) >= 0;
+    if (el.hidden && !isSel) return;
     const x = num(el.x, 0) * sc, y = num(el.y, 0) * sc, w = Math.max(4, num(el.width, 100) * sc);
     let h = num(el.height, 0) * sc;
     const op = el.opacity == null ? 1 : clamp(num(el.opacity, 1), 0, 1);
-    const isSel = el.id === S.selectedId;
-    if (el.hidden && !isSel) return;
+    const cb = cityBinding(el);
     let inner = '';
     if (el.type === 'text') {
-      const value = textValue(el, vals);
-      const css = fontCss(el.font || 'anton');
-      let txt = value == null ? '' : (el.uppercase ? value.toUpperCase() : value);
-      const lh = num(el.line_height, 1.15), ls = num(el.letter_spacing, 0);
-      const fit = fitTextLines(txt, css, el.max_size, el.min_size, num(el.width, 100), isNum(el.height) ? num(el.height) : null, el.max_lines ? parseInt(el.max_lines, 10) : null, lh, ls);
-      if (!h) h = Math.max(fit.size * lh * Math.max(1, fit.lines.length) * sc, 12);
-      const justify = {top: 'flex-start', middle: 'center', bottom: 'flex-end'}[el.valign || 'top'] || 'flex-start';
-      const sw = num(el.stroke_width, 0); const stroke = sw > 0 && el.stroke ? `-webkit-text-stroke:${(sw * 2 * sc).toFixed(2)}px ${esc(resolveColor(el.stroke))};paint-order:stroke fill;` : '';
-      let shadow = '';
-      if (el.shadow && typeof el.shadow === 'object') shadow = `text-shadow:${num(el.shadow.dx, 2) * sc}px ${num(el.shadow.dy, 2) * sc}px ${num(el.shadow.blur, 0) * sc}px ${esc(resolveColor(el.shadow.color, '#000'))};`;
-      const lines = fit.lines.map(l => `<div>${esc(l) || '&nbsp;'}</div>`).join('');
-      inner = `<div class="txt" style="justify-content:${justify};text-align:${esc(el.align || 'left')};font-family:${esc(css)};font-size:${(fit.size * sc).toFixed(2)}px;line-height:${lh};letter-spacing:${(ls * sc).toFixed(2)}px;color:${esc(resolveColor(el.color, '#fff'))};${stroke}${shadow}${value == null ? 'opacity:.35;font-style:italic;' : ''}">${value == null ? '<div>(leer – kein Wert)</div>' : lines}</div>`;
+      inner = textInner(el, sc, vals);
+      if (!h) {
+        const value = textValue(el, vals); const f = fitFor(el, value == null ? '' : value, sc);
+        h = Math.max((f.fit.size * num(el.line_height, 1.15) * Math.max(1, f.fit.lines.length) + f.pad.top + f.pad.bottom) * sc, 12);
+      }
     } else if (el.type === 'cover') {
       const solid = el.fill && el.fill !== 'auto' && el.fill !== 'inpaint';
-      inner = `<div class="cover ${solid ? 'solid' : ''}" style="${solid ? 'background:' + esc(resolveColor(el.fill)) + ';' : ''}">${solid ? '' : 'Abdeckung ' + esc(el.fill || 'auto')}</div>`;
+      const p = solid ? paintCss(el.fill, S.brand) : null;
+      inner = `<div class="cover ${solid ? 'solid' : ''}" style="${p ? (isGradient(el.fill) ? 'background-image:' : 'background:') + esc(p) + ';' : ''}${num(el.feather, 0) > 0 ? 'filter:blur(' + (num(el.feather, 0) * sc / 2).toFixed(2) + 'px);' : ''}">${solid ? '' : 'Abdeckung ' + esc(el.fill || 'auto')}</div>`;
     } else if (el.type === 'image') {
-      const src = el.src && /^(https?:\/\/|\/|data:)/.test(el.src) ? el.src : null;
-      inner = `<div class="img" style="border-radius:${num(el.radius, 0) * sc}px;">${src ? `<img src="${esc(src)}" style="object-fit:${el.fit === 'cover' ? 'cover' : 'contain'};" alt="">` : 'Bild ' + esc(el.var ? '{' + el.var + '}' : (el.src || '(keine Quelle)'))}</div>`;
-    } else if (el.type === 'rect') {
-      const swd = num(el.stroke_width, el.stroke ? 2 : 0);
-      inner = `<div class="rct" style="background:${esc(resolveColor(el.fill, 'transparent'))};border-radius:${num(el.radius, 0) * sc}px;${el.stroke ? `box-shadow:inset 0 0 0 ${(swd * sc).toFixed(2)}px ${esc(resolveColor(el.stroke))};` : ''}"></div>`;
+      inner = imageInner(el, sc);
+    } else if (isShape(el)) {
+      inner = `<div class="shp">${shapeSvg(el)}</div>`;
     }
-    const handles = isSel ? ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(hd => `<div class="handle" data-h="${hd}"></div>`).join('') : '';
-    parts.push(`<div class="el ${isSel ? 'selected' : ''} ${el.hidden ? 'is-hidden' : ''}" data-id="${esc(el.id)}" style="left:${x}px;top:${y}px;width:${w}px;height:${Math.max(4, h)}px;opacity:${op};">${inner}${handles}</div>`);
+    const skip = conditionSkips(el, vals);
+    const fx = el.flip_h ? -1 : 1, fy = el.flip_v ? -1 : 1;
+    const blend = BLEND_MODES.indexOf(el.blend) > 0 ? `mix-blend-mode:${el.blend};` : '';
+    const innerTrans = (fx !== 1 || fy !== 1) ? `transform:scale(${fx},${fy});` : '';
+    const rot = num(el.rotation, 0);
+    const handles = isSel && S.sel.length === 1 && !el.locked
+      ? '<div class="rot-stick"></div>' + ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(hd => `<div class="handle" data-h="${hd}"></div>`).join('') + '<div class="handle rot" data-h="rot" title="Drehen (Umschalt = 15°-Schritte)"></div>'
+      : '';
+    let tailHandle = '';
+    if (isSel && S.sel.length === 1 && isShape(el) && shapeOf(el) === 'bubble') {
+      const t = el.tail && typeof el.tail === 'object' ? el.tail : {x: num(el.x, 0) + num(el.width, 10) * 0.25, y: num(el.y, 0) + num(el.height, 10) * 1.3};
+      tailHandle = `<div class="handle tail" data-h="tail" style="left:${((num(t.x, 0) - num(el.x, 0)) * sc - 5).toFixed(1)}px;top:${((num(t.y, 0) - num(el.y, 0)) * sc - 5).toFixed(1)}px;" title="Spitze der Sprechblase ziehen"></div>`;
+    }
+    parts.push(`<div class="el ${isSel ? 'selected' : ''} ${el.hidden ? 'is-hidden' : ''} ${el.locked ? 'locked' : ''} ${cb.city ? 'city-bound' : ''}" data-id="${esc(el.id)}"`
+      + ` title="${esc(skip || layerName(el))}"`
+      + ` style="left:${x}px;top:${y}px;width:${w}px;height:${Math.max(4, h)}px;opacity:${skip ? op * 0.35 : op};${rot ? `transform:rotate(${rot}deg);` : ''}">`
+      + `<div class="inner" style="position:absolute;inset:0;${innerTrans}${blend}">${inner}</div>${handles}${tailHandle}</div>`);
   });
   stage.innerHTML = parts.join('');
-  $('#stage-info').textContent = `${S.canvas.width} × ${S.canvas.height} px · ${Math.round(sc * 100)} %` + (S.imageSize && (S.imageSize.width !== S.canvas.width || S.imageSize.height !== S.canvas.height) ? ` · Bild ${S.imageSize.width} × ${S.imageSize.height} wird eingepasst` : '');
+  const skipped = els().filter(e => !e.hidden && conditionSkips(e, vals)).length;
+  $('#stage-info').textContent = `${S.canvas.width} × ${S.canvas.height} px · ${Math.round(sc * 100)} %`
+    + (S.imageSize && (S.imageSize.width !== S.canvas.width || S.imageSize.height !== S.canvas.height) ? ` · Bild ${S.imageSize.width} × ${S.imageSize.height} wird eingepasst` : '')
+    + (skipped ? ` · ${skipped} Element(e) fallen in dieser Stadt weg` : '');
 }
 function positionElementDom(el) {
   const d = $(`#stage .el[data-id="${CSS.escape(el.id)}"]`); if (!d) return;
@@ -656,49 +1347,266 @@ function positionElementDom(el) {
   d.style.left = (num(el.x, 0) * sc) + 'px'; d.style.top = (num(el.y, 0) * sc) + 'px';
   d.style.width = (Math.max(4, num(el.width, 4)) * sc) + 'px';
   if (isNum(el.height)) d.style.height = (Math.max(4, num(el.height, 4)) * sc) + 'px';
+  d.style.transform = num(el.rotation, 0) ? `rotate(${num(el.rotation, 0)}deg)` : '';
+}
+function showGuides(guides) {
+  $$('#stage .guide').forEach(g => g.remove());
+  const stage = $('#stage'); const sc = S.scale;
+  for (const g of (guides || [])) {
+    const d = document.createElement('div');
+    d.className = 'guide ' + (g.axis === 'v' ? 'v' : 'h');
+    if (g.axis === 'v') d.style.left = (g.at * sc) + 'px'; else d.style.top = (g.at * sc) + 'px';
+    stage.appendChild(d);
+  }
+}
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 3: Bedienung – Maus, Tastatur, Eigenschaftenfeld, Vorschau.
+   ───────────────────────────────────────────────────────────────────────────── */
+'use strict';
+
+// ── Elemente anlegen ──────────────────────────────────────────────────────────
+function addElement(type, extra) {
+  const W = S.canvas.width, H = S.canvas.height;
+  const base = {id: newId(), type, x: Math.round(W * 0.08), y: Math.round(H * 0.08), width: Math.round(W * 0.84), height: Math.round(H * 0.14)};
+  if (type === 'text') Object.assign(base, {text: 'Neuer Text', font: 'anton', max_size: Math.round(W / 12), min_size: Math.round(W / 36),
+    color: '#ffffff', stroke: '#000000', stroke_width: Math.max(2, Math.round(W / 270)), align: 'center', valign: 'middle', uppercase: false});
+  else if (type === 'cover') Object.assign(base, {fill: 'auto', feather: 6});
+  else if (type === 'image') Object.assign(base, {width: Math.round(W * 0.3), height: Math.round(W * 0.3), fit: 'contain', radius: 0, src: ''});
+  else if (type === 'shape') Object.assign(base, {shape: 'rect', width: Math.round(W * 0.5), height: Math.round(W * 0.25), fill: 'brand:accent', radius: 0});
+  Object.assign(base, extra || {});
+  if (isShape(base) && shapeOf(base) === 'bubble' && !base.tail) base.tail = {x: base.x + Math.round(base.width * 0.25), y: base.y + Math.round(base.height * 1.3)};
+  // gestapelt einfügen, damit neue Boxen nicht exakt übereinander liegen
+  const n = els().length; base.x += (n % 5) * 12; base.y += (n % 5) * 12;
+  snapshot(); els().push(base); setSelection([base.id]); commit();
+  return base;
+}
+$$('[data-add]').forEach(b => b.addEventListener('click', () => addElement(b.dataset.add)));
+$$('[data-add-shape]').forEach(b => b.addEventListener('click', () => { closeDropdowns(); addElement('shape', {shape: b.dataset.addShape}); }));
+
+function duplicateElements(ids) {
+  const list = ids.map(byId).filter(Boolean);
+  if (!list.length) return [];
+  snapshot();
+  const taken = []; const groupMap = {}; const copies = [];
+  for (const el of list) {
+    const copy = JSON.parse(JSON.stringify(el));
+    copy.id = newId(taken); taken.push(copy.id);
+    copy.x = num(copy.x, 0) + 20; copy.y = num(copy.y, 0) + 20;
+    if (copy.tail) { copy.tail = {x: num(copy.tail.x, 0) + 20, y: num(copy.tail.y, 0) + 20}; }
+    if (copy.group) { if (!groupMap[copy.group]) groupMap[copy.group] = 'g' + Date.now().toString(36) + Object.keys(groupMap).length; copy.group = groupMap[copy.group]; }
+    els().push(copy); copies.push(copy.id);
+  }
+  setSelection(copies, {raw: true}); commit();
+  return copies;
+}
+function deleteElements(ids) {
+  if (!ids.length) return;
+  snapshot();
+  S.config.elements = els().filter(e => ids.indexOf(e.id) < 0);
+  S.sel = S.sel.filter(id => ids.indexOf(id) < 0);
+  S.propsKey = ''; commit();
+}
+function moveElement(idx, dir) {
+  const list = els(); const j = idx + dir;
+  if (j < 0 || j >= list.length) return;
+  snapshot(); [list[idx], list[j]] = [list[j], list[idx]]; commit();
+}
+function reorder(fromIdx, toIdx) {
+  if (fromIdx === toIdx) return;
+  snapshot();
+  const list = els(); const [it] = list.splice(fromIdx, 1);
+  list.splice(clamp(toIdx, 0, list.length), 0, it);
+  commit();
 }
 
-// Drag & Resize
+// ── Ebenenliste: Klicks, Umbenennen, Ziehen ───────────────────────────────────
+$('#layers').addEventListener('click', e => {
+  const row = e.target.closest('.layer'); if (!row) return;
+  const id = row.dataset.id; const act = e.target.closest('[data-act]');
+  if (!act) { select(id, e.shiftKey || e.metaKey || e.ctrlKey); return; }
+  const idx = els().findIndex(x => x.id === id); if (idx < 0) return;
+  const el = els()[idx]; const a = act.dataset.act;
+  if (a === 'up' || a === 'down') moveElement(idx, a === 'up' ? 1 : -1);
+  else if (a === 'eye') { snapshot(); if (el.hidden) delete el.hidden; else el.hidden = true; commit(); }
+  else if (a === 'lock') { snapshot(); if (el.locked) delete el.locked; else el.locked = true; commit(); }
+  else if (a === 'dup') duplicateElements([id]);
+  else if (a === 'del') deleteElements([id]);
+});
+$('#layers').addEventListener('dblclick', e => {
+  const nm = e.target.closest('[data-rename]'); if (!nm) return;
+  const el = byId(nm.dataset.rename); if (!el) return;
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'lname-edit'; inp.value = layerName(el);
+  nm.replaceWith(inp); inp.focus(); inp.select();
+  const done = save => {
+    if (save) {
+      const v = inp.value.trim();
+      snapshot();
+      if (v && v !== layerName(el)) el.name = v; else if (!v) delete el.name;
+    }
+    commit();
+  };
+  inp.addEventListener('blur', () => done(true));
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } if (ev.key === 'Escape') { ev.preventDefault(); done(false); } });
+});
 (function () {
-  const stage = $('#stage'); let drag = null;
+  let dragIdx = null;
+  const box = $('#layers');
+  box.addEventListener('dragstart', e => {
+    const row = e.target.closest('.layer'); if (!row) return;
+    dragIdx = parseInt(row.dataset.idx, 10); row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', row.dataset.id); } catch (_) {}
+  });
+  box.addEventListener('dragover', e => {
+    const row = e.target.closest('.layer'); if (!row || dragIdx === null) return;
+    e.preventDefault(); $$('.layer', box).forEach(r => r.classList.remove('dragover')); row.classList.add('dragover');
+  });
+  box.addEventListener('dragleave', e => { const row = e.target.closest('.layer'); if (row) row.classList.remove('dragover'); });
+  box.addEventListener('drop', e => {
+    const row = e.target.closest('.layer'); if (!row || dragIdx === null) return;
+    e.preventDefault();
+    reorder(dragIdx, parseInt(row.dataset.idx, 10));
+    dragIdx = null;
+  });
+  box.addEventListener('dragend', () => { dragIdx = null; $$('.layer', box).forEach(r => r.classList.remove('dragover', 'dragging')); });
+})();
+$('#citybar').addEventListener('click', e => {
+  const row = e.target.closest('[data-goto]'); if (!row) return;
+  select(row.dataset.goto);
+  const d = $(`#stage .el[data-id="${CSS.escape(row.dataset.goto)}"]`);
+  if (d) d.scrollIntoView({block: 'nearest', inline: 'nearest'});
+});
+
+// ── Bühne: Ziehen, Größe, Drehen, Auswahlrahmen ───────────────────────────────
+(function () {
+  const stage = $('#stage'); let drag = null, marquee = null;
+  function stageRect() { return stage.getBoundingClientRect(); }
+  function toCanvas(clientX, clientY) { const r = stageRect(); return {x: (clientX - r.left) / S.scale, y: (clientY - r.top) / S.scale}; }
+  const rot2 = (vx, vy, a) => ({x: vx * Math.cos(a) - vy * Math.sin(a), y: vx * Math.sin(a) + vy * Math.cos(a)});
+
   stage.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const handle = e.target.closest('.handle'); const elDiv = e.target.closest('.el');
-    if (!elDiv) { select(null); return; }
-    const id = elDiv.dataset.id; const el = S.config.elements.find(x => x.id === id); if (!el) return;
-    if (id !== S.selectedId) select(id);
+    if (!elDiv) {
+      // Auswahlrahmen aufziehen
+      const p = toCanvas(e.clientX, e.clientY);
+      marquee = {x0: p.x, y0: p.y, x1: p.x, y1: p.y, additive: e.shiftKey};
+      const d = document.createElement('div'); d.className = 'marquee'; d.id = 'marquee-box'; stage.appendChild(d);
+      stage.setPointerCapture(e.pointerId); e.preventDefault();
+      return;
+    }
+    const id = elDiv.dataset.id; const el = byId(id); if (!el) return;
+    if (el.locked) { toast('Element ist gesperrt – über die Ebenenliste entsperren.', 'info'); return; }
+    if (e.shiftKey || e.metaKey || e.ctrlKey) { select(id, true); return; }
+    if (S.sel.indexOf(id) < 0) select(id);
+    let ids = S.sel.filter(x => { const q = byId(x); return q && !q.locked; });
+    if (!ids.length) return;
+    if (e.altKey && !handle) ids = duplicateElements(ids);
     // Höhe nur für die Resize-Mathematik aus der Bühne lesen – nie ins Element schreiben,
     // sonst macht schon ein Klick die Konfiguration ungespeichert (und der Wert hinge am Zoom)
     const domH = Math.round((parseFloat(elDiv.style.height) || 0) / (S.scale || 1));
-    drag = {id, mode: handle ? 'resize' : 'move', h: handle ? handle.dataset.h : null, sx: e.clientX, sy: e.clientY,
-            start: {x: num(el.x, 0), y: num(el.y, 0), w: num(el.width, 10),
-                    h: isNum(el.height) ? num(el.height, 10) : Math.max(10, domH)}, moved: false};
+    const starts = {};
+    for (const q of ids) { const o = byId(q); starts[q] = {x: num(o.x, 0), y: num(o.y, 0), w: num(o.width, 10), h: isNum(o.height) ? num(o.height, 10) : Math.max(10, domH),
+      rot: num(o.rotation, 0), tail: o.tail ? {x: num(o.tail.x, 0), y: num(o.tail.y, 0)} : null}; }
+    drag = {ids, primary: id, mode: handle ? (handle.dataset.h === 'rot' ? 'rotate' : (handle.dataset.h === 'tail' ? 'tail' : 'resize')) : 'move',
+      h: handle ? handle.dataset.h : null, sx: e.clientX, sy: e.clientY, starts, moved: false};
+    if (drag.mode === 'rotate') {
+      const s = starts[id]; const c = {x: s.x + s.w / 2, y: s.y + s.h / 2};
+      const p = toCanvas(e.clientX, e.clientY);
+      drag.center = c; drag.startAngle = Math.atan2(p.y - c.y, p.x - c.x) * 180 / Math.PI; drag.baseRot = s.rot;
+    }
     stage.setPointerCapture(e.pointerId); e.preventDefault();
   });
+
   stage.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const el = S.config.elements.find(x => x.id === drag.id); if (!el) return;
-    const dx = (e.clientX - drag.sx) / S.scale, dy = (e.clientY - drag.sy) / S.scale;
-    if (!drag.moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) { drag.moved = true; snapshot(); }
-    if (!drag.moved) return;
-    const s = drag.start; const W = S.canvas.width, H = S.canvas.height;
-    if (drag.mode === 'move') {
-      el.x = Math.round(clamp(s.x + dx, -s.w + 10, W - 10)); el.y = Math.round(clamp(s.y + dy, -s.h + 10, H - 10));
-    } else {
-      let x = s.x, y = s.y, w = s.w, h = s.h; const hd = drag.h;
-      if (hd.includes('e')) w = s.w + dx;
-      if (hd.includes('s')) h = s.h + dy;
-      if (hd.includes('w')) { w = s.w - dx; x = s.x + dx; }
-      if (hd.includes('n')) { h = s.h - dy; y = s.y + dy; }
-      if (w < 8) { if (hd.includes('w')) x = s.x + s.w - 8; w = 8; }
-      if (h < 8) { if (hd.includes('n')) y = s.y + s.h - 8; h = 8; }
-      el.x = Math.round(x); el.y = Math.round(y); el.width = Math.round(w); el.height = Math.round(h);
+    if (marquee) {
+      const p = toCanvas(e.clientX, e.clientY);
+      marquee.x1 = p.x; marquee.y1 = p.y;
+      const d = $('#marquee-box'); if (d) {
+        const x = Math.min(marquee.x0, marquee.x1) * S.scale, y = Math.min(marquee.y0, marquee.y1) * S.scale;
+        d.style.left = x + 'px'; d.style.top = y + 'px';
+        d.style.width = (Math.abs(marquee.x1 - marquee.x0) * S.scale) + 'px';
+        d.style.height = (Math.abs(marquee.y1 - marquee.y0) * S.scale) + 'px';
+      }
+      return;
     }
-    positionElementDom(el); syncPropsGeometry();
+    if (!drag) return;
+    const dx = (e.clientX - drag.sx) / S.scale, dy = (e.clientY - drag.sy) / S.scale;
+    if (!drag.moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5 || drag.mode === 'rotate')) { drag.moved = true; snapshot(); }
+    if (!drag.moved) return;
+    const prim = byId(drag.primary); if (!prim) return;
+
+    if (drag.mode === 'rotate') {
+      const p = toCanvas(e.clientX, e.clientY);
+      const now = Math.atan2(p.y - drag.center.y, p.x - drag.center.x) * 180 / Math.PI;
+      let a = normAngle(drag.baseRot + (now - drag.startAngle));
+      if (e.shiftKey) a = snapAngle(a, 15);
+      prim.rotation = Math.round(a);
+      if (!prim.rotation) delete prim.rotation;
+      positionElementDom(prim); syncPropsGeometry(); return;
+    }
+    if (drag.mode === 'tail') {
+      const p = toCanvas(e.clientX, e.clientY);
+      prim.tail = {x: Math.round(p.x), y: Math.round(p.y)};
+      renderStage(); return;
+    }
+    if (drag.mode === 'move') {
+      const rects = drag.ids.map(id => { const s = drag.starts[id]; return aabbOf({x: s.x, y: s.y, width: s.w, height: s.h, rotation: s.rot}); });
+      const b = groupBounds(rects);
+      let nx = b.x + dx, ny = b.y + dy;
+      let guides = [];
+      if (S.snapOn && !e.altKey) {
+        const targets = els().filter(o => drag.ids.indexOf(o.id) < 0 && !o.hidden).map(aabbOf);
+        const sn = computeSnap({x: nx, y: ny, w: b.w, h: b.h}, targets, S.canvas, SNAP_TOL / S.scale);
+        nx = sn.x; ny = sn.y; guides = sn.guides;
+      }
+      const gdx = nx - b.x, gdy = ny - b.y;
+      for (const id of drag.ids) {
+        const el = byId(id); const s = drag.starts[id];
+        el.x = Math.round(s.x + gdx); el.y = Math.round(s.y + gdy);
+        if (s.tail) el.tail = {x: Math.round(s.tail.x + gdx), y: Math.round(s.tail.y + gdy)};
+        positionElementDom(el);
+      }
+      showGuides(guides); syncPropsGeometry(); return;
+    }
+    // resize (nur das führende Element, im gedrehten Bezugssystem)
+    const s = drag.starts[drag.primary]; const hd = drag.h;
+    const rad = deg2rad(s.rot);
+    const ld = rot2(dx, dy, -rad);
+    let nw = s.w, nh = s.h, ax = 0, ay = 0;
+    if (hd.includes('e')) { nw = s.w + ld.x; ax = -1; }
+    if (hd.includes('w')) { nw = s.w - ld.x; ax = 1; }
+    if (hd.includes('s')) { nh = s.h + ld.y; ay = -1; }
+    if (hd.includes('n')) { nh = s.h - ld.y; ay = 1; }
+    if (e.shiftKey && ax && ay && s.h) { nh = Math.max(8, nw * (s.h / s.w)); }
+    nw = Math.max(8, nw); nh = Math.max(8, nh);
+    const oldC = {x: s.x + s.w / 2, y: s.y + s.h / 2};
+    const aw = rot2(ax * s.w / 2, ay * s.h / 2, rad);
+    const anchor = {x: oldC.x + aw.x, y: oldC.y + aw.y};
+    const nl = rot2(ax * nw / 2, ay * nh / 2, rad);
+    prim.x = Math.round(anchor.x - nl.x - nw / 2); prim.y = Math.round(anchor.y - nl.y - nh / 2);
+    prim.width = Math.round(nw); prim.height = Math.round(nh);
+    positionElementDom(prim); syncPropsGeometry();
   });
+
   const end = e => {
+    if (marquee) {
+      const box = {x: Math.min(marquee.x0, marquee.x1), y: Math.min(marquee.y0, marquee.y1),
+        w: Math.abs(marquee.x1 - marquee.x0), h: Math.abs(marquee.y1 - marquee.y0)};
+      const d = $('#marquee-box'); if (d) d.remove();
+      const additive = marquee.additive; marquee = null;
+      try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (box.w < 3 && box.h < 3) { if (!additive) setSelection([]); return; }
+      const hits = els().filter(o => !o.locked && !o.hidden && rectsOverlap(box, aabbOf(o))).map(o => o.id);
+      setSelection(additive ? S.sel.concat(hits.filter(h => S.sel.indexOf(h) < 0)) : hits);
+      return;
+    }
     if (!drag) return;
     const moved = drag.moved; drag = null;
+    showGuides([]);
     try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
     if (moved) commit({keepProps: true});
   };
@@ -707,94 +1615,187 @@ function positionElementDom(el) {
 $('#zoom').addEventListener('change', e => { S.zoom = e.target.value; try { localStorage.setItem('studio_zoom', S.zoom); } catch (_) {} renderStage(); });
 window.addEventListener('resize', () => { if (S.zoom === 'fit') renderStage(); });
 
-// ── Eigenschaften ──────────────────────────────────────────────────────────────
-function colorField(prop, value, opts) {
-  opts = opts || {};
-  const v = value == null ? '' : String(value);
-  const isBrand = v.startsWith('brand:');
-  const shown = isBrand ? (S.brand[v.slice(6)] || '#000000') : (/^#[0-9a-fA-F]{6}$/.test(v) ? v : (/^#[0-9a-fA-F]{3}$/.test(v) ? '#' + v.slice(1).split('').map(c => c + c).join('') : '#000000'));
-  const brandBtn = (k, label) => `<button type="button" class="btn btn-ghost btn-xs" data-brand="${k}" data-target="${esc(prop)}" title="${label} der Stadt (brand:${k})"><span class="sw" style="background:${esc(S.brand[k])}"></span>${label}</button>`;
-  return `<div class="color-field">
-      <input type="color" value="${shown}" data-colorpick="${esc(prop)}" title="Farbe wählen">
-      <input type="text" value="${esc(v)}" data-prop="${esc(prop)}" data-kind="color" placeholder="${opts.optional ? 'keine' : '#rrggbb'}" title="Hex-Farbe oder brand:accent / brand:text / brand:bg">
-      ${opts.optional ? `<button type="button" class="ibtn" data-clear="${esc(prop)}" title="Farbe entfernen">✕</button>` : ''}
-    </div>
-    <div class="brand-btns">${brandBtn('accent', 'Stadt-Akzent')}${brandBtn('text', 'Stadt-Text')}${brandBtn('bg', 'Stadt-Hintergrund')}${isBrand ? `<span class="badge badge-blue">${esc(v)}</span>` : ''}</div>`;
+// ── Ausrichten, Verteilen, Gruppieren, Sperren ────────────────────────────────
+function applyAlign(mode) {
+  const list = selEls().filter(e => !e.locked); if (!list.length) return;
+  const rects = list.map(aabbOf); const out = alignRects(rects, mode, S.canvas);
+  snapshot();
+  list.forEach((el, i) => { const ddx = out[i].x - rects[i].x, ddy = out[i].y - rects[i].y;
+    el.x = Math.round(num(el.x, 0) + ddx); el.y = Math.round(num(el.y, 0) + ddy);
+    if (el.tail) el.tail = {x: Math.round(num(el.tail.x, 0) + ddx), y: Math.round(num(el.tail.y, 0) + ddy)}; });
+  commit();
 }
+function applyDistribute(axis) {
+  const list = selEls().filter(e => !e.locked); if (list.length < 3) { toast('Verteilen braucht mindestens drei Elemente.', 'error'); return; }
+  const rects = list.map(aabbOf); const out = distributeRects(rects, axis);
+  snapshot();
+  list.forEach((el, i) => { const ddx = out[i].x - rects[i].x, ddy = out[i].y - rects[i].y;
+    el.x = Math.round(num(el.x, 0) + ddx); el.y = Math.round(num(el.y, 0) + ddy);
+    if (el.tail) el.tail = {x: Math.round(num(el.tail.x, 0) + ddx), y: Math.round(num(el.tail.y, 0) + ddy)}; });
+  commit();
+}
+$$('[data-align]').forEach(b => b.addEventListener('click', () => applyAlign(b.dataset.align)));
+$$('[data-dist]').forEach(b => b.addEventListener('click', () => applyDistribute(b.dataset.dist)));
+function doGroup() {
+  const list = selEls(); if (list.length < 2) { toast('Zum Gruppieren mindestens zwei Elemente wählen.', 'error'); return; }
+  snapshot(); const gid = 'g' + Date.now().toString(36);
+  list.forEach(el => el.group = gid); commit();
+  toast('Gruppiert – die Elemente bewegen sich jetzt zusammen.', 'success');
+}
+function doUngroup() {
+  const list = selEls().filter(e => e.group); if (!list.length) return;
+  snapshot(); list.forEach(el => delete el.group); commit();
+}
+function doLockToggle() {
+  const list = selEls(); if (!list.length) return;
+  const lock = !list.every(e => e.locked);
+  snapshot(); list.forEach(el => { if (lock) el.locked = true; else delete el.locked; }); commit();
+}
+$('#btn-group').addEventListener('click', doGroup);
+$('#btn-ungroup').addEventListener('click', doUngroup);
+$('#btn-lock').addEventListener('click', doLockToggle);
+$('#btn-snap').addEventListener('click', () => {
+  S.snapOn = !S.snapOn;
+  $('#btn-snap').classList.toggle('on', S.snapOn);
+  $('#btn-snap').textContent = 'Fangen ' + (S.snapOn ? '●' : '○');
+  try { localStorage.setItem('studio_snap', S.snapOn ? '1' : '0'); } catch (_) {}
+});
+$('#btn-cityonly').addEventListener('click', () => {
+  S.cityOnly = !S.cityOnly;
+  $('#btn-cityonly').classList.toggle('on', S.cityOnly);
+  renderStage();
+});
+$('#btn-undo').addEventListener('click', undo);
+$('#btn-redo').addEventListener('click', redo);
+
+// ── Aufklappmenüs ─────────────────────────────────────────────────────────────
+function closeDropdowns() { $$('.dd.open').forEach(d => d.classList.remove('open')); }
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-dd]');
+  if (t) { const dd = $('#' + t.dataset.dd); const was = dd.classList.contains('open'); closeDropdowns(); if (!was) dd.classList.add('open'); e.stopPropagation(); return; }
+  if (!e.target.closest('.dd-menu')) closeDropdowns();
+});
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 4: Eigenschaftenfeld – alles, was der Renderer kann, ist hier einstellbar.
+   ───────────────────────────────────────────────────────────────────────────── */
+'use strict';
+
+function getNested(obj, path) {
+  let cur = obj;
+  for (const p of String(path).split('.')) { if (cur == null || typeof cur !== 'object') return undefined; cur = cur[p]; }
+  return cur;
+}
+function setNested(obj, path, value) {
+  const parts = String(path).split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  const last = parts[parts.length - 1];
+  if (value === undefined) delete cur[last]; else cur[last] = value;
+}
+
+// ── Feld-Bausteine ────────────────────────────────────────────────────────────
 function numField(label, prop, value, attrs) {
-  return `<div class="form-group"><label>${label}</label><input type="number" data-prop="${prop}" data-kind="${(attrs || '').includes('step="1"') || !(attrs || '').includes('step') ? 'int' : 'num'}" value="${value == null ? '' : esc(value)}" ${attrs || ''}></div>`;
+  const kind = (attrs || '').includes('step=') && !(attrs || '').includes('step="1"') ? 'num' : 'int';
+  return `<div class="form-group"><label>${label}</label><input type="number" data-prop="${esc(prop)}" data-kind="${kind}" value="${value == null ? '' : esc(value)}" ${attrs || ''}></div>`;
 }
 function segField(prop, value, options) {
-  return `<div class="seg" data-seg="${prop}">${options.map(o => `<button type="button" data-val="${o.v}" class="${(value || options[0].v) === o.v ? 'on' : ''}" title="${esc(o.t || o.l)}">${o.l}</button>`).join('')}</div>`;
+  return `<div class="seg" data-seg="${esc(prop)}">${options.map(o => `<button type="button" data-val="${esc(o.v)}" class="${(value || options[0].v) === o.v ? 'on' : ''}" title="${esc(o.t || o.l)}">${o.l}</button>`).join('')}</div>`;
 }
+function checkField(label, prop, on, kind) {
+  return `<label class="check-row"><input type="checkbox" data-prop="${esc(prop)}" data-kind="${kind || 'bool'}" ${on ? 'checked' : ''}> ${label}</label>`;
+}
+function selectField(label, prop, value, options) {
+  return `<div class="form-group"><label>${label}</label><select data-prop="${esc(prop)}" data-kind="str">`
+    + options.map(o => `<option value="${esc(o.v)}" ${String(value || '') === String(o.v) ? 'selected' : ''}>${esc(o.l)}</option>`).join('')
+    + `</select></div>`;
+}
+function sliderField(label, prop, value, min, max, step, def) {
+  const v = value == null ? def : value;
+  return `<div class="slider-row"><label>${label}</label>
+    <input type="range" data-prop="${esc(prop)}" data-kind="num" min="${min}" max="${max}" step="${step}" value="${esc(v)}">
+    <span class="v">${esc(Math.round(num(v, def) * 100) / 100)}</span></div>`;
+}
+
+// ── Farbwähler mit Verlauf ────────────────────────────────────────────────────
+function paintField(prop, value, opts) {
+  opts = opts || {};
+  const grad = isGradient(value);
+  const v = grad ? '' : (value == null ? '' : String(value));
+  const shown = grad ? '#000000' : (isBrandRef(v) ? (S.brand[brandKey(v)] || '#000000')
+    : (/^#[0-9a-fA-F]{6}$/.test(v) ? v : (/^#[0-9a-fA-F]{3}$/.test(v) ? '#' + v.slice(1).split('').map(c => c + c).join('') : '#000000')));
+  const brandBtn = (k, label, target, gi) => `<button type="button" class="btn btn-ghost btn-xs" data-brand="${k}" data-target="${esc(target)}" ${gi == null ? '' : `data-gi="${gi}"`} title="${label} der Stadt (brand:${k})"><span class="sw" style="background:${esc(S.brand[k])}"></span>${label}</button>`;
+  let inner;
+  if (grad) {
+    const stops = (value.stops || []).map((s, i) => {
+      const sc = isBrandRef(s.color) ? (S.brand[brandKey(s.color)] || '#000000') : (/^#[0-9a-fA-F]{6}$/.test(String(s.color || '')) ? s.color : '#000000');
+      return `<div class="grad-stop">
+        <input type="number" data-gstop="at" data-pp="${esc(prop)}" data-gi="${i}" min="0" max="1" step="0.05" value="${esc(num(s.at, 0))}" title="Position 0–1">
+        <input type="color" data-gstop="pick" data-pp="${esc(prop)}" data-gi="${i}" value="${esc(sc)}">
+        <input type="text" data-gstop="color" data-pp="${esc(prop)}" data-gi="${i}" value="${esc(s.color || '')}" title="Hex oder brand:…">
+        <button type="button" class="ibtn" data-gdel data-pp="${esc(prop)}" data-gi="${i}" title="Farbstopp entfernen" ${(value.stops || []).length <= 2 ? 'disabled' : ''}>✕</button>
+      </div>
+      <div class="brand-btns">${brandBtn('accent', 'Akzent', prop, i)}${brandBtn('text', 'Text', prop, i)}${brandBtn('bg', 'Hintergrund', prop, i)}</div>`;
+    }).join('');
+    inner = `<div class="grad-prev" style="background:${esc(gradientCss(value, S.brand))}"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Typ</label>
+          <div class="seg" data-gtype data-pp="${esc(prop)}">
+            <button type="button" data-gv="linear" class="${value.type !== 'radial' ? 'on' : ''}">Linear</button>
+            <button type="button" data-gv="radial" class="${value.type === 'radial' ? 'on' : ''}">Radial</button>
+          </div></div>
+        ${value.type === 'radial' ? '<div class="form-group"><label>&nbsp;</label><div class="kv small">rund von der Mitte</div></div>'
+          : `<div class="form-group"><label>Winkel (0° = nach rechts)</label><input type="number" data-gangle data-pp="${esc(prop)}" min="0" max="360" step="5" value="${esc(num(value.angle, 0))}"></div>`}
+      </div>
+      ${stops}
+      <button type="button" class="btn btn-ghost btn-xs" data-gadd data-pp="${esc(prop)}">+ Farbstopp</button>`;
+  } else {
+    inner = `<div class="color-field">
+        <input type="color" value="${shown}" data-colorpick="${esc(prop)}" title="Farbe wählen">
+        <input type="text" value="${esc(v)}" data-prop="${esc(prop)}" data-kind="color" placeholder="${opts.optional ? 'keine' : '#rrggbb'}" title="Hex-Farbe oder brand:accent / brand:text / brand:bg">
+        ${opts.optional ? `<button type="button" class="ibtn" data-clear="${esc(prop)}" title="Farbe entfernen">✕</button>` : ''}
+      </div>
+      <div class="brand-btns">${brandBtn('accent', 'Stadt-Akzent', prop)}${brandBtn('text', 'Stadt-Text', prop)}${brandBtn('bg', 'Stadt-Hintergrund', prop)}${isBrandRef(v) ? `<span class="badge badge-blue">${esc(v)}</span>` : ''}</div>`;
+  }
+  return `<div class="color-wrap">
+    <div class="color-tabs">
+      <button type="button" data-ptab="solid" data-pp="${esc(prop)}" class="${grad ? '' : 'on'}">Farbe</button>
+      <button type="button" data-ptab="grad" data-pp="${esc(prop)}" class="${grad ? 'on' : ''}">Verlauf</button>
+    </div>${inner}</div>`;
+}
+
+// ── Auswahllisten ─────────────────────────────────────────────────────────────
 function variableOptions(current, fixedLabel, fixedValue) {
   const groups = {city: [], knowledge: [], free: []};
-  S.variables.forEach(v => (groups[v.kind] || groups.free).push(v));
+  // 'marke' sind Farbwerte (brand:bg …), keine Textvariablen – hier nicht anbieten
+  S.variables.forEach(v => { if (isCityVar(v.key) || v.kind === 'marke' || v.kind === 'stadtbild') return; (groups[v.kind] || groups.free).push(v); });
+  const bildVars = [];
+  const seenBild = new Set();
+  S.cityAssets.forEach(a => { if (!seenBild.has(a.var)) { seenBild.add(a.var); bildVars.push({key: a.var, label: a.key, info: a}); } });
+  S.variables.forEach(v => { if ((v.kind === 'stadtbild' || isCityVar(v.key)) && !seenBild.has(v.key)) { seenBild.add(v.key); bildVars.push({key: v.key, label: v.key.slice(CITY_ASSET_PREFIX.length), info: null}); } });
   const opt = v => `<option value="${esc(v.key)}" ${current === v.key ? 'selected' : ''}>${esc(v.label)}${v.kind === 'free' ? '' : ' (' + esc(v.key) + ')'}</option>`;
   let html = `<option value="${fixedValue}" ${!current ? 'selected' : ''}>${fixedLabel}</option>`;
   html += `<optgroup label="Stadt">${groups.city.map(opt).join('')}</optgroup>`;
   html += `<optgroup label="Stadtwissen">${groups.knowledge.map(opt).join('')}</optgroup>`;
-  if (groups.free.length) html += `<optgroup label="Eigene Variablen">${groups.free.map(opt).join('')}</optgroup>`;
+  if (bildVars.length) html += `<optgroup label="Stadtbilder">${bildVars.map(b => `<option value="${esc(b.key)}" ${current === b.key ? 'selected' : ''}>Bild „${esc(b.label)}“${b.info && b.info.cities != null ? ' – ' + b.info.cities + '/' + (b.info.total_cities || '?') + ' Städte' : ''}</option>`).join('')}</optgroup>`;
+  const freeExtra = groups.free.concat(collectVars(S.config, true).filter(v => !S.variables.some(x => x.key === v) && !isCityVar(v)).map(v => ({key: v, label: v, kind: 'free'})));
+  if (freeExtra.length) html += `<optgroup label="Eigene Variablen">${freeExtra.map(opt).join('')}</optgroup>`;
+  if (current && !S.variables.some(v => v.key === current) && !isCityVar(current) && !freeExtra.some(v => v.key === current) && !seenBild.has(current)) {
+    html += `<option value="${esc(current)}" selected>${esc(current)}</option>`;
+  }
   html += `<option value="__custom__">Eigene Variable …</option>`;
   return html;
 }
-function renderProps(force) {
-  const box = $('#props'); const el = selected();
-  const key = el ? el.id + '|' + el.type + '|' + (el.var ? 'v' : 't') + '|' + (el.shadow ? 's' : '') + '|' + S.fonts.length : 'canvas';
-  if (!force && key === S.propsKey) { syncPropsGeometry(); return; }
-  S.propsKey = key;
-  if (!el) { box.innerHTML = canvasProps(); return; }
-  const geo = `<div class="prop-section"><h4>${TYPE_LABEL[el.type] || el.type} · ${esc(el.id)}</h4>
-    <div class="form-row">${numField('X', 'x', el.x)}${numField('Y', 'y', el.y)}</div>
-    <div class="form-row">${numField('Breite', 'width', el.width, 'min="1"')}${numField('Höhe', 'height', el.height, 'min="1"')}</div>
-    <div class="form-row">${numField('Deckkraft (0–1)', 'opacity', el.opacity == null ? 1 : el.opacity, 'min="0" max="1" step="0.05"')}
-      <div class="form-group"><label>Sichtbar</label><label class="check-row"><input type="checkbox" data-prop="hidden" data-kind="bool-inv" ${el.hidden ? '' : 'checked'}> in Renderings zeigen</label></div></div>
-  </div>`;
-  let body = '';
-  if (el.type === 'text') {
-    body += `<div class="prop-section"><h4>Inhalt</h4>
-      <div class="form-group"><label>Variable oder fester Text</label><select data-varsel="var">${variableOptions(el.var, 'Fester Text (in jeder Stadt gleich)', '__text__')}</select></div>
-      ${el.var ? `<div class="kv small">Wert kommt beim Rendern aus dem Stadtwissen (<b>${esc(varLabel(el.var))}</b>).</div>`
-               : `<div class="form-group"><label>Fester Text ({variable} wird ersetzt)</label><textarea data-prop="text" data-kind="str" rows="3">${esc(el.text || '')}</textarea></div>`}
-      <div class="form-group"><label>Ersatztext, wenn der Wert fehlt (leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}"></div>
-    </div>
-    <div class="prop-section"><h4>Schrift</h4>
-      <div class="form-group"><label>Schriftart</label><select data-prop="font" data-kind="str">${fontSelectOptions(el.font)}</select></div>
-      <div class="form-row">${numField('Max. Größe', 'max_size', el.max_size, 'min="4"')}${numField('Min. Größe', 'min_size', el.min_size, 'min="4"')}</div>
-      <div class="form-row">${numField('Max. Zeilen (0 = beliebig)', 'max_lines', el.max_lines || '', 'min="0"')}${numField('Zeilenhöhe', 'line_height', el.line_height == null ? 1.15 : el.line_height, 'min="0.5" step="0.05"')}</div>
-      <div class="form-row">${numField('Buchstabenabstand (px)', 'letter_spacing', el.letter_spacing == null ? 0 : el.letter_spacing, 'step="0.5"')}
-        <div class="form-group"><label>Großschreibung</label><label class="check-row"><input type="checkbox" data-prop="uppercase" data-kind="bool" ${el.uppercase ? 'checked' : ''}> alles groß</label></div></div>
-      <div class="form-row"><div class="form-group"><label>Ausrichtung</label>${segField('align', el.align || 'left', [{v: 'left', l: '⇤', t: 'links'}, {v: 'center', l: '↔', t: 'zentriert'}, {v: 'right', l: '⇥', t: 'rechts'}])}</div>
-        <div class="form-group"><label>Vertikal</label>${segField('valign', el.valign || 'top', [{v: 'top', l: '⤒', t: 'oben'}, {v: 'middle', l: '↕', t: 'mittig'}, {v: 'bottom', l: '⤓', t: 'unten'}])}</div></div>
-    </div>
-    <div class="prop-section"><h4>Farbe</h4>${colorField('color', el.color || '#ffffff')}</div>
-    <div class="prop-section"><h4>Kontur</h4>${colorField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>
-    <div class="prop-section"><h4>Schatten</h4>
-      <label class="check-row"><input type="checkbox" data-toggle-shadow ${el.shadow ? 'checked' : ''}> Schatten aktiv</label>
-      ${el.shadow ? `<div class="form-row-3">${numField('dx', 'shadow.dx', el.shadow.dx == null ? 2 : el.shadow.dx)}${numField('dy', 'shadow.dy', el.shadow.dy == null ? 2 : el.shadow.dy)}${numField('Weichzeichnen', 'shadow.blur', el.shadow.blur == null ? 0 : el.shadow.blur, 'min="0"')}</div>${colorField('shadow.color', el.shadow.color || '#000000')}` : ''}
-    </div>`;
-  } else if (el.type === 'image') {
-    body += `<div class="prop-section"><h4>Quelle</h4>
-      <div class="form-group"><label>Variable oder feste Quelle</label><select data-varsel="var">${variableOptions(el.var, 'Feste Quelle (URL oder Pfad)', '__src__')}</select></div>
-      ${el.var ? `<div class="kv small">Der Wert der Variable muss ein Bildpfad oder eine URL sein.</div>` : `<div class="form-group"><label>URL oder Dateipfad</label><input type="url" data-prop="src" data-kind="str" value="${esc(el.src || '')}" placeholder="https://… oder /uploads/…"></div>`}
-      <div class="form-group"><label>Einpassen</label>${segField('fit', el.fit || 'contain', [{v: 'contain', l: 'Einpassen', t: 'ganz sichtbar'}, {v: 'cover', l: 'Füllen', t: 'Box füllen, ggf. beschneiden'}])}</div>
-      ${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}
-    </div>`;
-  } else if (el.type === 'cover') {
-    const mode = !el.fill || el.fill === 'auto' ? 'auto' : (el.fill === 'inpaint' ? 'inpaint' : 'color');
-    body += `<div class="prop-section"><h4>Füllung</h4>
-      ${segField('coverfill', mode, [{v: 'auto', l: 'Auto', t: 'Randfarbe der Box (Median)'}, {v: 'inpaint', l: 'Inpaint', t: 'Umgebung fortsetzen (cv2, sonst Auto)'}, {v: 'color', l: 'Farbe', t: 'feste Farbe'}])}
-      ${mode === 'color' ? `<div style="margin-top:8px;">${colorField('fill', el.fill)}</div>` : '<div class="kv small" style="margin-top:6px;">Auto nimmt die häufigste Randfarbe der Box, Inpaint setzt die Umgebung fort (braucht cv2, sonst wie Auto).</div>'}
-      ${numField('Weiche Kante (px)', 'feather', el.feather == null ? 0 : el.feather, 'min="0"')}
-    </div>`;
-  } else if (el.type === 'rect') {
-    body += `<div class="prop-section"><h4>Füllung</h4>${colorField('fill', el.fill, {optional: true})}</div>
-      <div class="prop-section"><h4>Kontur</h4>${colorField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>
-      <div class="prop-section">${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}</div>`;
-  }
-  const errs = quickErrors(el);
-  box.innerHTML = (errs.length ? `<div class="badge badge-red" style="margin:8px 0;">${esc(errs.join(' · '))}</div>` : '') + geo + body +
-    `<div class="prop-section" style="display:flex;gap:6px;"><button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button><button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button></div>`;
+function condOptions(current) {
+  let html = `<option value="">– immer zeichnen –</option>`;
+  for (const k of allVarKeys()) html += `<option value="${esc(k)}" ${current === k ? 'selected' : ''}>${esc(k)}</option>`;
+  if (current && allVarKeys().indexOf(current) < 0) html += `<option value="${esc(current)}" selected>${esc(current)}</option>`;
+  return html;
 }
 function fontSelectOptions(current) {
   const cur = current || 'anton'; const entry = fontEntry(cur);
@@ -807,68 +1808,316 @@ function fontSelectOptions(current) {
   if (cur !== 'brand' && !entry) html += `<option value="${esc(cur)}" selected>${esc(cur)} (unbekannt → Anton)</option>`;
   return html;
 }
+
+// ── Eigenschaften zeichnen ────────────────────────────────────────────────────
+function propsKeyFor() {
+  if (S.sel.length !== 1) return 'sel:' + S.sel.length;
+  const el = selected(); if (!el) return 'canvas';
+  return [el.id, el.type, shapeOf(el), el.var ? 'v' : 't', el.shadow ? 's' : '', el.box ? 'b' : '', el.crop ? 'c' : '', el.adjust ? 'a' : '',
+    isGradient(el.color) ? 'gc' : '', isGradient(el.fill) ? 'gf' : '', isGradient(el.stroke) ? 'gs' : '',
+    el.box && isGradient(el.box.fill) ? 'gbf' : '', el.box && el.box.per_line ? 'bl' : '',
+    S.fonts.length, S.presets.length, S.assets.length, S.cityAssets.length].join('|');
+}
+function commonSection(el) {
+  return `<div class="prop-section"><h4>${esc(TYPE_LABEL[el.type] || el.type)}${isShape(el) ? ' · ' + esc(SHAPE_LABEL[shapeOf(el)]) : ''}<span class="sp muted small">${esc(el.id)}</span></h4>
+    <div class="form-group"><label>Name (Ebenenliste)</label><input type="text" data-prop="name" data-kind="str" value="${esc(el.name || '')}" placeholder="${esc(layerName(el))}"></div>
+    <div class="form-row">${numField('X', 'x', el.x)}${numField('Y', 'y', el.y)}</div>
+    <div class="form-row">${numField('Breite', 'width', el.width, 'min="1"')}${numField('Höhe', 'height', el.height, 'min="1"')}</div>
+    <div class="form-row">${numField('Drehung (°)', 'rotation', el.rotation == null ? 0 : el.rotation, 'min="-180" max="180" step="1"')}
+      ${numField('Deckkraft (0–1)', 'opacity', el.opacity == null ? 1 : el.opacity, 'min="0" max="1" step="0.05"')}</div>
+    <div class="form-row">
+      <div class="form-group"><label>Spiegeln</label>${checkField('waagerecht', 'flip_h', el.flip_h)}${checkField('senkrecht', 'flip_v', el.flip_v)}</div>
+      <div class="form-group"><label>Status</label>${checkField('sichtbar', 'hidden', !el.hidden, 'bool-inv')}${checkField('gesperrt', 'locked', el.locked)}</div>
+    </div>
+    ${selectField('Mischmodus', 'blend', el.blend || 'normal', BLEND_MODES.map(b => ({v: b, l: {normal: 'Normal', multiply: 'Multiplizieren', screen: 'Negativ multiplizieren', overlay: 'Überlagern', darken: 'Abdunkeln', lighten: 'Aufhellen'}[b]})))}
+    ${el.group ? `<div class="kv small">Teil der Gruppe <b>${esc(el.group)}</b> – Auswahl fasst alle Mitglieder an. <button type="button" class="btn btn-ghost btn-xs" data-el-act="ungroup">Auflösen</button></div>` : ''}
+  </div>`;
+}
+function conditionSection(el) {
+  return `<div class="prop-section"><h4>Bedingungen (pro Stadt)</h4>
+    <div class="form-group"><label>Nur zeigen, wenn dieser Wert da ist</label><select data-prop="only_if" data-kind="str">${condOptions(el.only_if)}</select></div>
+    <div class="form-group"><label>Auslassen, wenn dieser Wert da ist</label><select data-prop="skip_if" data-kind="str">${condOptions(el.skip_if)}</select></div>
+    <div class="kv small">Damit fällt ein Element in Städten ohne den Wert einfach weg, statt leer dazustehen.</div>
+  </div>`;
+}
+function textProps(el) {
+  const boxCfg = el.box && typeof el.box === 'object' ? el.box : null;
+  const pad = paddingOf(el.padding);
+  const presets = S.presets.length
+    ? S.presets.map(p => `<span class="preset-chip" data-preset="${esc(p.id)}" title="Stil anwenden">${esc(p.name)}<button type="button" class="ibtn" data-preset-del="${esc(p.id)}" title="Stil löschen">✕</button></span>`).join('')
+    : '<span class="muted small">Noch keine Stile gespeichert.</span>';
+  return `<div class="prop-section"><h4>Inhalt</h4>
+      <div class="form-group"><label>Variable oder fester Text</label><select data-varsel="var">${variableOptions(el.var, 'Fester Text (in jeder Stadt gleich)', '__text__')}</select></div>
+      ${el.var ? `<div class="kv small">Wert kommt beim Rendern aus dem Stadtwissen (<b>${esc(varLabel(el.var))}</b>).</div>`
+               : `<div class="form-group"><label>Fester Text ({variable} wird ersetzt)</label><textarea data-prop="text" data-kind="str" rows="3">${esc(el.text || '')}</textarea></div>`}
+      <div class="form-group"><label>Ersatztext, wenn der Wert fehlt (leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}"></div>
+    </div>
+    <div class="prop-section"><h4>Schrift</h4>
+      <div class="form-group"><label>Schriftart</label><select data-prop="font" data-kind="str">${fontSelectOptions(el.font)}</select></div>
+      <div class="form-row">${numField('Max. Größe', 'max_size', el.max_size, 'min="4"')}${numField('Min. Größe', 'min_size', el.min_size, 'min="4"')}</div>
+      <div class="form-group"><label>Umbruchverhalten</label>${segField('fit', el.fit || 'shrink', [{v: 'shrink', l: 'Verkleinern', t: 'so lange kleiner, bis es passt'}, {v: 'wrap', l: 'Nur umbrechen', t: 'Größe bleibt, es wird umgebrochen'}, {v: 'clip', l: 'Abschneiden', t: 'kein Umbruch, Rest fällt weg'}])}</div>
+      <div class="form-row">${numField('Max. Zeilen (0 = beliebig)', 'max_lines', el.max_lines || '', 'min="0"')}${numField('Zeilenhöhe', 'line_height', el.line_height == null ? 1.15 : el.line_height, 'min="0.5" step="0.05"')}</div>
+      <div class="form-row">${numField('Buchstabenabstand (px)', 'letter_spacing', el.letter_spacing == null ? 0 : el.letter_spacing, 'step="0.5"')}
+        <div class="form-group"><label>Großschreibung</label>${checkField('alles groß', 'uppercase', el.uppercase)}</div></div>
+      <div class="form-row"><div class="form-group"><label>Ausrichtung</label>${segField('align', el.align || 'left', [{v: 'left', l: '⇤', t: 'links'}, {v: 'center', l: '↔', t: 'zentriert'}, {v: 'right', l: '⇥', t: 'rechts'}])}</div>
+        <div class="form-group"><label>Vertikal</label>${segField('valign', el.valign || 'top', [{v: 'top', l: '⤒', t: 'oben'}, {v: 'middle', l: '↕', t: 'mittig'}, {v: 'bottom', l: '⤓', t: 'unten'}])}</div></div>
+      <div class="form-group"><label>Innenabstand der Textbox (px)</label>
+        <div class="form-row-4">
+          <input type="number" data-prop="padding.top" data-kind="int" value="${esc(pad.top)}" title="oben">
+          <input type="number" data-prop="padding.right" data-kind="int" value="${esc(pad.right)}" title="rechts">
+          <input type="number" data-prop="padding.bottom" data-kind="int" value="${esc(pad.bottom)}" title="unten">
+          <input type="number" data-prop="padding.left" data-kind="int" value="${esc(pad.left)}" title="links">
+        </div></div>
+    </div>
+    <div class="prop-section"><h4>Farbe</h4>${paintField('color', el.color == null ? '#ffffff' : el.color)}</div>
+    <div class="prop-section"><h4>Kontur</h4>${paintField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>
+    <div class="prop-section"><h4>Schatten</h4>
+      ${checkField('Schatten aktiv', '__shadow__', !!el.shadow, 'toggle-shadow')}
+      ${el.shadow ? `<div class="form-row-3">${numField('dx', 'shadow.dx', el.shadow.dx == null ? 2 : el.shadow.dx)}${numField('dy', 'shadow.dy', el.shadow.dy == null ? 2 : el.shadow.dy)}${numField('Weichzeichnen', 'shadow.blur', el.shadow.blur == null ? 0 : el.shadow.blur, 'min="0"')}</div>${paintField('shadow.color', el.shadow.color || '#000000')}` : ''}
+    </div>
+    <div class="prop-section"><h4>Textkasten (hinter der Schrift)</h4>
+      ${checkField('Kasten zeichnen', '__box__', !!boxCfg, 'toggle-box')}
+      ${boxCfg ? `${paintField('box.fill', boxCfg.fill == null ? '#ffffff' : boxCfg.fill)}
+        <div class="form-row">${numField('Eckenradius', 'box.radius', boxCfg.radius == null ? 0 : boxCfg.radius, 'min="0"')}${numField('Innenabstand', 'box.padding', boxCfg.padding == null ? 8 : boxCfg.padding, 'min="0"')}</div>
+        ${paintField('box.stroke', boxCfg.stroke, {optional: true})}
+        ${numField('Konturbreite', 'box.stroke_width', boxCfg.stroke_width == null ? 0 : boxCfg.stroke_width, 'min="0"')}
+        ${checkField('je Zeile ein eigener Kasten', 'box.per_line', boxCfg.per_line)}` : '<div class="kv small">Typisches Meme-Mittel: ein weißer Balken hinter der Schrift, der sich an der echten Textgröße orientiert.</div>'}
+    </div>
+    <div class="prop-section"><h4>Textstile</h4>
+      <div class="preset-list">${presets}</div>
+      <button type="button" class="btn btn-ghost btn-xs" id="btn-preset-save" style="margin-top:6px;">Stil aus diesem Text speichern</button>
+    </div>`;
+}
+function imageProps(el) {
+  const cr = el.crop && typeof el.crop === 'object' ? el.crop : {x: 0, y: 0, w: 1, h: 1};
+  const a = el.adjust && typeof el.adjust === 'object' ? el.adjust : {};
+  const lib = S.assets.length
+    ? `<div class="asset-grid" style="margin-top:6px;">${S.assets.map(x => `<div class="asset-card" data-pick-asset="${esc(assetUrl(x))}" title="${esc(x.name)}"><img src="${esc(assetUrl(x))}" alt=""><span class="an">${esc(x.name)}</span></div>`).join('')}</div>`
+    : '<div class="kv small">Noch keine Aufkleber in der Bibliothek – oben über „+ Aufkleber“ hochladen.</div>';
+  return `<div class="prop-section"><h4>Quelle</h4>
+      <div class="form-group"><label>Variable oder feste Quelle</label><select data-varsel="var">${variableOptions(el.var, 'Feste Quelle (Aufkleber oder URL)', '__src__')}</select></div>
+      ${el.var ? (isCityVar(el.var)
+          ? `<div class="kv small">Kommt aus den Bildern der Stadt, Schlüssel <b>${esc(el.var.slice(CITY_ASSET_PREFIX.length))}</b>. ${(() => { const i = cityAssetInfo(el.var.slice(CITY_ASSET_PREFIX.length)); if (!i) return '<span class="badge badge-yellow">bisher bei keiner Stadt hinterlegt</span>'; if (i.cities == null) return ''; return i.cities >= (i.total_cities || 0) ? '<span class="badge badge-green">bei allen Städten da</span>' : '<span class="badge badge-yellow">nur bei ' + i.cities + ' von ' + (i.total_cities || '?') + ' Städten</span>'; })()}</div>`
+          : `<div class="kv small">Der Wert der Variable muss ein Bildpfad oder eine URL sein.</div>`)
+        : `<div class="form-group"><label>URL oder Dateipfad</label><input type="url" data-prop="src" data-kind="str" value="${esc(el.src || '')}" placeholder="https://… oder /uploads/…"></div>${lib}`}
+    </div>
+    <div class="prop-section"><h4>Darstellung</h4>
+      <div class="form-group"><label>Einpassen</label>${segField('fit', el.fit || 'contain', [{v: 'contain', l: 'Einpassen', t: 'ganz sichtbar'}, {v: 'cover', l: 'Füllen', t: 'Box füllen, ggf. beschneiden'}, {v: 'stretch', l: 'Verzerren', t: 'auf die Box ziehen'}])}</div>
+      <div class="form-group"><label>Maske</label>${segField('mask', el.mask || 'none', [{v: 'none', l: 'Keine'}, {v: 'rounded', l: 'Abgerundet'}, {v: 'circle', l: 'Kreis'}])}</div>
+      ${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}
+    </div>
+    <div class="prop-section"><h4>Zuschnitt (Anteile 0–1 des Quellbilds)</h4>
+      ${sliderField('links', 'crop.x', cr.x, 0, 0.9, 0.01, 0)}
+      ${sliderField('oben', 'crop.y', cr.y, 0, 0.9, 0.01, 0)}
+      ${sliderField('Breite', 'crop.w', cr.w, 0.05, 1, 0.01, 1)}
+      ${sliderField('Höhe', 'crop.h', cr.h, 0.05, 1, 0.01, 1)}
+      <button type="button" class="btn btn-ghost btn-xs" data-el-act="crop-reset">Zuschnitt zurücksetzen</button>
+    </div>
+    <div class="prop-section"><h4>Anpassung</h4>
+      ${sliderField('Helligkeit', 'adjust.brightness', a.brightness, 0, 2, 0.05, 1)}
+      ${sliderField('Kontrast', 'adjust.contrast', a.contrast, 0, 2, 0.05, 1)}
+      ${sliderField('Sättigung', 'adjust.saturation', a.saturation, 0, 2, 0.05, 1)}
+      ${sliderField('Weichzeichnen', 'adjust.blur', a.blur, 0, 40, 1, 0)}
+      ${sliderField('Graustufen', 'adjust.grayscale', a.grayscale, 0, 1, 0.05, 0)}
+      <button type="button" class="btn btn-ghost btn-xs" data-el-act="adjust-reset">Anpassung zurücksetzen</button>
+    </div>`;
+}
+function coverProps(el) {
+  const mode = !el.fill || el.fill === 'auto' ? 'auto' : (el.fill === 'inpaint' ? 'inpaint' : 'color');
+  return `<div class="prop-section"><h4>Füllung</h4>
+      ${segField('coverfill', mode, [{v: 'auto', l: 'Auto', t: 'Randfarbe der Box (Median)'}, {v: 'inpaint', l: 'Inpaint', t: 'Umgebung fortsetzen (cv2, sonst Auto)'}, {v: 'color', l: 'Farbe', t: 'feste Farbe oder Verlauf'}])}
+      ${mode === 'color' ? `<div style="margin-top:8px;">${paintField('fill', el.fill)}</div>` : '<div class="kv small" style="margin-top:6px;">Auto nimmt die häufigste Randfarbe der Box, Inpaint setzt die Umgebung fort (braucht cv2, sonst wie Auto).</div>'}
+      ${numField('Weiche Kante (px)', 'feather', el.feather == null ? 0 : el.feather, 'min="0"')}
+    </div>`;
+}
+function shapeProps(el) {
+  const kind = shapeOf(el);
+  return `<div class="prop-section"><h4>Form</h4>
+      ${selectField('Art', '__shape__', kind, SHAPES.map(s => ({v: s, l: SHAPE_LABEL[s]})))}
+      ${kind === 'star' ? `<div class="form-row">${numField('Zacken', 'points', el.points == null ? 5 : el.points, 'min="3" max="24"')}${numField('Innenverhältnis', 'inner', el.inner == null ? 0.5 : el.inner, 'min="0.05" max="1" step="0.05"')}</div>` : ''}
+      ${(kind === 'rect' || kind === 'bubble') ? numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"') : ''}
+      ${kind === 'bubble' ? `<div class="form-row">${numField('Spitze X', 'tail.x', el.tail ? el.tail.x : Math.round(num(el.x, 0) + num(el.width, 10) * 0.25))}${numField('Spitze Y', 'tail.y', el.tail ? el.tail.y : Math.round(num(el.y, 0) + num(el.height, 10) * 1.3))}</div><div class="kv small">Die Spitze lässt sich auch direkt auf der Bühne am orangen Punkt ziehen.</div>` : ''}
+      ${kind === 'line' ? '<div class="kv small">Die Linie nutzt die Konturfarbe; ohne Kontur die Füllfarbe. Die Stärke kommt aus der Konturbreite.</div>' : ''}
+    </div>
+    <div class="prop-section"><h4>Füllung</h4>${paintField('fill', el.fill, {optional: true})}</div>
+    <div class="prop-section"><h4>Kontur</h4>${paintField('stroke', el.stroke, {optional: true})}${numField('Konturbreite (px)', 'stroke_width', el.stroke_width == null ? 0 : el.stroke_width, 'min="0"')}</div>`;
+}
+function multiProps() {
+  const list = selEls();
+  const kinds = Array.from(new Set(list.map(e => TYPE_LABEL[e.type] || e.type))).join(', ');
+  const b = groupBounds(list.map(aabbOf));
+  return `<div class="multi-hint">${list.length} Elemente gewählt (${esc(kinds)}). Umriss: ${Math.round(b.w)} × ${Math.round(b.h)} px bei ${Math.round(b.x)} / ${Math.round(b.y)}.</div>
+    <div class="prop-section"><h4>Für alle gewählten</h4>
+      <div class="form-row">${numField('Deckkraft (0–1)', 'opacity', '', 'min="0" max="1" step="0.05" placeholder="unverändert"')}${numField('Drehung (°)', 'rotation', '', 'min="-180" max="180" placeholder="unverändert"')}</div>
+      <div class="kv small">Leere Felder ändern nichts. Ausrichten, Verteilen, Gruppieren und Sperren stehen in der zweiten Werkzeugleiste.</div>
+    </div>
+    <div class="prop-section" style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost btn-xs" data-el-act="group">Gruppieren</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-el-act="ungroup">Auflösen</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button>
+      <button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button>
+    </div>`;
+}
 function canvasProps() {
   const t = S.template || {}; const img = S.imageSize;
   const differs = img && (img.width !== S.canvas.width || img.height !== S.canvas.height);
-  return `<div class="empty-hint">Kein Element ausgewählt. Auf eine Box in der Bühne oder in der Ebenenliste klicken.</div>
-    <div class="prop-section"><h4>Canvas</h4>
-      <div class="form-row">${numField('Breite', '__canvas_w', S.canvas.width, 'min="10"')}${numField('Höhe', '__canvas_h', S.canvas.height, 'min="10"')}</div>
-      <div class="kv small">${img ? `Hintergrundbild: <b>${img.width} × ${img.height}</b>${differs ? ' – wird beim Rendern auf den Canvas eingepasst (mittig beschnitten).' : ''}` : 'Noch kein Hintergrundbild.'}</div>
-      ${differs ? `<button type="button" class="btn btn-ghost btn-xs" id="btn-canvas-img" style="margin-top:6px;">Canvas auf Bildgröße setzen</button>` : ''}
+  const bg = S.config.canvas ? S.config.canvas.background : null;
+  return `<div class="empty-hint">Kein Element gewählt. Auf eine Box in der Bühne oder in der Ebenenliste klicken – oder oben ein neues Element einfügen.</div>
+    <div class="prop-section"><h4>Leinwand</h4>
+      <div class="form-row">${numField('Breite', '__canvas_w', S.canvas.width, 'min="10" max="8000"')}${numField('Höhe', '__canvas_h', S.canvas.height, 'min="10" max="8000"')}</div>
+      <label class="check-row"><input type="checkbox" id="cv-bg-on" ${bg ? 'checked' : ''}> Leinwandfarbe verwenden (liegt unter dem Bild)</label>
+      ${bg ? paintField('__canvas_bg', bg) : '<div class="kv small">Ohne Farbe trägt allein das Hintergrundbild. Für ein Meme von Null: Häkchen setzen.</div>'}
+      <div class="kv small" style="margin-top:6px;">${img ? `Hintergrundbild: <b>${img.width} × ${img.height}</b>${differs ? ' – wird beim Rendern auf die Leinwand eingepasst (mittig beschnitten).' : ''}` : 'Noch kein Hintergrundbild.'}</div>
+      ${differs ? `<button type="button" class="btn btn-ghost btn-xs" id="btn-canvas-img" style="margin-top:6px;">Leinwand auf Bildgröße setzen</button>` : ''}
     </div>
     <div class="prop-section"><h4>Template</h4>
       <div class="kv">Kategorie: <b>${esc(t.category || '–')}</b><br>Render-Typ: <b>${esc(t.render_type || 'pil')}</b><br>Gespeicherte Variablen: <b>${esc((t.required_vars || []).join(', ') || '–')}</b></div>
       ${t.example_text ? `<div class="kv small" style="margin-top:6px;">Beispiel: ${esc(t.example_text)}</div>` : ''}
     </div>`;
 }
+function renderProps(force) {
+  const box = $('#props');
+  const key = propsKeyFor();
+  if (!force && key === S.propsKey) { syncPropsGeometry(); return; }
+  S.propsKey = key;
+  if (S.sel.length > 1) { box.innerHTML = multiProps(); return; }
+  const el = selected();
+  if (!el) { box.innerHTML = canvasProps(); return; }
+  let body = '';
+  if (el.type === 'text') body = textProps(el);
+  else if (el.type === 'image') body = imageProps(el);
+  else if (el.type === 'cover') body = coverProps(el);
+  else if (isShape(el)) body = shapeProps(el);
+  const errs = quickErrors(el);
+  const cb = cityBinding(el);
+  box.innerHTML = (errs.length ? `<div class="badge badge-red" style="margin:8px 0;">${esc(errs.join(' · '))}</div>` : '')
+    + (cb.city ? `<div class="badge badge-yellow" style="margin:8px 0;">wechselt pro Stadt: ${esc(cb.reasons.join(' · '))}</div>` : '')
+    + commonSection(el) + body + conditionSection(el)
+    + `<div class="prop-section" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button>
+        <button type="button" class="btn btn-ghost btn-xs" data-el-act="copy">Kopieren</button>
+        <button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button>
+      </div>`;
+}
 function syncPropsGeometry() {
-  const el = selected(); if (!el) return;
-  for (const k of ['x', 'y', 'width', 'height']) {
-    const inp = $(`#props [data-prop="${k}"]`); if (inp && document.activeElement !== inp) inp.value = el[k] == null ? '' : el[k];
+  const el = selected(); if (!el || S.sel.length !== 1) return;
+  for (const k of ['x', 'y', 'width', 'height', 'rotation']) {
+    const inp = $(`#props [data-prop="${k}"]`);
+    if (inp && document.activeElement !== inp) inp.value = el[k] == null ? (k === 'rotation' ? 0 : '') : el[k];
   }
 }
-function setNested(el, prop, value) {
-  const parts = prop.split('.');
-  if (parts.length === 1) { if (value === undefined) delete el[prop]; else el[prop] = value; return; }
-  if (!el[parts[0]] || typeof el[parts[0]] !== 'object') el[parts[0]] = {};
-  if (value === undefined) delete el[parts[0]][parts[1]]; else el[parts[0]][parts[1]] = value;
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 5: Werte übernehmen, Bibliotheken, Uploads, Tastatur, Vorschau, Speichern.
+   ───────────────────────────────────────────────────────────────────────────── */
+'use strict';
+
+// ── Ziel eines Farbfelds (Element oder Leinwand) ──────────────────────────────
+function paintTarget(pp) {
+  if (pp === '__canvas_bg') {
+    if (!S.config.canvas) S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
+    return {obj: S.config.canvas, path: 'background', canvas: true};
+  }
+  const el = selected();
+  return el ? {obj: el, path: pp, canvas: false} : null;
 }
+function afterPaintChange(t) {
+  if (t && t.canvas) { renderStage(); renderCanvasBgField(); renderProps(true); updateSaveState(); schedulePreview(); }
+  else commit();
+}
+
+// ── Werte übernehmen ──────────────────────────────────────────────────────────
 function applyProp(el, prop, kind, raw, checked) {
   if (prop === '__canvas_w' || prop === '__canvas_h') {
-    const v = Math.round(num(raw, 0)); if (v < 10) return;
-    S.config.canvas = {width: prop === '__canvas_w' ? v : S.canvas.width, height: prop === '__canvas_h' ? v : S.canvas.height};
-    S.canvas = {...S.config.canvas}; return;
+    const v = Math.round(num(raw, 0)); if (v < MIN_CANVAS || v > MAX_CANVAS) return;
+    if (!S.config.canvas) S.config.canvas = {};
+    S.config.canvas.width = prop === '__canvas_w' ? v : S.canvas.width;
+    S.config.canvas.height = prop === '__canvas_h' ? v : S.canvas.height;
+    S.canvas = {width: S.config.canvas.width, height: S.config.canvas.height};
+    $('#cv-w').value = S.canvas.width; $('#cv-h').value = S.canvas.height;
+    return;
   }
+  if (!el) return;
   if (kind === 'bool') { setNested(el, prop, checked ? true : undefined); return; }
   if (kind === 'bool-inv') { setNested(el, prop, checked ? undefined : true); return; }
   if (kind === 'int' || kind === 'num') {
     if (raw === '' || raw == null) { setNested(el, prop, undefined); return; }
-    const v = kind === 'int' ? Math.round(num(raw, 0)) : num(raw, 0);
+    const v = kind === 'int' ? Math.round(num(raw, 0)) : Math.round(num(raw, 0) * 1000) / 1000;
     if (prop === 'max_lines' && v <= 0) { setNested(el, prop, undefined); return; }
-    setNested(el, prop, v); return;
+    if (prop === 'rotation' && !v) { setNested(el, prop, undefined); return; }
+    // Zuschnitt und Anpassung nie halb schreiben – der Renderer erwartet vollstaendige Objekte
+    if (prop.indexOf('crop.') === 0 && (!el.crop || typeof el.crop !== 'object')) el.crop = {x: 0, y: 0, w: 1, h: 1};
+    if (prop.indexOf('adjust.') === 0 && (!el.adjust || typeof el.adjust !== 'object')) el.adjust = {brightness: 1, contrast: 1, saturation: 1, blur: 0, grayscale: 0};
+    setNested(el, prop, v);
+    if (prop.indexOf('crop.') === 0) for (const k of ['x', 'y', 'w', 'h']) if (!isNum(el.crop[k])) el.crop[k] = (k === 'w' || k === 'h') ? 1 : 0;
+    return;
   }
   if (kind === 'color') { const v = String(raw || '').trim(); setNested(el, prop, v === '' ? undefined : v); return; }
   setNested(el, prop, raw === '' ? undefined : raw);
 }
-const props = $('#props');
-props.addEventListener('focusin', e => { if (e.target.matches('[data-prop],[data-colorpick]') && !S.focusSnap) { snapshot(); S.focusSnap = true; } });
-props.addEventListener('focusout', () => { S.focusSnap = false; });
-props.addEventListener('input', e => {
-  const t = e.target; const el = selected();
+function applyToSelection(prop, kind, raw) {
+  const list = selEls(); if (!list.length) return;
+  snapshot();
+  list.forEach(el => applyProp(el, prop, kind, raw));
+  commit({keepProps: true});
+}
+
+function onPropsFocusIn(e) { if (e.target.matches('[data-prop],[data-colorpick],[data-gstop]') && !S.focusSnap) { snapshot(); S.focusSnap = true; } }
+function onPropsFocusOut() { S.focusSnap = false; }
+function onPropsInput(e) {
+  const t = e.target;
+  // Verlauf: Stopps
+  if (t.matches('[data-gstop]')) {
+    const tg = paintTarget(t.dataset.pp); if (!tg) return;
+    const g = getNested(tg.obj, tg.path); if (!isGradient(g)) return;
+    const i = parseInt(t.dataset.gi, 10); const st = g.stops[i]; if (!st) return;
+    if (t.dataset.gstop === 'at') st.at = clamp(num(t.value, 0), 0, 1);
+    else if (t.dataset.gstop === 'color') st.color = t.value.trim() || '#000000';
+    else if (t.dataset.gstop === 'pick') {
+      st.color = t.value;
+      const txt = $(`[data-gstop="color"][data-pp="${CSS.escape(t.dataset.pp)}"][data-gi="${i}"]`); if (txt) txt.value = t.value;
+    }
+    const prev = t.closest('.color-wrap') ? $('.grad-prev', t.closest('.color-wrap')) : null;
+    if (prev) prev.style.background = gradientCss(g, S.brand);
+    if (tg.canvas) { renderStage(); updateSaveState(); schedulePreview(); } else { renderStage(); renderLayers(); renderCityBar(); updateSaveState(); schedulePreview(); }
+    return;
+  }
+  if (t.matches('[data-gangle]')) {
+    const tg = paintTarget(t.dataset.pp); if (!tg) return;
+    const g = getNested(tg.obj, tg.path); if (!isGradient(g)) return;
+    g.angle = Math.round(clamp(num(t.value, 0), 0, 360));
+    const prev = t.closest('.color-wrap') ? $('.grad-prev', t.closest('.color-wrap')) : null;
+    if (prev) prev.style.background = gradientCss(g, S.brand);
+    renderStage(); updateSaveState(); schedulePreview(); return;
+  }
   if (t.matches('[data-colorpick]')) {
-    const prop = t.dataset.colorpick; if (!el) return;
-    applyProp(el, prop, 'color', t.value); const txt = $(`#props [data-prop="${prop}"]`); if (txt) txt.value = t.value;
-    renderStage(); renderLayers(); updateSaveState(); schedulePreview(); return;
+    const tg = paintTarget(t.dataset.colorpick); if (!tg) return;
+    setNested(tg.obj, tg.path, t.value);
+    const txt = $(`[data-prop="${CSS.escape(t.dataset.colorpick)}"]`, t.closest('.color-wrap') || document); if (txt) txt.value = t.value;
+    if (tg.canvas) { renderStage(); updateSaveState(); schedulePreview(); }
+    else { renderStage(); renderLayers(); renderCityBar(); updateSaveState(); schedulePreview(); }
+    return;
   }
   if (!t.matches('[data-prop]')) return;
-  if (!el && !t.dataset.prop.startsWith('__canvas')) return;
+  const prop = t.dataset.prop;
   if (t.type === 'checkbox') return; // wird über change behandelt
-  applyProp(el || {}, t.dataset.prop, t.dataset.kind, t.value, t.checked);
-  if (t.dataset.prop.startsWith('__canvas')) { renderStage(); updateSaveState(); schedulePreview(); return; }
-  if (t.dataset.kind === 'color') { const pick = $(`#props [data-colorpick="${t.dataset.prop}"]`); const rc = resolveColor(t.value); if (pick && /^#[0-9a-fA-F]{6}$/.test(rc)) pick.value = rc; }
-  renderStage(); renderLayers(); updateSaveState(); schedulePreview();
-});
-props.addEventListener('change', e => {
+  if (t.type === 'range') { const v = t.parentElement.querySelector('.v'); if (v) v.textContent = String(Math.round(num(t.value, 0) * 100) / 100); }
+  if (prop.startsWith('__canvas_')) {
+    if (prop === '__canvas_bg') return;
+    applyProp(null, prop, t.dataset.kind, t.value); renderStage(); updateSaveState(); schedulePreview(); return;
+  }
+  if (S.sel.length > 1) { const list = selEls(); if (t.value === '') return; list.forEach(el => applyProp(el, prop, t.dataset.kind, t.value)); renderStage(); renderLayers(); updateSaveState(); schedulePreview(); return; }
+  const el = selected(); if (!el) return;
+  applyProp(el, prop, t.dataset.kind, t.value, t.checked);
+  if (t.dataset.kind === 'color') {
+    const pick = $(`[data-colorpick="${CSS.escape(prop)}"]`, t.closest('.color-wrap') || document);
+    const rc = brandColor(t.value); if (pick && /^#[0-9a-fA-F]{6}$/.test(rc)) pick.value = rc;
+  }
+  renderStage(); renderLayers(); renderCityBar(); updateSaveState(); schedulePreview();
+}
+function onPropsChange(e) {
   const t = e.target; const el = selected();
   if (t.matches('[data-varsel]')) {
     if (!el) return;
@@ -884,49 +2133,351 @@ props.addEventListener('change', e => {
     else { el.var = v; if (el.type === 'text') delete el.text; if (el.type === 'image') delete el.src; }
     S.propsKey = ''; commit(); return;
   }
-  if (t.matches('[data-toggle-shadow]')) {
+  if (t.matches('[data-kind="toggle-shadow"]')) {
     if (!el) return; snapshot();
     if (t.checked) el.shadow = {dx: 3, dy: 3, color: '#000000', blur: 4}; else delete el.shadow;
     S.propsKey = ''; commit(); return;
   }
+  if (t.matches('[data-kind="toggle-box"]')) {
+    if (!el) return; snapshot();
+    if (t.checked) el.box = {fill: '#ffffff', radius: 8, padding: 10}; else delete el.box;
+    S.propsKey = ''; commit(); return;
+  }
+  if (t.id === 'cv-bg-on') {
+    snapshot();
+    if (!S.config.canvas) S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
+    if (t.checked) S.config.canvas.background = '#101827'; else delete S.config.canvas.background;
+    S.propsKey = ''; renderCanvasBgField(); renderProps(true); renderStage(); updateSaveState(); schedulePreview(); return;
+  }
+  if (t.matches('[data-prop="__shape__"]')) {
+    if (!el) return; snapshot();
+    const v = t.value;
+    el.type = 'shape'; el.shape = v;
+    if (v === 'bubble' && !el.tail) el.tail = {x: Math.round(num(el.x, 0) + num(el.width, 10) * 0.25), y: Math.round(num(el.y, 0) + num(el.height, 10) * 1.3)};
+    S.propsKey = ''; commit(); return;
+  }
   if (t.matches('[data-prop]') && t.type === 'checkbox') {
-    if (!el) return; if (!S.focusSnap) snapshot();
-    applyProp(el, t.dataset.prop, t.dataset.kind, t.value, t.checked); commit({keepProps: true}); return;
+    if (!el && S.sel.length === 0) return;
+    if (!S.focusSnap) snapshot();
+    selEls().forEach(x => applyProp(x, t.dataset.prop, t.dataset.kind, t.value, t.checked));
+    commit({keepProps: true}); return;
   }
   if (t.matches('[data-prop]') && t.tagName === 'SELECT') {
     if (!el) return; if (!S.focusSnap) snapshot();
     applyProp(el, t.dataset.prop, t.dataset.kind, t.value); commit({keepProps: true}); return;
   }
-  if (t.matches('[data-prop][data-kind="color"]')) { commit({keepProps: true}); return; }
-});
-props.addEventListener('click', e => {
+  if (t.matches('[data-prop][data-kind="color"]') || t.matches('[data-gstop]') || t.matches('[data-gangle]') || t.matches('[data-colorpick]')) { commit({keepProps: true}); return; }
+  if (t.matches('[data-prop]')) { commit({keepProps: true}); return; }
+}
+function onPropsClick(e) {
   const el = selected();
+  // Farbe / Verlauf umschalten
+  const tab = e.target.closest('[data-ptab]');
+  if (tab) {
+    const tg = paintTarget(tab.dataset.pp); if (!tg) return;
+    const cur = getNested(tg.obj, tg.path);
+    snapshot();
+    if (tab.dataset.ptab === 'grad') { if (!isGradient(cur)) setNested(tg.obj, tg.path, defaultGradient(brandColor(cur, '#3b82f6'))); }
+    else if (isGradient(cur)) setNested(tg.obj, tg.path, (cur.stops && cur.stops[0] && cur.stops[0].color) || '#ffffff');
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const gt = e.target.closest('[data-gtype] button');
+  if (gt) {
+    const tg = paintTarget(gt.closest('[data-gtype]').dataset.pp); if (!tg) return;
+    const g = getNested(tg.obj, tg.path); if (!isGradient(g)) return;
+    snapshot();
+    setNested(tg.obj, tg.path, serializeGradient(gt.dataset.gv, g.angle, g.stops));
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const gadd = e.target.closest('[data-gadd]');
+  if (gadd) {
+    const tg = paintTarget(gadd.dataset.pp); if (!tg) return;
+    const g = getNested(tg.obj, tg.path); if (!isGradient(g)) return;
+    snapshot();
+    const lastAt = g.stops.length ? num(g.stops[g.stops.length - 1].at, 1) : 1;
+    g.stops.push({at: clamp(lastAt + 0.2, 0, 1), color: '#ffffff'});
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const gdel = e.target.closest('[data-gdel]');
+  if (gdel) {
+    const tg = paintTarget(gdel.dataset.pp); if (!tg) return;
+    const g = getNested(tg.obj, tg.path); if (!isGradient(g) || g.stops.length <= 2) return;
+    snapshot(); g.stops.splice(parseInt(gdel.dataset.gi, 10), 1);
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const brand = e.target.closest('[data-brand]');
+  if (brand) {
+    const tg = paintTarget(brand.dataset.target); if (!tg) return;
+    snapshot();
+    if (brand.dataset.gi != null) {
+      const g = getNested(tg.obj, tg.path);
+      if (isGradient(g) && g.stops[parseInt(brand.dataset.gi, 10)]) g.stops[parseInt(brand.dataset.gi, 10)].color = 'brand:' + brand.dataset.brand;
+    } else setNested(tg.obj, tg.path, 'brand:' + brand.dataset.brand);
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const clear = e.target.closest('[data-clear]');
+  if (clear) { const tg = paintTarget(clear.dataset.clear); if (!tg) return; snapshot(); setNested(tg.obj, tg.path, undefined); S.propsKey = ''; afterPaintChange(tg); return; }
   const seg = e.target.closest('[data-seg] button');
   if (seg) {
     if (!el) return; snapshot();
     const prop = seg.closest('[data-seg]').dataset.seg; const v = seg.dataset.val;
-    if (prop === 'coverfill') { if (v === 'color') el.fill = '#000000'; else el.fill = v; S.propsKey = ''; commit(); return; }
+    if (prop === 'coverfill') { el.fill = v === 'color' ? '#000000' : v; S.propsKey = ''; commit(); return; }
     el[prop] = v; $$('button', seg.parentElement).forEach(b => b.classList.toggle('on', b === seg));
     commit({keepProps: true}); return;
   }
-  const brand = e.target.closest('[data-brand]');
-  if (brand) {
-    if (!el) return; snapshot();
-    setNested(el, brand.dataset.target, 'brand:' + brand.dataset.brand); S.propsKey = ''; commit(); return;
-  }
-  const clear = e.target.closest('[data-clear]');
-  if (clear) { if (!el) return; snapshot(); setNested(el, clear.dataset.clear, undefined); S.propsKey = ''; commit(); return; }
+  const pick = e.target.closest('[data-pick-asset]');
+  if (pick) { if (!el) return; snapshot(); el.src = pick.dataset.pickAsset; delete el.var; S.propsKey = ''; commit(); return; }
+  const pre = e.target.closest('[data-preset-del]');
+  if (pre) { deletePreset(pre.dataset.presetDel); return; }
+  const pa = e.target.closest('[data-preset]');
+  if (pa) { applyPreset(pa.dataset.preset); return; }
   const act = e.target.closest('[data-el-act]');
-  if (act && el) { if (act.dataset.elAct === 'dup') duplicateElement(el.id); else deleteElement(el.id); return; }
-  if (e.target.id === 'btn-canvas-img' && S.imageSize) {
-    snapshot(); S.config.canvas = {width: S.imageSize.width, height: S.imageSize.height}; S.canvas = {...S.config.canvas}; S.propsKey = ''; commit();
+  if (act) {
+    const a = act.dataset.elAct;
+    if (a === 'dup') duplicateElements(S.sel);
+    else if (a === 'del') deleteElements(S.sel);
+    else if (a === 'copy') copySelection();
+    else if (a === 'group') doGroup();
+    else if (a === 'ungroup') doUngroup();
+    else if (a === 'crop-reset' && el) { snapshot(); delete el.crop; S.propsKey = ''; commit(); }
+    else if (a === 'adjust-reset' && el) { snapshot(); delete el.adjust; S.propsKey = ''; commit(); }
+    return;
   }
+  if (e.target.id === 'btn-canvas-img' && S.imageSize) {
+    snapshot();
+    S.config.canvas = Object.assign({}, S.config.canvas, {width: S.imageSize.width, height: S.imageSize.height});
+    S.canvas = {width: S.imageSize.width, height: S.imageSize.height};
+    S.propsKey = ''; commit(); return;
+  }
+  if (e.target.id === 'btn-preset-save') { savePreset(); return; }
+}
+['#props', '#canvas-bg-field'].forEach(sel => {
+  const n = $(sel);
+  n.addEventListener('focusin', onPropsFocusIn);
+  n.addEventListener('focusout', onPropsFocusOut);
+  n.addEventListener('input', onPropsInput);
+  n.addEventListener('change', onPropsChange);
+  n.addEventListener('click', onPropsClick);
 });
 
-// ── Kopfzeile: Chips, Speichern, Hilfe, Duplizieren ───────────────────────────
+// ── Leinwand: Farbe und Voreinstellungen ──────────────────────────────────────
+function renderCanvasBgField() {
+  const bg = S.config.canvas ? S.config.canvas.background : null;
+  $('#canvas-bg-field').innerHTML = bg
+    ? paintField('__canvas_bg', bg) + '<button type="button" class="btn btn-ghost btn-xs" data-clear="__canvas_bg" style="margin-top:6px;">Farbe entfernen</button>'
+    : '<button type="button" class="btn btn-ghost btn-xs" id="btn-cvbg-on">Leinwandfarbe setzen</button>';
+  const on = $('#btn-cvbg-on');
+  if (on) on.addEventListener('click', () => {
+    snapshot();
+    if (!S.config.canvas) S.config.canvas = {width: S.canvas.width, height: S.canvas.height};
+    S.config.canvas.background = '#101827';
+    S.propsKey = ''; renderCanvasBgField(); renderProps(true); renderStage(); updateSaveState(); schedulePreview();
+  });
+}
+function renderCanvasPresets() {
+  $('#canvas-presets').innerHTML = S.canvasPresets.map(p =>
+    `<button type="button" data-cvp="${esc(p.key)}">${esc(p.label || (p.width + ' × ' + p.height))}</button>`).join('');
+}
+$('#canvas-presets').addEventListener('click', e => {
+  const b = e.target.closest('[data-cvp]'); if (!b) return;
+  const p = S.canvasPresets.find(x => String(x.key) === b.dataset.cvp); if (!p) return;
+  setCanvas(p.width, p.height); closeDropdowns();
+});
+function setCanvas(w, h) {
+  w = Math.round(clamp(num(w, 0), MIN_CANVAS, MAX_CANVAS)); h = Math.round(clamp(num(h, 0), MIN_CANVAS, MAX_CANVAS));
+  if (!w || !h) return;
+  snapshot();
+  S.config.canvas = Object.assign({}, S.config.canvas, {width: w, height: h});
+  S.canvas = {width: w, height: h};
+  $('#cv-w').value = w; $('#cv-h').value = h;
+  S.propsKey = ''; commit();
+}
+$('#btn-cv-apply').addEventListener('click', () => setCanvas($('#cv-w').value, $('#cv-h').value));
+$('#btn-cv-img').addEventListener('click', () => { if (S.imageSize) setCanvas(S.imageSize.width, S.imageSize.height); else toast('Kein Hintergrundbild vorhanden.', 'error'); });
+$('#btn-bg-off').addEventListener('click', () => { S.bgVisible = !S.bgVisible; renderStage(); toast(S.bgVisible ? 'Hintergrundbild wieder sichtbar' : 'Hintergrundbild nur in der Bühne ausgeblendet', 'info'); });
+
+// ── Aufkleber-Bibliothek ──────────────────────────────────────────────────────
+async function loadAssets() {
+  try { const d = await api('GET', '/api/studio/assets'); S.assets = Array.isArray(d) ? d : (d.assets || []); renderAssets(); S.propsKey = ''; renderProps(true); }
+  catch (e) { /* Bibliothek gibt es evtl. noch nicht */ }
+}
+function renderAssets() {
+  const box = $('#asset-list');
+  box.innerHTML = S.assets.length
+    ? `<div class="asset-grid">${S.assets.map(a => `<div class="asset-card" data-asset="${esc(assetUrl(a))}" title="${esc(a.name)}"><img src="${esc(assetUrl(a))}" alt=""><span class="an">${esc(a.name)}</span><button type="button" class="del" data-asset-del="${esc(a.id)}" title="Aus der Bibliothek löschen">✕</button></div>`).join('')}</div>`
+    : '<div class="kv small">Noch keine Aufkleber. Unten hochladen – dann sind sie in jeder Vorlage verfügbar.</div>';
+}
+$('#asset-list').addEventListener('click', async e => {
+  const del = e.target.closest('[data-asset-del]');
+  if (del) {
+    e.stopPropagation();
+    if (!confirm('Aufkleber wirklich aus der Bibliothek löschen?')) return;
+    try { await api('DELETE', '/api/studio/assets/' + encodeURIComponent(del.dataset.assetDel)); S.assets = S.assets.filter(a => String(a.id) !== del.dataset.assetDel); renderAssets(); S.propsKey = ''; renderProps(true); toast('Aufkleber gelöscht', 'success'); }
+    catch (err) { toast('Löschen fehlgeschlagen: ' + err.message, 'error'); }
+    return;
+  }
+  const card = e.target.closest('[data-asset]'); if (!card) return;
+  closeDropdowns();
+  const W = S.canvas.width;
+  addElement('image', {src: card.dataset.asset, width: Math.round(W * 0.3), height: Math.round(W * 0.3), fit: 'contain'});
+});
+$('#btn-asset-up').addEventListener('click', () => $('#asset-file').click());
+$('#asset-file').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (f.size > 8 * 1024 * 1024) { toast('Aufkleber zu groß (max. 8 MB)', 'error'); return; }
+  const name = (prompt('Name für den Aufkleber:', f.name.replace(/\.[^.]+$/, '')) || '').trim() || f.name;
+  const fd = new FormData(); fd.append('file', f); fd.append('name', name); fd.append('kind', 'sticker');
+  try {
+    const d = await api('POST', '/api/studio/assets', fd);
+    S.assets.push(d.asset || {id: d.id, name: d.name || name, url: d.url, kind: d.kind || 'sticker'});
+    renderAssets(); S.propsKey = ''; renderProps(true); toast('Aufkleber hochgeladen: ' + name, 'success');
+  } catch (err) { toast('Upload fehlgeschlagen: ' + err.message, 'error'); }
+});
+
+// ── Textstile ─────────────────────────────────────────────────────────────────
+const PRESET_KEYS = ['font', 'max_size', 'min_size', 'color', 'stroke', 'stroke_width', 'shadow', 'align', 'valign',
+  'uppercase', 'max_lines', 'line_height', 'letter_spacing', 'fit', 'padding', 'box'];
+async function loadPresets() {
+  try { const d = await api('GET', '/api/studio/presets'); S.presets = Array.isArray(d) ? d : (d.presets || []); S.propsKey = ''; renderProps(true); }
+  catch (e) { /* Stile gibt es evtl. noch nicht */ }
+}
+async function savePreset() {
+  const el = selected(); if (!el || el.type !== 'text') { toast('Zuerst ein Textelement wählen.', 'error'); return; }
+  const name = (prompt('Name für den Textstil:', 'Stil ' + (S.presets.length + 1)) || '').trim();
+  if (!name) return;
+  const props = {};
+  for (const k of PRESET_KEYS) if (el[k] !== undefined) props[k] = JSON.parse(JSON.stringify(el[k]));
+  try {
+    const d = await api('POST', '/api/studio/presets', {name, props});
+    S.presets.push(d.preset || {id: d.id, name: d.name || name, props: d.props || props});
+    S.propsKey = ''; renderProps(true); toast('Textstil gespeichert: ' + name, 'success');
+  } catch (e) { toast('Stil speichern fehlgeschlagen: ' + e.message, 'error'); }
+}
+async function deletePreset(id) {
+  if (!confirm('Textstil löschen?')) return;
+  try { await api('DELETE', '/api/studio/presets/' + encodeURIComponent(id)); S.presets = S.presets.filter(p => String(p.id) !== String(id)); S.propsKey = ''; renderProps(true); toast('Textstil gelöscht', 'success'); }
+  catch (e) { toast('Löschen fehlgeschlagen: ' + e.message, 'error'); }
+}
+function applyPreset(id) {
+  const p = S.presets.find(x => String(x.id) === String(id)); if (!p) return;
+  const list = selEls().filter(e => e.type === 'text');
+  if (!list.length) { toast('Kein Textelement gewählt.', 'error'); return; }
+  snapshot();
+  for (const el of list) for (const k of PRESET_KEYS) {
+    if (p.props && p.props[k] !== undefined) el[k] = JSON.parse(JSON.stringify(p.props[k]));
+  }
+  S.propsKey = ''; commit();
+  toast('Stil „' + p.name + '“ auf ' + list.length + ' Element(e) angewendet', 'success');
+}
+
+// ── Zwischenablage ────────────────────────────────────────────────────────────
+function copySelection() {
+  const list = selEls(); if (!list.length) return;
+  try { localStorage.setItem('studio_clipboard', JSON.stringify(list.map(e => JSON.parse(JSON.stringify(e))))); toast(list.length + ' Element(e) kopiert', 'success'); }
+  catch (_) { toast('Kopieren fehlgeschlagen (Speicher des Browsers)', 'error'); }
+}
+function pasteClipboard() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem('studio_clipboard') || 'null'); } catch (_) {}
+  if (!Array.isArray(data) || !data.length) { toast('Zwischenablage ist leer', 'error'); return; }
+  snapshot();
+  const taken = []; const groupMap = {}; const added = [];
+  for (const raw of data) {
+    const copy = JSON.parse(JSON.stringify(raw));
+    copy.id = newId(taken); taken.push(copy.id);
+    copy.x = num(copy.x, 0) + 20; copy.y = num(copy.y, 0) + 20;
+    if (copy.tail) copy.tail = {x: num(copy.tail.x, 0) + 20, y: num(copy.tail.y, 0) + 20};
+    if (copy.group) { if (!groupMap[copy.group]) groupMap[copy.group] = 'g' + Date.now().toString(36) + Object.keys(groupMap).length; copy.group = groupMap[copy.group]; }
+    normalizeElement(copy, els().length);
+    els().push(copy); added.push(copy.id);
+    if (copy.var) ensureVariable(copy.var);
+  }
+  setSelection(added, {raw: true}); commit();
+  toast(added.length + ' Element(e) eingefügt', 'success');
+}
+
+// ── Kontextmenü ───────────────────────────────────────────────────────────────
+function closeCtx() { const m = $('.ctxmenu'); if (m) m.remove(); }
+document.addEventListener('click', closeCtx);
+document.addEventListener('scroll', closeCtx, true);
+$('#stage').addEventListener('contextmenu', e => {
+  e.preventDefault(); closeCtx();
+  const elDiv = e.target.closest('.el');
+  if (elDiv && S.sel.indexOf(elDiv.dataset.id) < 0) select(elDiv.dataset.id);
+  const has = S.sel.length > 0;
+  const items = [
+    ['Duplizieren', 'Strg+D', () => duplicateElements(S.sel), has],
+    ['Kopieren', 'Strg+C', copySelection, has],
+    ['Einfügen', 'Strg+V', pasteClipboard, true],
+    null,
+    ['Nach vorne', '', () => { const i = els().findIndex(x => x.id === S.sel[0]); moveElement(i, 1); }, S.sel.length === 1],
+    ['Nach hinten', '', () => { const i = els().findIndex(x => x.id === S.sel[0]); moveElement(i, -1); }, S.sel.length === 1],
+    ['Ganz nach vorne', '', () => { const i = els().findIndex(x => x.id === S.sel[0]); if (i >= 0) reorder(i, els().length - 1); }, S.sel.length === 1],
+    ['Ganz nach hinten', '', () => { const i = els().findIndex(x => x.id === S.sel[0]); if (i >= 0) reorder(i, 0); }, S.sel.length === 1],
+    null,
+    ['Gruppieren', 'Strg+G', doGroup, S.sel.length > 1],
+    ['Gruppe auflösen', 'Strg+Umschalt+G', doUngroup, selEls().some(x => x.group)],
+    ['Sperren / entsperren', '', doLockToggle, has],
+    null,
+    ['Löschen', 'Entf', () => deleteElements(S.sel), has],
+  ];
+  const m = document.createElement('div');
+  m.className = 'ctxmenu';
+  m.style.left = Math.min(e.clientX, window.innerWidth - 220) + 'px';
+  m.style.top = Math.min(e.clientY, window.innerHeight - 340) + 'px';
+  items.forEach(it => {
+    if (!it) { m.appendChild(document.createElement('hr')); return; }
+    const b = document.createElement('button');
+    b.type = 'button'; b.disabled = !it[3];
+    b.innerHTML = `${esc(it[0])}<span>${esc(it[1])}</span>`;
+    b.addEventListener('click', ev => { ev.stopPropagation(); closeCtx(); it[2](); });
+    m.appendChild(b);
+  });
+  document.body.appendChild(m);
+});
+
+// ── Tastatur ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) && e.target.type !== 'checkbox';
+  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
+  if (inField) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); setSelection(els().filter(x => !x.locked).map(x => x.id), {raw: true}); return; }
+  if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelection(); return; }
+  if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  if (mod && e.key.toLowerCase() === 'g') { e.preventDefault(); if (e.shiftKey) doUngroup(); else doGroup(); return; }
+  if (mod && e.key.toLowerCase() === 'd') { if (S.sel.length) { e.preventDefault(); duplicateElements(S.sel); } return; }
+  if (e.key === 'Escape') { closeCtx(); closeDropdowns(); setSelection([]); return; }
+  if (!S.sel.length) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteElements(S.sel); return; }
+  const step = e.shiftKey ? 10 : 1; let dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft') dx = -step; else if (e.key === 'ArrowRight') dx = step;
+  else if (e.key === 'ArrowUp') dy = -step; else if (e.key === 'ArrowDown') dy = step; else return;
+  e.preventDefault();
+  const now = Date.now(); if (now - S.arrowSnapAt > 600) snapshot(); S.arrowSnapAt = now;
+  for (const el of selEls()) {
+    if (el.locked) continue;
+    el.x = Math.round(num(el.x, 0) + dx); el.y = Math.round(num(el.y, 0) + dy);
+    if (el.tail) el.tail = {x: Math.round(num(el.tail.x, 0) + dx), y: Math.round(num(el.tail.y, 0) + dy)};
+    positionElementDom(el);
+  }
+  syncPropsGeometry(); updateSaveState(); schedulePreview();
+});
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Teil 6: Kopfzeile, Uploads, Vorschau, Speichern.
+   ───────────────────────────────────────────────────────────────────────────── */
+'use strict';
+
 function renderChips() {
   const vars = collectVars(S.config);
-  $('#required-chips').innerHTML = vars.length ? vars.map(v => `<span class="chip ${varKind(v)}" title="${esc(varLabel(v))}">${esc(v)}</span>`).join('') : '<span class="chip">keine Variablen</span>';
+  $('#required-chips').innerHTML = vars.length
+    ? vars.map(v => `<span class="chip ${varKind(v)}" title="${esc(varLabel(v))}">${esc(v)}</span>`).join('')
+    : '<span class="chip">keine Variablen</span>';
 }
 function showErrors(list) {
   const box = $('#errors-box');
@@ -945,7 +2496,7 @@ async function save() {
     });
     if (d.template) S.template = d.template;
     S.saved = serialize(); showErrors([]); updateSaveState(); toast('Gespeichert (' + (d.required_vars || []).length + ' Variablen)', 'success');
-    if (!selected()) renderProps(true);
+    if (!selected()) { S.propsKey = ''; renderProps(true); }
     return true;
   } catch (e) {
     showErrors((e.data && e.data.errors) || [e.message]); updateSaveState(); toast('Speichern fehlgeschlagen', 'error'); return false;
@@ -965,16 +2516,53 @@ $('#btn-duplicate').addEventListener('click', async () => {
 });
 window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
+// ── Neue leere Vorlage ────────────────────────────────────────────────────────
+function closeModal() { $('#modal-root').innerHTML = ''; }
+$('#btn-new').addEventListener('click', () => {
+  const opts = S.canvasPresets.map((p, i) => `<option value="${i}">${esc(p.label || (p.width + ' × ' + p.height))}</option>`).join('');
+  $('#modal-root').innerHTML = `<div class="modal-back" data-modal-back><div class="modal">
+    <h3>NEUE VORLAGE</h3>
+    <div class="form-group"><label>Name</label><input type="text" id="nt-name" value="Neue Vorlage"></div>
+    <div class="form-group"><label>Kategorie</label><input type="text" id="nt-cat" value="${esc((S.template && S.template.category) || '')}" placeholder="z. B. stadt_meme"></div>
+    <div class="form-group"><label>Format</label><select id="nt-preset">${opts}<option value="custom">Frei …</option></select></div>
+    <div class="form-row"><div class="form-group"><label>Breite</label><input type="number" id="nt-w" min="64" max="8000" value="${S.canvasPresets[0] ? S.canvasPresets[0].width : 1080}"></div>
+      <div class="form-group"><label>Höhe</label><input type="number" id="nt-h" min="64" max="8000" value="${S.canvasPresets[0] ? S.canvasPresets[0].height : 1350}"></div></div>
+    <div class="form-group"><label>Leinwandfarbe</label><div class="color-field"><input type="color" id="nt-bgpick" value="#101827"><input type="text" id="nt-bg" value="#101827" placeholder="leer = keine Farbe"></div></div>
+    <div class="actions"><button type="button" class="btn btn-ghost btn-sm" data-modal-close>Abbrechen</button>
+      <button type="button" class="btn btn-primary btn-sm" id="nt-go">Anlegen und öffnen</button></div>
+  </div></div>`;
+  const sel = $('#nt-preset');
+  sel.addEventListener('change', () => {
+    const p = S.canvasPresets[parseInt(sel.value, 10)];
+    if (p) { $('#nt-w').value = p.width; $('#nt-h').value = p.height; }
+  });
+  $('#nt-bgpick').addEventListener('input', e => { $('#nt-bg').value = e.target.value; });
+  $('#nt-go').addEventListener('click', async () => {
+    const body = {name: $('#nt-name').value.trim() || 'Neue Vorlage', category: $('#nt-cat').value.trim(),
+      width: Math.round(clamp(num($('#nt-w').value, 1080), MIN_CANVAS, MAX_CANVAS)), height: Math.round(clamp(num($('#nt-h').value, 1350), MIN_CANVAS, MAX_CANVAS)),
+      background: $('#nt-bg').value.trim() || null};
+    try {
+      const d = await api('POST', '/api/studio/neu', body);
+      closeModal();
+      if (isDirty()) await save();
+      window.location.href = d.studio_url || ('/studio/' + d.id);
+    } catch (e) { toast('Anlegen fehlgeschlagen: ' + e.message, 'error'); }
+  });
+});
+$('#modal-root').addEventListener('click', e => {
+  if (e.target.matches('[data-modal-back]') || e.target.closest('[data-modal-close]')) closeModal();
+});
+
 // ── Hintergrund & Schrift hochladen ───────────────────────────────────────────
-$('#btn-bg').addEventListener('click', () => $('#bg-file').click());
+$('#btn-bg').addEventListener('click', () => { closeDropdowns(); $('#bg-file').click(); });
 $('#bg-file').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
   toast('Hintergrund wird hochgeladen …');
   try {
     const d = await api('POST', `/api/studio/${TID}/background`, fd);
-    S.bgUrl = d.background_url + '?v=' + Date.now(); S.imageSize = d.image_size || null;
-    if (d.canvas) S.canvas = d.canvas;
+    S.bgUrl = d.background_url + '?v=' + Date.now(); S.imageSize = d.image_size || null; S.bgVisible = true;
+    if (d.canvas) { S.canvas = d.canvas; S.config.canvas = Object.assign({}, S.config.canvas, {width: d.canvas.width, height: d.canvas.height}); }
     S.propsKey = ''; renderAll();
     toast('Hintergrund ersetzt' + (d.cloudinary ? ' und in Cloudinary gesichert' : ''), 'success');
   } catch (err) { toast('Upload fehlgeschlagen: ' + err.message, 'error'); }
@@ -991,7 +2579,7 @@ $('#font-file').addEventListener('change', async e => {
   } catch (err) { toast('Schrift-Upload fehlgeschlagen: ' + err.message, 'error'); }
 });
 
-// ── Vorschau ───────────────────────────────────────────────────────────────────
+// ── Vorschau ──────────────────────────────────────────────────────────────────
 function setPvStatus(html) { $('#pv-status').innerHTML = html || ''; }
 function clearPreviewUrls() { previewUrls.forEach(u => URL.revokeObjectURL(u)); previewUrls = []; }
 function showPreviews(items) {
@@ -999,18 +2587,21 @@ function showPreviews(items) {
   const box = $('#pv-imgs');
   if (!items.length) { box.innerHTML = '<div class="preview-empty">Keine Vorschau.</div>'; return; }
   box.innerHTML = items.map(it => {
+    if (it.error) return `<figure><div class="failed">${esc(it.error)}</div><figcaption>${esc(it.label)}</figcaption></figure>`;
     let src = it.src;
     if (it.blob) { src = URL.createObjectURL(it.blob); previewUrls.push(src); }
-    return `<figure><img src="${esc(src)}" alt="Vorschau ${esc(it.label)}" title="Klick: in voller Größe öffnen" data-full="${esc(src)}"><figcaption>${esc(it.label)}</figcaption></figure>`;
+    return `<figure><img src="${esc(src)}" alt="Vorschau ${esc(it.label)}" title="Klick: in voller Größe öffnen" data-full="${esc(src)}">
+      <figcaption>${esc(it.label)}${it.missing && it.missing.length ? `<span class="miss">fehlt: ${esc(it.missing.join(', '))}</span>` : ''}</figcaption></figure>`;
   }).join('');
 }
 $('#pv-imgs').addEventListener('click', e => { const img = e.target.closest('img[data-full]'); if (img) window.open(img.dataset.full, '_blank'); });
+function previewPossible() { return !!(S.bgUrl && S.bgVisible) || !!(S.config.canvas && S.config.canvas.background); }
 function schedulePreview() {
-  if (!$('#pv-auto').checked || !S.bgUrl) return;
+  if (!$('#pv-auto').checked || !previewPossible()) return;
   clearTimeout(previewTimer); previewTimer = setTimeout(() => renderPreview(), 800);
 }
 async function renderPreview(cityIds) {
-  if (!S.bgUrl) { toast('Ohne Hintergrundbild keine Vorschau', 'error'); return; }
+  if (!previewPossible()) { toast('Ohne Hintergrundbild oder Leinwandfarbe keine Vorschau', 'error'); return; }
   if (previewAbort) previewAbort.abort();
   previewAbort = new AbortController(); const signal = previewAbort.signal;
   const cities = (cityIds || [currentCity() ? currentCity().id : null]).map(id => S.cities.find(c => c.id === id) || {id, name: 'Stadt ' + id});
@@ -1033,8 +2624,50 @@ $('#btn-three').addEventListener('click', () => {
   while (pick.length < 3 && pool.length) pick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].id);
   renderPreview(pick);
 });
+// Raster über mehrere Städte
+function renderGridCities() {
+  $('#grid-cities').innerHTML = S.cities.map(c =>
+    `<label class="${S.gridSel.indexOf(c.id) >= 0 ? 'on' : ''}"><input type="checkbox" data-gridcity="${c.id}" ${S.gridSel.indexOf(c.id) >= 0 ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')
+    || '<span class="muted small">Keine Städte vorhanden.</span>';
+}
+$('#grid-cities').addEventListener('change', e => {
+  const cb = e.target.closest('[data-gridcity]'); if (!cb) return;
+  const id = parseInt(cb.dataset.gridcity, 10);
+  if (cb.checked) { if (S.gridSel.indexOf(id) < 0) S.gridSel.push(id); }
+  else S.gridSel = S.gridSel.filter(x => x !== id);
+  cb.closest('label').classList.toggle('on', cb.checked);
+});
+$('#btn-grid-all').addEventListener('click', () => { S.gridSel = S.cities.map(c => c.id); renderGridCities(); });
+$('#btn-grid-none').addEventListener('click', () => { S.gridSel = []; renderGridCities(); });
+$('#btn-grid-go').addEventListener('click', async () => {
+  closeDropdowns();
+  if (!S.gridSel.length) { toast('Zuerst Städte wählen.', 'error'); return; }
+  if (S.gridMax && S.gridSel.length > S.gridMax) toast('Der Server rendert höchstens ' + S.gridMax + ' Städte auf einmal.', 'info');
+  if (!previewPossible()) { toast('Ohne Hintergrundbild oder Leinwandfarbe keine Vorschau', 'error'); return; }
+  setPvStatus('<span class="spinner"></span> Raster über ' + S.gridSel.length + ' Städte …');
+  $('#ai-info').hidden = true;
+  try {
+    const d = await api('POST', `/api/studio/${TID}/preview-grid`, {config: S.config, city_ids: S.gridSel});
+    const items = (d.images || []).map(it => {
+      const missing = it.fehlende_variablen || it.missing || [];
+      if (missing.length) S.gridMissing[it.city_id] = missing; else delete S.gridMissing[it.city_id];
+      if (!it.image_b64) return {label: it.city || ('Stadt ' + it.city_id), error: it.error || 'kein Bild'};
+      return {src: 'data:image/png;base64,' + it.image_b64, label: it.city || ('Stadt ' + it.city_id), missing};
+    });
+    for (const f of (d.fehler || [])) items.push({label: f.city || ('Stadt ' + f.city_id), error: f.error || 'Fehler'});
+    showPreviews(items);
+    renderCityBar();
+    const withMiss = items.filter(i => i.missing && i.missing.length).length;
+    if (d.max_cities) S.gridMax = d.max_cities;
+    setPvStatus(items.length + ' Städte · ' + new Date().toLocaleTimeString('de-DE') + (withMiss ? ' · ' + withMiss + ' mit fehlenden Werten' : ''));
+    if (withMiss) toast(withMiss + ' Stadt/Städte haben nicht alle Werte – siehe Beschriftung unter dem Bild.', 'info');
+  } catch (e) {
+    setPvStatus('<span style="color:var(--danger)">' + esc(e.message) + '</span>');
+    toast('Raster fehlgeschlagen: ' + e.message, 'error');
+  }
+});
 $('#btn-ai').addEventListener('click', async () => {
-  if (!S.bgUrl) { toast('Ohne Hintergrundbild keine Vorschau', 'error'); return; }
+  if (!previewPossible()) { toast('Ohne Hintergrundbild oder Leinwandfarbe keine Vorschau', 'error'); return; }
   if (!S.aiAvailable) { toast('Kein Anthropic-Key hinterlegt – KI-Werte nicht verfügbar', 'error'); return; }
   if (isDirty()) { toast('Speichere zuerst, damit die KI die aktuellen Variablen kennt …'); if (!(await save())) return; }
   const city = currentCity(); if (!city) return;
@@ -1043,6 +2676,8 @@ $('#btn-ai').addEventListener('click', async () => {
   try {
     const d = await api('POST', `/api/studio/${TID}/preview-ai`, {city_id: city.id, config: S.config});
     showPreviews([{src: 'data:image/png;base64,' + d.image_b64, label: city.name + ' (KI)'}]);
+    S.aiValues[city.id] = d.values || {};
+    renderCityBar(); renderStage();
     const info = $('#ai-info'); info.hidden = false;
     const score = d.fit_score == null ? '–' : d.fit_score + ' / 100';
     info.innerHTML = `<div><b style="color:var(--text)">Fit-Score:</b> <span class="badge ${d.fit_score >= 70 ? 'badge-green' : d.fit_score >= 40 ? 'badge-yellow' : 'badge-red'}">${esc(score)}</span></div>
@@ -1053,35 +2688,11 @@ $('#btn-ai').addEventListener('click', async () => {
   finally { $('#btn-ai').disabled = false; }
 });
 $('#pv-auto').addEventListener('change', e => { try { localStorage.setItem('studio_auto_preview', e.target.checked ? '1' : '0'); } catch (_) {} if (e.target.checked) schedulePreview(); });
-$('#pv-city').addEventListener('change', () => { renderStage(); schedulePreview(); });
+$('#pv-city').addEventListener('change', () => { renderStage(); renderCityBar(); schedulePreview(); });
 $('#btn-pv-toggle').addEventListener('click', () => {
   const p = $('#preview-panel'); p.classList.toggle('collapsed');
   $('#btn-pv-toggle').textContent = p.classList.contains('collapsed') ? '▴' : '▾';
   if (S.zoom === 'fit') setTimeout(renderStage, 160);
-});
-$('#btn-undo').addEventListener('click', undo);
-$('#btn-redo').addEventListener('click', redo);
-
-// ── Tastatur ───────────────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  const mod = e.ctrlKey || e.metaKey;
-  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) && e.target.type !== 'checkbox';
-  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
-  if (inField) { if (e.key === 'Escape') e.target.blur(); return; }
-  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
-  const el = selected();
-  if (mod && e.key.toLowerCase() === 'd') { if (el) { e.preventDefault(); duplicateElement(el.id); } return; }
-  if (e.key === 'Escape') { select(null); return; }
-  if (!el) return;
-  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteElement(el.id); return; }
-  const step = e.shiftKey ? 10 : 1; let dx = 0, dy = 0;
-  if (e.key === 'ArrowLeft') dx = -step; else if (e.key === 'ArrowRight') dx = step;
-  else if (e.key === 'ArrowUp') dy = -step; else if (e.key === 'ArrowDown') dy = step; else return;
-  e.preventDefault();
-  const now = Date.now(); if (now - S.arrowSnapAt > 600) snapshot(); S.arrowSnapAt = now;
-  el.x = Math.round(num(el.x, 0) + dx); el.y = Math.round(num(el.y, 0) + dy);
-  positionElementDom(el); syncPropsGeometry(); updateSaveState(); schedulePreview();
 });
 
 load();

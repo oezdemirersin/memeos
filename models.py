@@ -1012,3 +1012,105 @@ class CityCollab(db.Model):
             'status': self.status, 'notes': self.notes or '',
             'created_at': self.created_at.isoformat() if self.created_at else '',
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STUDIO – Stadtbilder, Aufkleber-Bibliothek, Textstile
+# ═══════════════════════════════════════════════════════════════════════════════
+# Drei kleine Tabellen für den Bau eigener Vorlagen im Studio (G3):
+#   CityAsset    – Bilder, die je Stadt anders sind (Wappen, Logo, Skyline …)
+#   StudioAsset  – stadtunabhängige Aufkleber/Rahmen/Logos
+#   StudioPreset – gespeicherte Textstile ("so sieht unsere Überschrift aus")
+# Die Dateien liegen unter <MEMEOS_DATA_ROOT>/assets/; die Spalte url trägt die
+# Cloudinary-Fassung, falls hochgeladen (deploy-sicher, siehe project_persistent_media).
+
+CITY_ASSET_KINDS   = ('wappen', 'logo', 'foto', 'sonstige')
+STUDIO_ASSET_KINDS = ('sticker', 'logo', 'rahmen', 'sonstige')
+
+# Vorlagen-Variablen mit diesem Präfix werden aus den Stadtbildern gefüllt:
+# ein image-Element mit var='bild_wappen' zieht das CityAsset mit key='wappen'.
+CITY_ASSET_VAR_PREFIX = 'bild_'
+
+
+class CityAsset(db.Model):
+    """Ein Bild, das genau einer Stadt gehört. Der Schlüssel ist der Variablenname
+    ohne das Präfix 'bild_': key='wappen' füllt var='bild_wappen'."""
+    __tablename__ = 'city_asset'
+    __table_args__ = (db.UniqueConstraint('city_id', 'key', name='uq_city_asset_city_key'),)
+
+    id         = db.Column(db.Integer, primary_key=True)
+    city_id    = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False, index=True)
+    key        = db.Column(db.String(40), nullable=False, index=True)
+    name       = db.Column(db.String(200))
+    filename   = db.Column(db.String(300))
+    url        = db.Column(db.String(1000))
+    kind       = db.Column(db.String(20), default='sonstige')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    city = db.relationship('City', backref=db.backref('assets', lazy='dynamic',
+                                                      cascade='all,delete'))
+
+    @property
+    def var_name(self):
+        return CITY_ASSET_VAR_PREFIX + (self.key or '')
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'city_id':    self.city_id,
+            'city_name':  self.city.name if self.city else '',
+            'key':        self.key or '',
+            'var':        self.var_name,
+            'name':       self.name or (self.key or ''),
+            'filename':   self.filename or '',
+            'url':        self.url or '',
+            'kind':       self.kind or 'sonstige',
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+        }
+
+
+class StudioAsset(db.Model):
+    """Aufkleber-Bibliothek: Bilder, die in jeder Stadt gleich sind."""
+    __tablename__ = 'studio_asset'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(200))
+    filename   = db.Column(db.String(300))
+    url        = db.Column(db.String(1000))
+    kind       = db.Column(db.String(20), default='sticker', index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'name':       self.name or (self.filename or ''),
+            'filename':   self.filename or '',
+            'url':        self.url or '',
+            'kind':       self.kind or 'sticker',
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+        }
+
+
+class StudioPreset(db.Model):
+    """Gespeicherter Textstil: die Eigenschaften eines text-Elements ohne Position."""
+    __tablename__ = 'studio_preset'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(200), nullable=False)
+    props      = db.Column(db.Text, default='{}')     # JSON-Objekt
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def get_props(self):
+        try:
+            data = json.loads(self.props or '{}')
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'name':       self.name or '',
+            'props':      self.get_props(),
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+        }
