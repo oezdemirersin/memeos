@@ -773,6 +773,10 @@ def fill_flaeche(groesse, farbwert, brand=None):
 SCHWARZ = '#000000'
 WEISS   = '#ffffff'
 
+# Unterhalb dieses Kontrasts zwischen Text und Kontur verschmelzen beide zu einer Fläche –
+# die Schrift wird zum Klumpen. Die Kontur weicht dann auf den Gegenpol aus.
+KONTUR_MIN_KONTRAST = 2.5
+
 
 def _linear(kanal):
     c = kanal / 255.0
@@ -1488,7 +1492,7 @@ def element_defaults(typ, shape=None):
 #   max, min  Anteil der Höhe       -> max_size, min_size
 #   gross     True | 'stil' | False -> uppercase (True = immer, 'stil' = Schreibweise des Stils)
 #   kasten    'stil' | False        -> box (Art, Radius und Farbe kommen aus dem Stil)
-#   kontur    'stil' | 'dunkel' | False -> stroke + stroke_width
+#   kontur    'stil' | 'dunkel' | 'gegenpol' | False -> stroke + stroke_width
 #   schatten  'stil' | True | False -> shadow
 #   opacity   Zahl oder None        -> opacity
 
@@ -1511,7 +1515,10 @@ ROLLEN = {
     'ort': {
         'beschreibung': 'Der Stadt- oder Ortsname – in der Hauptfarbe und immer in Großbuchstaben.',
         'schrift': 'headline', 'farbe': 'stil:primary', 'max': 0.085, 'min': 0.040,
-        'gross': True, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': None,
+        # Immer mit Kontur: die Hauptfarbe einer Stadt ist eine kräftige Markenfarbe und steht
+        # hier direkt auf dem Foto. Ohne Kontur fiel die Zeile in der Messung bei allen
+        # geprüften Stilen durch die Lesbarkeitsprüfung (Kontrast 1.1 bis 1.8 zu 1).
+        'gross': True, 'kasten': False, 'kontur': 'gegenpol', 'schatten': False, 'opacity': None,
     },
     'klein': {
         'beschreibung': 'Beiwerk wie Quelle, Datum oder Hinweis – klein und zurückhaltend.',
@@ -1520,7 +1527,10 @@ ROLLEN = {
     },
     'wasserzeichen': {
         'beschreibung': 'Der eigene Seitenname in der Ecke – da, aber nie im Weg.',
-        'schrift': 'body', 'farbe': 'stil:light', 'max': 0.024, 'min': 0.016,
+        # 'stil:auto' statt fest hell: ein weißer Seitenname verschwindet auf einem hellen
+        # Foto vollständig. Auto wählt je Untergrund Schwarz oder Weiß, die Deckkraft von
+        # 0.7 hält ihn trotzdem zurückhaltend.
+        'schrift': 'body', 'farbe': 'stil:auto', 'max': 0.024, 'min': 0.016,
         'gross': False, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': 0.7,
     },
     'frei': {
@@ -1578,6 +1588,14 @@ def _rollen_vorgaben(name, stil, canvas_hoehe):
     strichstaerke = max(2, int(round(0.005 * h)))
     if kontur == 'dunkel':
         out['stroke'] = stil['dark']
+        out['stroke_width'] = strichstaerke
+    elif kontur == 'gegenpol':
+        # Die Schriftfarbe dieser Rolle ist eine kräftige Markenfarbe und steht direkt auf dem
+        # Foto. Eine fest dunkle Kontur verschwindet hinter dunklen Markenfarben. Darum die
+        # Kontur auf den Gegenpol legen: die von 'dark' und 'light', die weiter weg liegt.
+        farbe = r.get('farbe') or stil['dark']
+        out['stroke'] = (stil['dark'] if kontrast(farbe, stil['dark'], stil)
+                         >= kontrast(farbe, stil['light'], stil) else stil['light'])
         out['stroke_width'] = strichstaerke
     elif kontur == 'stil':
         if stil['kontur'] == 'dunkel':
@@ -2119,6 +2137,14 @@ def _render_text(img, el, values, brand):
     stroke_width = max(0, _int(el.get('stroke_width'), 0))
     if stroke is None:
         stroke_width = 0
+    else:
+        # Eine Kontur soll den Text vom Untergrund abheben. Fällt sie mit der Textfarbe
+        # zusammen, wird die Schrift zu einem Klumpen – genau das passiert, wenn ein Stil
+        # dunkle Kontur vorgibt und 'stil:auto' auf hellem Grund ebenfalls Dunkel wählt.
+        # Dann auf den Gegenpol drehen, statt den Text unlesbar zu machen.
+        if kontrast(color, stroke, brand) < KONTUR_MIN_KONTRAST:
+            stroke = parse_color(SCHWARZ if leuchtdichte(color, brand) > 0.5 else WEISS,
+                                 brand, (0, 0, 0, 255))
 
     layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
 
