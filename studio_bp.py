@@ -58,6 +58,7 @@ from models import (db, City, CityAsset, CityKnowledge, MemeTemplate, StudioAsse
                     StudioPreset, TemplateCategory, KNOWLEDGE_CATEGORIES, TEMPLATE_CAT_MAP,
                     CITY_ASSET_KINDS, STUDIO_ASSET_KINDS, CITY_ASSET_VAR_PREFIX)
 import memeos_render as R
+import meme_muster as MU
 
 log = logging.getLogger(__name__)
 bp = Blueprint('studio', __name__)
@@ -444,6 +445,7 @@ def _public_fonts():
 _ROLLEN_LABELS = {
     'ueberschrift':  'Überschrift',
     'pointe':        'Pointe',
+    'memezeile':     'Meme-Zeile (hell mit Kontur)',
     'unterzeile':    'Unterzeile',
     'ort':           'Ort',
     'klein':         'Kleingedrucktes',
@@ -1112,27 +1114,58 @@ def _hintergrund_pruefen(spec):
 @bp.route('/api/studio/neu', methods=['POST'])
 @studio_login_required
 def api_studio_neu():
-    """Leere Vorlage anlegen – ohne Hintergrundbild, allein von der Leinwandfarbe getragen."""
+    """Leere Vorlage anlegen – ohne Hintergrundbild, allein von der Leinwandfarbe getragen.
+
+    Mit `muster` wird die Vorlage nicht leer, sondern fertig aufgebaut: Elemente, Rollen und
+    Variablen des Musters stehen dann schon drin (siehe meme_muster)."""
     d = request.get_json(silent=True) or {}
-    masse, fehler = _masse_aus_payload(d)
-    if fehler:
-        return jsonify({'error': fehler}), 400
-    hintergrund, fehler = _hintergrund_pruefen(d.get('background', '#ffffff'))
+    muster = str(d.get('muster') or '').strip().lower()
+    if muster and not MU.muster_holen(muster):
+        return jsonify({'error': f'Unbekanntes Muster „{muster}“'}), 400
+
+    # Ein Muster bringt sein Format mit; eigene Maße im Rumpf schlagen es trotzdem.
+    if muster and d.get('preset') in (None, '') and d.get('width') in (None, '') \
+            and d.get('height') in (None, ''):
+        masse, fehler = MU.muster_masse(muster), None
+    else:
+        masse, fehler = _masse_aus_payload(d)
     if fehler:
         return jsonify({'error': fehler}), 400
 
-    canvas = {'width': masse[0], 'height': masse[1]}
-    if hintergrund is not None:
-        canvas['background'] = hintergrund
-    config = {'canvas': canvas, 'elements': []}
+    if muster:
+        config = MU.muster_config(muster, masse[0], masse[1])
+        # Eine eigene Hintergrundangabe schlägt die des Musters.
+        if 'background' in d:
+            hintergrund, fehler = _hintergrund_pruefen(d.get('background'))
+            if fehler:
+                return jsonify({'error': fehler}), 400
+            config['canvas'].pop('background', None)
+            if hintergrund is not None:
+                config['canvas']['background'] = hintergrund
+        vars_ = _required_vars(config)
+    else:
+        hintergrund, fehler = _hintergrund_pruefen(d.get('background', '#ffffff'))
+        if fehler:
+            return jsonify({'error': fehler}), 400
+        canvas = {'width': masse[0], 'height': masse[1]}
+        if hintergrund is not None:
+            canvas['background'] = hintergrund
+        config = {'canvas': canvas, 'elements': []}
+        vars_ = []
 
+    fehler_config = R.validate_config(config)
+    if fehler_config:                            # pragma: no cover – nur bei kaputtem Muster
+        log.error('Studio: Muster %s ergibt eine ungültige Config: %s', muster, fehler_config)
+        return jsonify({'error': 'Muster ergibt keine gültige Vorlage: ' + fehler_config[0]}), 500
+
+    vorgabe_name = (MU.muster_holen(muster) or {}).get('name') if muster else None
     t = MemeTemplate(
-        name=(str(d.get('name') or '').strip() or 'Neue Vorlage')[:200],
+        name=(str(d.get('name') or '').strip() or vorgabe_name or 'Neue Vorlage')[:200],
         description=(str(d.get('description') or '').strip() or None),
         category=_kategorie_pruefen(d.get('category')),
         render_type='pil',
         pil_config=json.dumps(config, ensure_ascii=False),
-        required_vars='[]',
+        required_vars=json.dumps(vars_, ensure_ascii=False),
         tags='[]',
         active=True,
     )
@@ -1141,10 +1174,86 @@ def api_studio_neu():
         t.series = series[:200]
     db.session.add(t)
     db.session.commit()
-    log.info('Studio: neue Vorlage %s (%s) angelegt, %dx%d', t.id, t.name, masse[0], masse[1])
+    log.info('Studio: neue Vorlage %s (%s) angelegt, %dx%d%s', t.id, t.name,
+             masse[0], masse[1], f', Muster {muster}' if muster else '')
     return jsonify({'id': t.id, 'studio_url': f'/studio/{t.id}',
                     'template': _template_dict(t), 'config': config,
+                    'muster': muster or None, 'variablen': vars_,
                     'canvas': {'width': masse[0], 'height': masse[1]}}), 201
+
+
+@bp.route('/api/studio/muster', methods=['GET'])
+@studio_login_required
+def api_studio_muster_liste():
+    """Der Musterkatalog: fertige Vorlagen, die nur noch Texte brauchen."""
+    return jsonify({'muster': MU.muster_liste()})
+
+
+@bp.route('/api/studio/<int:template_id>/muster', methods=['POST'])
+@studio_login_required
+def api_studio_muster_anwenden(template_id):
+    """Ein Muster in eine bestehende Vorlage setzen.
+
+    Rumpf:
+      muster    Schlüssel aus /api/studio/muster (Pflicht)
+      ersetzen  true (Vorgabe) legt die bisherigen Elemente ab, false hängt an
+      city_id   Stadt, deren Stil die Wasserzeichen-Ecke bestimmt (optional)
+      speichern true schreibt gleich in die Vorlage, sonst kommt nur die Config zurück
+
+    Ohne `speichern` ändert der Aufruf nichts – der Editor legt das Ergebnis dann in
+    seinen Rückgängig-Stapel, statt am Server vorbei zu speichern."""
+    t = MemeTemplate.query.get_or_404(template_id)
+    d = request.get_json(silent=True) or {}
+    key = str(d.get('muster') or '').strip().lower()
+    if not MU.muster_holen(key):
+        return jsonify({'error': f'Unbekanntes Muster „{key}“'}), 400
+
+    alt = _load_config(t) or {}
+    if not isinstance(alt, dict):
+        alt = {}
+    bg_pfad = _bg_path(t)
+    canvas = _canvas_for(alt, _image_size(bg_pfad) if bg_pfad else None)
+    breite, hoehe = int(canvas['width']), int(canvas['height'])
+
+    ecke = 'unten_rechts'
+    city = _city_from_payload(d)
+    if city is not None:
+        ecke = str(_city_brand(city).get('wasserzeichen_ecke') or ecke)
+
+    ersetzen = d.get('ersetzen') is not False
+    bestand = [] if ersetzen else [el for el in (alt.get('elements') or [])
+                                   if isinstance(el, dict)]
+    # Ids doppelt zu vergeben wäre der sicherste Weg, Elemente zu verlieren.
+    vergeben = {str(el.get('id')) for el in bestand}
+    praefix = 'm'
+    while any(i.startswith(praefix) for i in vergeben):
+        praefix += 'm'
+    neue = MU.muster_elemente(key, breite, hoehe, ecke, praefix)
+
+    config = dict(alt)
+    config['canvas'] = dict(canvas)
+    grund = (MU.muster_holen(key) or {}).get('grund')
+    # Die Grundfarbe des Musters nur setzen, wenn kein Foto dahinterliegt – sonst
+    # verdeckte sie das Bild, für das die Vorlage gebaut wurde.
+    if grund and not bg_pfad and ersetzen:
+        config['canvas']['background'] = grund
+    config['elements'] = bestand + neue
+
+    fehler = R.validate_config(config)
+    if fehler:                                   # pragma: no cover – nur bei kaputtem Muster
+        return jsonify({'error': 'Muster passt hier nicht: ' + fehler[0]}), 400
+
+    variablen = MU.muster_variablen(key)
+    if d.get('speichern'):
+        t.pil_config = json.dumps(config, ensure_ascii=False)
+        # Dieselbe Rechnung wie beim Speichern im Editor: was in der Config steht, zählt.
+        t.required_vars = json.dumps(_required_vars(config), ensure_ascii=False)
+        db.session.commit()
+        log.info('Studio: Muster %s in Vorlage %s gesetzt (%s)', key, t.id,
+                 'ersetzt' if ersetzen else 'angehängt')
+    return jsonify({'muster': key, 'config': config, 'variablen': variablen,
+                    'gespeichert': bool(d.get('speichern')),
+                    'elemente': len(neue)})
 
 
 @bp.route('/api/studio/<int:template_id>/hintergrund-farbe', methods=['POST'])
@@ -2120,14 +2229,58 @@ def _pruef_text(el, werte):
     return None, []
 
 
-def _pruef_untergrund(el, canvas, stil, bg_pfad, config, cache):
-    """(Farbe hinter dem Text, Beschreibung). Erst der Textkasten, dann eine gesetzte
-    Hintergrundfarbe, sonst der Durchschnitt des Hintergrundbilds in genau dieser Box."""
-    kasten = el.get('box')
-    if isinstance(kasten, dict) and kasten.get('fill') not in (None, '', False):
-        farbe = kasten['fill']
-        if not isinstance(farbe, dict):              # Verlauf im Kasten: nicht messbar
-            return farbe, 'Textkasten'
+def _pruef_flaeche_darunter(el, nummer, elemente, canvas):
+    """(Farbe, Deckkraft) der obersten Fläche unter diesem Text – oder (None, 1.0).
+
+    Ein farbiger Balken mit Text darauf ist ein Grundmuster jeder Vorlage. Ohne diesen
+    Schritt misst die Prüfung gegen das Hintergrundbild und meldet Fehler, die es nicht
+    gibt (oder übersieht welche, die es gibt).
+
+    Bewusst streng: nur unrotierte Rechtecke, die den Text VOLLSTÄNDIG überdecken, und nur
+    einfarbig. Bei allem anderen (Ellipse, Verlauf, teilweise Überdeckung) lieber kein
+    Urteil als ein falsches. Halbdurchsichtig ist dagegen kein Grund zur Zurückhaltung –
+    die Deckkraft kommt mit zurück und wird mit dem Untergrund verrechnet."""
+    tx0, ty0, tx1, ty1 = _pruef_zuschnitt_box(el, canvas)
+    treffer, deckkraft = None, 1.0
+    for i, kandidat in enumerate(elemente, 1):
+        if i >= nummer:                              # nur was VOR dem Text gezeichnet wird
+            break
+        if not isinstance(kandidat, dict) or R._bool(kandidat.get('hidden')):
+            continue
+        typ = str(kandidat.get('type') or 'text')
+        if typ == 'shape':
+            if str(kandidat.get('shape') or 'rect') != 'rect':
+                continue
+        elif typ != 'rect':                          # Altbestand kennt 'rect' als eigenen Typ
+            continue
+        if R._num(kandidat.get('rotation'), 0):
+            continue
+        fuellung = kandidat.get('fill')
+        if fuellung in (None, '', False) or isinstance(fuellung, dict):
+            continue
+        roh = kandidat.get('opacity')
+        alpha = 1.0 if roh in (None, '') else R._num(roh, 1.0)
+        if not (0 < alpha <= 1):
+            continue
+        kx0, ky0, kx1, ky1 = _pruef_zuschnitt_box(kandidat, canvas)
+        if kx0 <= tx0 and ky0 <= ty0 and kx1 >= tx1 and ky1 >= ty1:
+            treffer, deckkraft = fuellung, alpha     # später gezeichnet gewinnt
+    return treffer, deckkraft
+
+
+def _pruef_mischen(oben, unten, alpha, stil):
+    """Zwei Farbangaben nach Deckkraft mischen -> '#rrggbb', oder None wenn nicht messbar."""
+    a, b = _pruef_farbe(oben, stil), _pruef_farbe(unten, stil)
+    if a is None or b is None:
+        return None
+    t = max(0.0, min(1.0, float(alpha)))
+    kanaele = [int(round(int(a[i:i + 2], 16) * t + int(b[i:i + 2], 16) * (1 - t)))
+               for i in (1, 3, 5)]
+    return '#%02x%02x%02x' % tuple(kanaele)
+
+
+def _pruef_grundfarbe(el, canvas, stil, bg_pfad, config, cache):
+    """(Farbe, Beschreibung) aus Hintergrundbild oder Leinwandfarbe – ohne Elemente davor."""
     # Das Hintergrundbild ist für alle Städte dasselbe – gemerkt wird nach Bildausschnitt,
     # damit dieselbe Box nicht für jede Handschrift neu gemessen wird.
     schluessel = tuple(int(round(v)) for v in _pruef_zuschnitt_box(el, canvas))
@@ -2146,6 +2299,28 @@ def _pruef_untergrund(el, canvas, stil, bg_pfad, config, cache):
             farbe = grund if grund is not None else '#ffffff'
         cache[schluessel] = farbe
     return cache[schluessel], ('Hintergrundbild' if bg_pfad else 'Hintergrundfarbe')
+
+
+def _pruef_untergrund(el, canvas, stil, bg_pfad, config, cache, nummer=None, elemente=None):
+    """(Farbe hinter dem Text, Beschreibung). Der Reihe nach: Textkasten, eine Fläche unter
+    dem Text (bei Halbdurchsicht mit dem Untergrund verrechnet), sonst Bild oder Leinwand."""
+    kasten = el.get('box')
+    if isinstance(kasten, dict) and kasten.get('fill') not in (None, '', False):
+        farbe = kasten['fill']
+        if not isinstance(farbe, dict):              # Verlauf im Kasten: nicht messbar
+            return farbe, 'Textkasten'
+
+    flaeche, deckkraft = (None, 1.0)
+    if nummer is not None and elemente:
+        flaeche, deckkraft = _pruef_flaeche_darunter(el, nummer, elemente, canvas)
+    if flaeche is not None and deckkraft >= 0.995:
+        return flaeche, 'Fläche darunter'
+
+    grund, woher = _pruef_grundfarbe(el, canvas, stil, bg_pfad, config, cache)
+    if flaeche is None:
+        return grund, woher
+    gemischt = _pruef_mischen(flaeche, grund, deckkraft, stil)
+    return (gemischt, 'Fläche darunter') if gemischt else (grund, woher)
 
 
 def _pruef_farbe(wert, stil):
@@ -2299,7 +2474,8 @@ def _pruefe_vorlage(template, config, staedte, budgets=None):
             except Exception:                        # pragma: no cover – defensiv
                 voll = el
             untergrund_roh, woher = _pruef_untergrund(voll, canvas, stil, bg_pfad,
-                                                      config, hintergrund_cache)
+                                                      config, hintergrund_cache,
+                                                      nummer, elemente)
             untergrund = _pruef_farbe(untergrund_roh, stil)
             if untergrund is None:
                 continue

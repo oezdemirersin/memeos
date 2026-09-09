@@ -1507,6 +1507,12 @@ ROLLEN = {
         'schrift': 'headline', 'farbe': 'stil:accent', 'max': 0.095, 'min': 0.045,
         'gross': False, 'kasten': False, 'kontur': 'dunkel', 'schatten': 'stil', 'opacity': None,
     },
+    'memezeile': {
+        'beschreibung': 'Die klassische Zeile über oder unter dem Bild – hell mit dunkler Kontur.',
+        'schrift': 'headline', 'farbe': 'stil:light', 'max': 0.070, 'min': 0.034,
+        # Ohne Kasten, dafür immer mit Kontur: diese Zeile steht per Bauart mitten im Foto.
+        'gross': True, 'kasten': False, 'kontur': 'gegenpol', 'schatten': False, 'opacity': None,
+    },
     'unterzeile': {
         'beschreibung': 'Erklärt die Überschrift in einem halben Satz – kleiner, ohne Kasten.',
         'schrift': 'body', 'farbe': 'stil:auto', 'max': 0.042, 'min': 0.024,

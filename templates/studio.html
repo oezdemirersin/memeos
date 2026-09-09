@@ -391,6 +391,16 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
           <div id="baustein-list"></div>
         </div>
       </div>
+      <div class="dd" id="dd-muster">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-muster" title="Ganze Vorlage auf einen Schlag – nur noch Texte tauschen">Muster ▾</button>
+        <div class="dd-menu" style="min-width:330px;">
+          <div class="hd">Ganzes Muster einsetzen</div>
+          <div id="muster-list" class="small" style="color:var(--muted2);padding:8px 10px;">wird geladen …</div>
+          <div class="small" style="color:var(--muted2);padding:0 10px 8px;line-height:1.5;">
+            Ein Klick auf den Namen ersetzt, <kbd>+</kbd> hängt an. Gespeichert wird erst mit „Speichern“.
+          </div>
+        </div>
+      </div>
       <span class="sep"></span>
       <div class="dd" id="dd-bg">
         <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-bg">Hintergrund ▾</button>
@@ -766,6 +776,8 @@ const ROLLEN_FALLBACK = {
     schrift: 'headline', farbe: 'stil:auto', max: 0.075, min: 0.035, gross: 'stil', kasten: 'stil', kontur: 'stil', schatten: false, opacity: null},
   pointe: {beschreibung: 'Der Satz, auf den es ankommt – am größten, in der Akzentfarbe, immer mit dunkler Kontur.',
     schrift: 'headline', farbe: 'stil:accent', max: 0.095, min: 0.045, gross: false, kasten: false, kontur: 'dunkel', schatten: 'stil', opacity: null},
+  memezeile: {beschreibung: 'Die klassische Zeile über oder unter dem Bild – hell mit dunkler Kontur.',
+    schrift: 'headline', farbe: 'stil:light', max: 0.070, min: 0.034, gross: true, kasten: false, kontur: 'gegenpol', schatten: false, opacity: null},
   unterzeile: {beschreibung: 'Erklärt die Überschrift in einem halben Satz – kleiner, ohne Kasten.',
     schrift: 'body', farbe: 'stil:auto', max: 0.042, min: 0.024, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
   ort: {beschreibung: 'Der Stadt- oder Ortsname – in der Hauptfarbe und immer in Großbuchstaben.',
@@ -777,7 +789,8 @@ const ROLLEN_FALLBACK = {
   frei: {beschreibung: 'Keine Vorgaben – jeder Wert wird am Element selbst gesetzt.',
     schrift: null, farbe: null, max: null, min: null, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
 };
-const ROLLEN_LABEL = {ueberschrift: 'Überschrift', pointe: 'Pointe', unterzeile: 'Unterzeile', ort: 'Ort',
+const ROLLEN_LABEL = {ueberschrift: 'Überschrift', pointe: 'Pointe', memezeile: 'Meme-Zeile (hell mit Kontur)',
+  unterzeile: 'Unterzeile', ort: 'Ort',
   klein: 'Kleingedrucktes', wasserzeichen: 'Wasserzeichen', frei: 'Frei (keine Vorgaben)'};
 /** Welche Element-Felder eine Rolle überhaupt belegen kann. */
 const ROLLEN_FELDER = ['font', 'color', 'max_size', 'min_size', 'uppercase', 'box', 'stroke', 'stroke_width', 'shadow', 'opacity'];
@@ -1958,6 +1971,56 @@ $('#baustein-list').addEventListener('click', e => {
   const b = e.target.closest('[data-baustein]'); if (!b) return;
   closeDropdowns(); bausteinEinfuegen(b.dataset.baustein);
 });
+
+// ── Muster: ganze Vorlagen ────────────────────────────────────────────────────
+// Der Server rechnet sie aus (meme_muster.py) und speichert dabei NICHT – das Ergebnis
+// landet hier im Rückgängig-Stapel wie jede andere Änderung auch.
+let _muster = null;
+async function ladeMuster() {
+  const ziel = $('#muster-list'); if (!ziel) return;
+  if (_muster) return;
+  try {
+    const d = await api('GET', '/api/studio/muster');
+    _muster = Array.isArray(d.muster) ? d.muster : [];
+  } catch (e) {
+    ziel.textContent = 'Musterkatalog nicht erreichbar: ' + e.message;
+    return;
+  }
+  if (!_muster.length) { ziel.textContent = 'Keine Muster hinterlegt.'; return; }
+  ziel.innerHTML = _muster.map(m => {
+    const bild = m.braucht_bild ? 'braucht ein Hintergrundfoto' : 'kommt ohne Foto aus';
+    return `<div style="display:flex;gap:6px;align-items:stretch;margin-bottom:4px;">
+      <button type="button" class="baustein-btn" style="flex:1;" data-muster="${esc(m.key)}"
+        title="${esc(m.info)}">${esc(m.name)}<span class="bi">${esc(m.info)} · ${esc(bild)} · ${esc(String(m.masse.width))}×${esc(String(m.masse.height))}</span></button>
+      <button type="button" class="btn btn-ghost btn-xs" data-muster-plus="${esc(m.key)}"
+        title="An die vorhandenen Elemente anhängen, statt sie zu ersetzen">+</button>
+    </div>`;
+  }).join('');
+}
+async function musterEinsetzen(key, ersetzen) {
+  const def = (_muster || []).find(m => m.key === key); if (!def) return;
+  if (ersetzen && els().length && !confirm(
+      `„${def.name}“ ersetzt die ${els().length} vorhandenen Elemente. Weiter?`)) return;
+  let d;
+  try { d = await api('POST', `/api/studio/${TID}/muster`, {muster: key, ersetzen: !!ersetzen}); }
+  catch (e) { toast('Muster nicht eingesetzt: ' + e.message, 'error'); return; }
+  snapshot();
+  S.config = d.config;
+  for (const el of (d.config.elements || [])) if (el.var) ensureVariable(el.var);
+  S.sel = [];
+  afterStructuralChange();      // zieht die Leinwand des Musters nach und zeichnet neu
+  commit();
+  toast(`Muster „${def.name}“ ${ersetzen ? 'eingesetzt' : 'angehängt'} – `
+        + 'Farben und Schriften kommen aus dem Stil der Stadt.', 'success');
+}
+$('#muster-list').addEventListener('click', e => {
+  const plus = e.target.closest('[data-muster-plus]');
+  const b = plus || e.target.closest('[data-muster]');
+  if (!b) return;
+  closeDropdowns();
+  musterEinsetzen(plus ? plus.dataset.musterPlus : b.dataset.muster, !plus);
+});
+$('[data-dd="dd-muster"]').addEventListener('click', ladeMuster);
 
 function duplicateElements(ids) {
   const list = ids.map(byId).filter(Boolean);
