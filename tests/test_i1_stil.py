@@ -156,11 +156,13 @@ class TestRollen(unittest.TestCase):
                              'max_size': round(0.042 * 1350), 'min_size': round(0.024 * 1350)},
             'ort':          {'font': 'stil:headline', 'color': 'stil:primary',
                              'max_size': round(0.085 * 1350), 'min_size': round(0.040 * 1350),
-                             'uppercase': True},
+                             'uppercase': True,
+                             # Gegenpol zur hellen Hauptfarbe von STIL_HELL
+                             'stroke': STIL_HELL['dark']},
             'klein':        {'font': 'stil:body', 'color': 'stil:dark',
                              'max_size': round(0.026 * 1350), 'min_size': round(0.018 * 1350),
                              'opacity': 0.85},
-            'wasserzeichen': {'font': 'stil:body', 'color': 'stil:light',
+            'wasserzeichen': {'font': 'stil:body', 'color': 'stil:auto',
                               'max_size': round(0.024 * 1350), 'min_size': round(0.016 * 1350),
                               'opacity': 0.7},
         }
@@ -695,6 +697,124 @@ class TestCityStyle(unittest.TestCase):
         liste = M.stil_paket_liste()
         self.assertEqual(len(liste), len(M.STIL_PAKETE))
         self.assertTrue(all(e.get('key') and e.get('beschreibung') for e in liste))
+
+
+class TestKonturLesbarkeit(unittest.TestCase):
+    """Eine Kontur muss den Text tragen – nicht mit ihm verschmelzen."""
+
+    def test_ort_hat_in_jedem_paket_eine_kontur(self):
+        # Die Ortszeile steht in der Hauptfarbe direkt auf dem Foto. Ohne Kontur fiel sie
+        # in allen Paketen durch die Lesbarkeitsprüfung (gemessen 1,1 bis 1,8 zu 1).
+        for key in M.STIL_PAKETE:
+            stil = R.stil_dict(M.CityStyle.aus_paket(1, key).to_dict())
+            el = R.rolle_anwenden({'type': 'text', 'role': 'ort', 'var': 'city_name'}, stil, 1080)
+            with self.subTest(paket=key):
+                self.assertTrue(el.get('stroke'), 'keine Kontur')
+                self.assertGreaterEqual(el.get('stroke_width', 0), 2)
+                self.assertGreaterEqual(R.kontrast(el['color'], el['stroke'], stil), 3.0)
+
+    def test_gegenpol_folgt_der_schriftfarbe(self):
+        # Helle Hauptfarbe -> dunkle Kontur, dunkle Hauptfarbe -> helle Kontur.
+        hell = dict(R.STIL_STANDARD, primary='#ffe066', dark='#101010', light='#ffffff')
+        dunkel = dict(R.STIL_STANDARD, primary='#101820', dark='#000000', light='#ffffff')
+        self.assertEqual(R._rollen_vorgaben('ort', hell, 1080)['stroke'], '#101010')
+        self.assertEqual(R._rollen_vorgaben('ort', dunkel, 1080)['stroke'], '#ffffff')
+
+    def test_kontur_weicht_aus_wenn_sie_mit_dem_text_verschmilzt(self):
+        # Schwarze Schrift mit schwarzer Kontur auf hellem Grund ergab einen Klumpen.
+        cfg = {'canvas': {'width': 400, 'height': 200, 'background': '#ffffff'},
+               'elements': [{'id': 't', 'type': 'text', 'text': 'MM', 'x': 20, 'y': 40,
+                             'width': 360, 'height': 120, 'font': 'anton',
+                             'max_size': 90, 'min_size': 90, 'fit': 'none',
+                             'color': '#000000', 'stroke': '#000000', 'stroke_width': 8}]}
+        im = png_bild(R.render(None, cfg, {})).convert('RGB')
+        hell = sum(1 for px in im.getdata() if sum(px) > 690)
+        # Die Kontur muss jetzt weiß sein und den Text vom weißen Grund trennen –
+        # ohne den Ausweich-Griff wäre alles unter dem Text durchgehend schwarz.
+        self.assertGreater(hell, 0)
+        self.assertLess(R.kontrast('#000000', '#000000'), R.KONTUR_MIN_KONTRAST)
+
+    def test_wasserzeichen_verschwindet_nicht_auf_hellem_grund(self):
+        for key in M.STIL_PAKETE:
+            stil = R.stil_dict(M.CityStyle.aus_paket(1, key).to_dict())
+            el = R.rolle_anwenden({'type': 'text', 'role': 'wasserzeichen', 'var': 'handle'},
+                                  stil, 1080)
+            with self.subTest(paket=key):
+                self.assertEqual(el.get('color'), 'stil:auto')
+
+
+class TestEditorSpiegel(unittest.TestCase):
+    """Der Editor zeigt eine CSS-Näherung der Rollen. Sie muss zum Renderer passen.
+
+    Die Rollentabelle steht in memeos_render; der Editor bekommt sie über die Leitung.
+    Rechnet der Browser aus denselben Werten etwas anderes aus, verspricht die Vorschau
+    etwas, das im fertigen Bild nicht ankommt. Genau das ist schon passiert."""
+
+    WURZEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        cls.node = shutil.which('node')
+        if not cls.node:
+            raise unittest.SkipTest('node nicht vorhanden')
+
+    def test_rollenwerte_stimmen_in_allen_paketen_ueberein(self):
+        import io
+        import json
+        import re
+        import subprocess
+        import tempfile
+        try:
+            import studio_bp
+        except Exception as ex:                  # pragma: no cover – ohne App-Umgebung
+            self.skipTest(f'studio_bp nicht ladbar: {ex}')
+
+        html = io.open(os.path.join(self.WURZEL, 'templates', 'studio.html'),
+                       encoding='utf-8').read()
+        teil1 = re.search(r'<script>(.*?)</script>', html, re.S)
+        self.assertIsNotNone(teil1, 'erster <script>-Block nicht gefunden')
+        quelltext = re.sub(r'\{\{.*?\}\}', '0', teil1.group(1), flags=re.S)
+
+        namen = [k for k in R.ROLLEN if k != 'frei']
+        auftrag = {'rollen': studio_bp._rollen_liste(),
+                   'stile': {k: R.stil_dict(M.CityStyle.aus_paket(1, k).to_dict())
+                             for k in M.STIL_PAKETE},
+                   'hoehe': 1080, 'namen': namen}
+        laeufer = ("const M = require(process.argv[2]);\n"
+                   "const A = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));\n"
+                   "const tab = {};\n"
+                   "for (const r of A.rollen) tab[r.key] = Object.assign({}, M.ROLLEN_FALLBACK[r.key] || {}, r);\n"
+                   "const out = {};\n"
+                   "for (const p of Object.keys(A.stile)) for (const n of A.namen)\n"
+                   "  out[p + '|' + n] = M.rollenVorgaben(n, A.stile[p], A.hoehe, tab);\n"
+                   "console.log(JSON.stringify(out));\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = os.path.join(tmp, 'teil1.js')
+            auf = os.path.join(tmp, 'auftrag.json')
+            lauf = os.path.join(tmp, 'lauf.js')
+            io.open(mod, 'w', encoding='utf-8').write(quelltext)
+            io.open(auf, 'w', encoding='utf-8').write(json.dumps(auftrag))
+            io.open(lauf, 'w', encoding='utf-8').write(laeufer)
+            erg = subprocess.run([self.node, lauf, mod, auf], capture_output=True,
+                                 text=True, timeout=60)
+        self.assertEqual(erg.returncode, 0, erg.stderr[:600])
+        browser = json.loads(erg.stdout)
+
+        abweichung = []
+        for paket in M.STIL_PAKETE:
+            stil = auftrag['stile'][paket]
+            for rolle in namen:
+                py = R._rollen_vorgaben(rolle, stil, 1080)
+                js = browser.get(f'{paket}|{rolle}') or {}
+                for k in set(py) | set(js):
+                    a, b = py.get(k), js.get(k)
+                    if isinstance(a, dict) or isinstance(b, dict):
+                        a = json.dumps(a, sort_keys=True)
+                        b = json.dumps(b, sort_keys=True)
+                    if str(a).lower() != str(b).lower():
+                        abweichung.append(f'{paket}/{rolle}.{k}: Renderer={a!r} Browser={b!r}')
+        self.assertEqual(abweichung, [], '\n'.join(abweichung[:12]))
 
 
 if __name__ == '__main__':

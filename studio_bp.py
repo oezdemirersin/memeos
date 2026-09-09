@@ -452,8 +452,15 @@ _ROLLEN_LABELS = {
 }
 
 
+# Die Gestaltungswerte einer Rolle, die der Editor für seine Vorschau braucht. Sie gehen
+# mit über die Leitung, damit die Tabelle nur an EINER Stelle steht: in memeos_render.ROLLEN.
+# Steht sie doppelt, laufen Vorschau und fertiges Bild irgendwann auseinander.
+_ROLLEN_FELDER = ('schrift', 'farbe', 'max', 'min', 'gross', 'kasten', 'kontur',
+                  'schatten', 'opacity')
+
+
 def _rollen_liste():
-    """Die Rollentabelle für den Editor: [{'key','label','beschreibung'}, …].
+    """Die Rollentabelle für den Editor: [{'key','label','beschreibung', …Werte}, …].
 
     Eine Rolle ist EINE Entscheidung statt fünfzehn Einzelwerten – Schrift, Farbe, Größe,
     Kasten und Kontur kommen dann aus dem Stil der Stadt. Jeder am Element gesetzte Wert
@@ -461,10 +468,16 @@ def _rollen_liste():
     rollen = getattr(R, 'ROLLEN', None)
     if not isinstance(rollen, dict):
         return []
-    return [{'key': key,
-             'label': _ROLLEN_LABELS.get(key, key),
-             'beschreibung': (wert or {}).get('beschreibung', '')}
-            for key, wert in rollen.items()]
+    out = []
+    for key, wert in rollen.items():
+        wert = wert or {}
+        eintrag = {'key': key,
+                   'label': _ROLLEN_LABELS.get(key, key),
+                   'beschreibung': wert.get('beschreibung', '')}
+        for feld in _ROLLEN_FELDER:
+            eintrag[feld] = wert.get(feld)
+        out.append(eintrag)
+    return out
 
 
 def _stil_token_liste():

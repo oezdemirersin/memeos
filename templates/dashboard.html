@@ -738,10 +738,11 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
                   <div id="stil-vorschau-grund" style="position:absolute;inset:0;"></div>
                   <div id="stil-vorschau-ueberschrift" style="position:absolute;left:7%;right:7%;top:8%;font-size:13px;line-height:1.16;"></div>
                   <div id="stil-vorschau-pointe" style="position:absolute;left:7%;right:7%;top:42%;font-size:19px;line-height:1.08;"></div>
+                  <div id="stil-vorschau-ort" style="position:absolute;left:7%;right:7%;top:64%;font-size:17px;line-height:1.05;"></div>
                   <div id="stil-vorschau-wz" style="position:absolute;font-size:9px;line-height:1;"></div>
                 </div>
                 <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:6px;">
-                  Annäherung im Browser: so setzt der Renderer die Rollen ueberschrift, pointe und wasserzeichen in dieser Handschrift.
+                  Annäherung im Browser: so setzt der Renderer die Rollen ueberschrift, pointe, ort und wasserzeichen in dieser Handschrift.
                 </div>
               </div>
 
@@ -4286,13 +4287,27 @@ function stilVorschau() {
     p.style.color         = s.accent;
     p.style.textShadow    = kontur('dunkel').concat(schatten).join(', ');
   }
+  const o = _stilEl('stil-vorschau-ort');
+  if (o) {
+    // Rolle 'ort': Hauptfarbe, immer Großbuchstaben, Kontur auf dem Gegenpol der Schriftfarbe.
+    const gegenpol = _stilKontrast(s.primary, s.dark) >= _stilKontrast(s.primary, s.light) ? s.dark : s.light;
+    o.textContent = (_stilCityName || 'Stadt');
+    o.style.fontFamily    = _stilSchriftFamilie(s.font_headline);
+    o.style.fontWeight    = '800';
+    o.style.textTransform = 'uppercase';
+    o.style.color         = s.primary;
+    o.style.textShadow    = [`-1px 0 0 ${gegenpol}`, `1px 0 0 ${gegenpol}`,
+                             `0 -1px 0 ${gegenpol}`, `0 1px 0 ${gegenpol}`].join(', ');
+  }
   const w = _stilEl('stil-vorschau-wz');
   if (w) {
     const ecke = s.wasserzeichen_ecke;
     w.style.display = (ecke === 'keins') ? 'none' : '';
     w.textContent   = _stilHandle();
     w.style.fontFamily = _stilSchriftFamilie(s.font_body);
-    w.style.color      = s.light;
+    // Die Rolle steht auf 'stil:auto': Schwarz oder Weiß, je nach Untergrund. Unten in der
+    // Kachel liegt das dunkle Ende des Verlaufs.
+    w.style.color      = _stilAuto((ecke === 'oben_rechts') ? s.secondary : s.dark);
     w.style.opacity    = '0.7';
     w.style.left   = (ecke === 'unten_links') ? '7%' : 'auto';
     w.style.right  = (ecke === 'unten_links') ? 'auto' : '7%';

@@ -769,11 +769,11 @@ const ROLLEN_FALLBACK = {
   unterzeile: {beschreibung: 'Erklärt die Überschrift in einem halben Satz – kleiner, ohne Kasten.',
     schrift: 'body', farbe: 'stil:auto', max: 0.042, min: 0.024, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
   ort: {beschreibung: 'Der Stadt- oder Ortsname – in der Hauptfarbe und immer in Großbuchstaben.',
-    schrift: 'headline', farbe: 'stil:primary', max: 0.085, min: 0.040, gross: true, kasten: false, kontur: false, schatten: false, opacity: null},
+    schrift: 'headline', farbe: 'stil:primary', max: 0.085, min: 0.040, gross: true, kasten: false, kontur: 'gegenpol', schatten: false, opacity: null},
   klein: {beschreibung: 'Beiwerk wie Quelle, Datum oder Hinweis – klein und zurückhaltend.',
     schrift: 'body', farbe: 'stil:dark', max: 0.026, min: 0.018, gross: false, kasten: false, kontur: false, schatten: false, opacity: 0.85},
   wasserzeichen: {beschreibung: 'Der eigene Seitenname in der Ecke – da, aber nie im Weg.',
-    schrift: 'body', farbe: 'stil:light', max: 0.024, min: 0.016, gross: false, kasten: false, kontur: false, schatten: false, opacity: 0.7},
+    schrift: 'body', farbe: 'stil:auto', max: 0.024, min: 0.016, gross: false, kasten: false, kontur: false, schatten: false, opacity: 0.7},
   frei: {beschreibung: 'Keine Vorgaben – jeder Wert wird am Element selbst gesetzt.',
     schrift: null, farbe: null, max: null, min: null, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
 };
@@ -804,6 +804,13 @@ function rollenVorgaben(name, stilQuelle, canvasHoehe, tabelle) {
   if (r.kasten === 'stil') { const k = kastenVorgabe(stil); if (k) out.box = k; }
   const strich = Math.max(2, Math.round(0.005 * h));
   if (r.kontur === 'dunkel') { out.stroke = stil.dark; out.stroke_width = strich; }
+  else if (r.kontur === 'gegenpol') {
+    // Kontur auf den Pol legen, der von der Schriftfarbe der Rolle weiter weg liegt.
+    const roh = String(r.farbe || '');
+    const f = /^stil:/i.test(roh) ? (stil[roh.slice(5).toLowerCase()] || stil.dark) : (roh || stil.dark);
+    out.stroke = kontrastVon(f, stil.dark) >= kontrastVon(f, stil.light) ? stil.dark : stil.light;
+    out.stroke_width = strich;
+  }
   else if (r.kontur === 'stil') {
     if (stil.kontur === 'dunkel') { out.stroke = stil.dark; out.stroke_width = strich; }
     else if (stil.kontur === 'palette') { out.stroke = stil.secondary; out.stroke_width = strich; }
@@ -1761,7 +1768,14 @@ function textInner(el, sc, vals) {
   const justify = {top: 'flex-start', middle: 'center', bottom: 'flex-end'}[el.valign || 'top'] || 'flex-start';
   const items = {left: 'flex-start', center: 'center', right: 'flex-end'}[el.align || 'left'] || 'flex-start';
   const sw = num(el.stroke_width, 0);
-  const stroke = sw > 0 && el.stroke ? `-webkit-text-stroke:${(sw * 2 * sc).toFixed(2)}px ${esc(brandColor(el.stroke, '#000'))};paint-order:stroke fill;` : '';
+  // Wie im Renderer: eine Kontur, die mit der Textfarbe verschmilzt, macht die Schrift nur
+  // zum Klumpen. Dann auf den Gegenpol drehen (memeos_render.KONTUR_MIN_KONTRAST).
+  let konturFarbe = el.stroke ? brandColor(el.stroke, '#000') : '';
+  if (konturFarbe && !isGradient(el.color)) {
+    const textFarbe = brandColor(el.color, '#fff');
+    if (kontrastVon(textFarbe, konturFarbe) < 2.5) konturFarbe = leuchtdichte(textFarbe) > 0.5 ? '#000000' : '#ffffff';
+  }
+  const stroke = sw > 0 && konturFarbe ? `-webkit-text-stroke:${(sw * 2 * sc).toFixed(2)}px ${esc(konturFarbe)};paint-order:stroke fill;` : '';
   let shadow = '';
   if (el.shadow && typeof el.shadow === 'object') shadow = `text-shadow:${num(el.shadow.dx, 2) * sc}px ${num(el.shadow.dy, 2) * sc}px ${num(el.shadow.blur, 0) * sc}px ${esc(brandColor(el.shadow.color, '#000'))};`;
   let colorCss = `color:${esc(brandColor(el.color, '#fff'))};`;
