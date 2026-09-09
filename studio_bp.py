@@ -92,6 +92,60 @@ BRAND_COLOR_VARS = [
     {'key': 'brand:accent', 'label': 'Marke: Akzent',      'kind': 'marke', 'brand_key': 'accent'},
 ]
 
+# Farbtoken des Stadt-Stils. Sie sind der Grund, warum dieselbe Vorlage in jeder Stadt
+# anders aussieht – wer sie benutzt, baut EINE Vorlage für hundert Handschriften.
+STIL_COLOR_VARS = [
+    {'key': 'stil:primary',   'label': 'Stil: Hauptfarbe', 'kind': 'stil', 'stil_key': 'primary'},
+    {'key': 'stil:secondary', 'label': 'Stil: Zweitfarbe', 'kind': 'stil', 'stil_key': 'secondary'},
+    {'key': 'stil:accent',    'label': 'Stil: Akzentfarbe', 'kind': 'stil', 'stil_key': 'accent'},
+    {'key': 'stil:dark',      'label': 'Stil: Dunkelton', 'kind': 'stil', 'stil_key': 'dark'},
+    {'key': 'stil:light',     'label': 'Stil: Hellton', 'kind': 'stil', 'stil_key': 'light'},
+    {'key': 'stil:auto',      'label': 'Stil: automatisch lesbar (Schwarz oder Weiß)',
+     'kind': 'stil', 'stil_key': 'auto'},
+]
+
+# Schrift-Token des Stadt-Stils (als Wert im Feld „font“ eines Text-Elements)
+STIL_FONT_VARS = [
+    {'key': 'stil:headline', 'label': 'Stil: Auszeichnungsschrift', 'kind': 'stil',
+     'stil_key': 'headline'},
+    {'key': 'stil:body',     'label': 'Stil: Grundschrift', 'kind': 'stil',
+     'stil_key': 'body'},
+]
+
+# Felder des Stadt-Stils, die über /api/stil/stadt/<id> einzeln gesetzt werden können.
+# 'farbe' wird über den Renderer geprüft, 'wahl' gegen die erlaubten Werte, 'schrift'
+# gegen die Schriftbibliothek.
+STIL_FELDER = (
+    ('primary',   'farbe',   'Hauptfarbe'),
+    ('secondary', 'farbe',   'Zweitfarbe'),
+    ('accent',    'farbe',   'Akzentfarbe'),
+    ('dark',      'farbe',   'Dunkelton'),
+    ('light',     'farbe',   'Hellton'),
+    ('font_headline', 'schrift', 'Auszeichnungsschrift'),
+    ('font_body',     'schrift', 'Grundschrift'),
+    ('schreibweise',  'wahl',  'Schreibweise'),
+    ('kasten',        'wahl',  'Textkasten'),
+    ('kontur',        'wahl',  'Kontur'),
+    ('wasserzeichen_ecke', 'wahl', 'Ecke des Wasserzeichens'),
+    ('radius',   'zahl',    'Eckenrundung'),
+    ('schatten', 'ja_nein', 'Schatten'),
+    ('paket',    'paket',   'Stil-Paket'),
+)
+_STIL_FELD_MAP = {name: (art, label) for name, art, label in STIL_FELDER}
+
+# Werte, die den optischen Kern eines Stils ausmachen – daran wird verglichen, ob zwei
+# Städte gleich aussehen (siehe /api/stil/aehnlich und die Prüfung „alle Städte gleich“).
+_STIL_KERN = ('primary', 'secondary', 'accent', 'dark', 'light', 'headline', 'body',
+              'schreibweise', 'kasten', 'radius', 'kontur', 'schatten')
+
+# Grenzen der Vorlagen-Prüfung. Die Kontrastwerte sind die der WCAG: unter 4,5:1 ist Text
+# schwer zu lesen, unter 3:1 auch in großer Schrift nicht mehr zumutbar.
+_KONTRAST_FEHLER, _KONTRAST_HINWEIS = 3.0, 4.5
+_PRUEF_MAX_STAEDTE = 200
+_PRUEF_MAX_BEFUNDE = 200
+_PRUEF_MAX_JE_ELEMENT = 3
+_AEHNLICH_MAX_PAARE = 200
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Laufzeit-Zugriff auf app.py
@@ -318,7 +372,10 @@ def _stadtbild_schluessel():
 def _variables_for(config, stadtbild_keys=None):
     """Variablenliste für den Editor: Stadtname, Stadtwissen, Stadtbilder, Marken-Farben,
     dazu alles, was in der Config sonst noch vorkommt."""
-    variables = [{'key': 'city_name', 'label': 'Stadtname', 'kind': 'city'}]
+    variables = [{'key': 'city_name',   'label': 'Stadtname', 'kind': 'city'},
+                 {'key': 'city_handle', 'label': 'Instagram-Name der Stadt (mit @)',
+                  'kind': 'city'},
+                 {'key': 'city_state',  'label': 'Bundesland', 'kind': 'city'}]
     variables += [{'key': k, 'label': _clean_label(lbl), 'kind': 'knowledge'} for k, lbl, _ in KNOWLEDGE_CATEGORIES]
     if stadtbild_keys is None:
         stadtbild_keys = _stadtbild_schluessel()[0]
@@ -380,6 +437,39 @@ def _public_fonts():
     for f in R.list_fonts():
         out.append({'key': f.get('key'), 'label': f.get('label'), 'source': f.get('source')})
     return out
+
+
+# Klarnamen der Rollen. Die Rollen selbst (mit ihren Vorgaben) stehen im Renderer –
+# hier steht nur, wie sie in der Oberfläche heißen.
+_ROLLEN_LABELS = {
+    'ueberschrift':  'Überschrift',
+    'pointe':        'Pointe',
+    'unterzeile':    'Unterzeile',
+    'ort':           'Ort',
+    'klein':         'Kleingedrucktes',
+    'wasserzeichen': 'Wasserzeichen',
+    'frei':          'Frei (keine Vorgaben)',
+}
+
+
+def _rollen_liste():
+    """Die Rollentabelle für den Editor: [{'key','label','beschreibung'}, …].
+
+    Eine Rolle ist EINE Entscheidung statt fünfzehn Einzelwerten – Schrift, Farbe, Größe,
+    Kasten und Kontur kommen dann aus dem Stil der Stadt. Jeder am Element gesetzte Wert
+    schlägt die Rolle weiterhin."""
+    rollen = getattr(R, 'ROLLEN', None)
+    if not isinstance(rollen, dict):
+        return []
+    return [{'key': key,
+             'label': _ROLLEN_LABELS.get(key, key),
+             'beschreibung': (wert or {}).get('beschreibung', '')}
+            for key, wert in rollen.items()]
+
+
+def _stil_token_liste():
+    """Die stil:*-Farbtoken mit Klarnamen – dieselbe Form wie BRAND_COLOR_VARS."""
+    return [dict(v) for v in STIL_COLOR_VARS]
 
 
 def _cities():
@@ -462,18 +552,45 @@ def stadt_bild_werte(city):
     return werte
 
 
+def stadt_variablen(city):
+    """{'city_name', 'city_handle', 'city_state'} – die Werte, die direkt aus der Stadt-Zeile
+    kommen. Leere Werte fehlen (eine Stadt ohne Instagram-Namen bekommt keinen erfundenen).
+
+    Kommt aus app._stadt_variablen, damit Vorschau und Massenlauf garantiert dasselbe
+    einsetzen; ohne app-Modul dieselbe Rechnung noch einmal hier."""
+    if city is None:
+        return {}
+    fn = getattr(_appmod(), '_stadt_variablen', None)
+    if callable(fn):
+        try:
+            werte = fn(city)
+            if isinstance(werte, dict):
+                return dict(werte)
+        except Exception as ex:                      # pragma: no cover – defensiv
+            log.warning('Studio: Stadt-Variablen nicht lesbar: %s', ex)
+    handle = str(getattr(city, 'instagram_handle', '') or '').strip().rstrip('/')
+    if '/' in handle:
+        handle = handle.rsplit('/', 1)[-1]
+    handle = handle.lstrip('@').strip()
+    werte = {'city_name': str(city.name or ''),
+             'city_handle': ('@' + handle) if handle else '',
+             'city_state': str(getattr(city, 'state', '') or '')}
+    return {k: v for k, v in werte.items() if v}
+
+
 def _values_for_city(city, config, extra=None):
-    """city_name = Stadt; Wissens-Variablen = bester aktiver Eintrag; Stadtbilder aus CityAsset;
+    """Stadt-Variablen (city_name, city_handle, city_state) = Werte der Stadt;
+    Wissens-Variablen = bester aktiver Eintrag; Stadtbilder aus CityAsset;
     Rest Platzhalter; extra überschreibt.
 
     Stadtbild-Variablen bekommen bewusst KEINEN Platzhalter: ein Platzhalter wäre für den
     Renderer ein Dateiname, den es nicht gibt. Ohne Wert lässt er das Bild einfach weg."""
     values = {}
-    if city:
-        values['city_name'] = city.name
+    stadtwerte = stadt_variablen(city)
+    values.update(stadtwerte)
     stadtbilder = stadt_bild_werte(city)
     for name in _collect_vars(config, include_hidden=True):
-        if name == 'city_name':
+        if name in stadtwerte:
             continue
         if ist_stadtbild_var(name):
             wert = stadtbilder.get(name)
@@ -729,6 +846,13 @@ def api_studio_get(template_id):
         'asset_kinds': list(STUDIO_ASSET_KINDS),
         'city_asset_kinds': list(CITY_ASSET_KINDS),
         'brand_colors': [dict(v) for v in BRAND_COLOR_VARS],
+        # Stadt-Stil: Rollen, der Stil der ersten Vorschau-Stadt und die stil:*-Token.
+        # Damit kann der Editor Rollen anbieten und die Farbtoken benennen.
+        'rollen': _rollen_liste(),
+        'stil': _city_brand(cities[0]) if cities else _city_brand(None),
+        'stil_tokens': _stil_token_liste(),
+        'stil_fonts': [dict(v) for v in STIL_FONT_VARS],
+        'stil_pakete': _stil_kurzliste(),
     })
 
 
@@ -1363,6 +1487,1018 @@ def api_studio_font_file(key):
             resp.headers['Cache-Control'] = 'private, max-age=3600'
             return resp
     return jsonify({'error': 'Schrift nicht gefunden'}), 404
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STADT-STIL – die Handschrift einer Stadt verwalten
+# ═══════════════════════════════════════════════════════════════════════════════
+# Damit hundert Stadtseiten nicht hundertmal gleich aussehen, hat jede Stadt einen Stil:
+# Palette, Schriftpaar und Anmutung (Kasten, Kontur, Schatten, Schreibweise). Eine Vorlage,
+# die 'stil:*'-Farben und Rollen benutzt, sieht dadurch in jeder Stadt anders aus.
+#
+# Alles hier ist defensiv gebaut: fehlt models.CityStyle oder eine Renderer-Funktion,
+# antworten die Routen mit 501 statt mit einem Absturz.
+
+def _stil_modell():
+    """models.CityStyle – oder None, solange es die Klasse nicht gibt."""
+    try:
+        import models as _m
+        return getattr(_m, 'CityStyle', None)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('Studio: Stil-Modell nicht ladbar: %s', ex)
+        return None
+
+
+def _stil_paket_map():
+    """{key: Paket-Dict} aus models.STIL_PAKETE. Leer, wenn es die Pakete nicht gibt."""
+    try:
+        import models as _m
+        pakete = getattr(_m, 'STIL_PAKETE', None)
+        return dict(pakete) if isinstance(pakete, dict) else {}
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('Studio: Stil-Pakete nicht ladbar: %s', ex)
+        return {}
+
+
+def _stil_paket_liste():
+    """[{'key','name','beschreibung', …alle Werte…}, …] – für die Oberfläche."""
+    try:
+        import models as _m
+        fn = getattr(_m, 'stil_paket_liste', None)
+        if callable(fn):
+            return list(fn() or [])
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('Studio: Stil-Paketliste nicht lesbar: %s', ex)
+    return [dict(p, key=k) for k, p in _stil_paket_map().items()]
+
+
+def _stil_kurzliste():
+    """Nur Schlüssel, Name und Beschreibung – für Listen, in denen die Werte stören."""
+    return [{'key': p.get('key'), 'name': p.get('name') or p.get('key'),
+             'beschreibung': p.get('beschreibung') or ''} for p in _stil_paket_liste()]
+
+
+def _stil_wahlwerte(feld):
+    """Erlaubte Werte eines Auswahlfelds, direkt aus dem Renderer."""
+    quelle = {'schreibweise': 'SCHREIBWEISEN', 'kasten': 'KASTEN_ARTEN',
+              'kontur': 'KONTUR_ARTEN', 'wasserzeichen_ecke': 'WASSERZEICHEN_ECKEN'}
+    return list(getattr(R, quelle.get(feld, ''), ()) or ())
+
+
+def _stil_felder_liste():
+    """Beschreibung der einzeln setzbaren Felder – die Oberfläche baut daraus ihre Regler."""
+    out = []
+    for name, art, label in STIL_FELDER:
+        eintrag = {'key': name, 'art': art, 'label': label}
+        if art == 'wahl':
+            eintrag['werte'] = _stil_wahlwerte(name)
+        elif art == 'zahl':
+            eintrag['min'], eintrag['max'] = 0, 40
+        elif art == 'paket':
+            eintrag['werte'] = [p['key'] for p in _stil_kurzliste()]
+        out.append(eintrag)
+    return out
+
+
+def _stil_zeilen_map():
+    """{city_id: CityStyle} aller vorhandenen Stil-Zeilen – EINE Abfrage statt hundert."""
+    modell = _stil_modell()
+    if modell is None:
+        return {}
+    try:
+        return {z.city_id: z for z in modell.query.all()}
+    except Exception as ex:
+        log.warning('Studio: Stil-Zeilen nicht lesbar: %s', ex)
+        db.session.rollback()
+        return {}
+
+
+def _stil_zeile(city_id):
+    """Die Stil-Zeile einer Stadt oder None."""
+    modell = _stil_modell()
+    if modell is None:
+        return None
+    try:
+        return modell.query.filter_by(city_id=int(city_id)).first()
+    except Exception as ex:
+        log.warning('Studio: Stil-Zeile von Stadt %s nicht lesbar: %s', city_id, ex)
+        db.session.rollback()
+        return None
+
+
+def _stil_kern(stil):
+    """Der optische Kern eines Stils als vergleichbares Tupel."""
+    return tuple(str(stil.get(k, '')).strip().lower() for k in _STIL_KERN)
+
+
+def _paket_abweichung(stil):
+    """True, wenn der Stil ein Paket nennt, aber nicht mehr genau so aussieht wie das Paket.
+    Das ist keine Beanstandung – es sagt der Oberfläche nur, dass von Hand nachgestellt wurde."""
+    paket = _stil_paket_map().get(str(stil.get('paket') or '').strip().lower())
+    if not paket:
+        return False
+    try:
+        rein = R.stil_dict(paket)
+    except Exception:                                # pragma: no cover – defensiv
+        return False
+    return _stil_kern(rein) != _stil_kern(stil)
+
+
+def _stadt_stil_dict(city, zeile=None, mit_stil=True):
+    """Ein Stadteintrag für die Stil-Oberfläche.
+
+    'abgeleitet' heißt: die Stadt hat keine eigene Zeile in city_style, ihr Stil wird aus
+    den alten Marken-Feldern abgeleitet – sie sieht also aus wie jede andere Stadt ohne Stil."""
+    stil = _city_brand(city)
+    eintrag = {
+        'city_id': city.id,
+        'name': city.name,
+        'state': city.state or '',
+        'paket': str(stil.get('paket') or ''),
+        'abgeleitet': zeile is None,
+        'abweichend': _paket_abweichung(stil),
+        # Für die Wasserzeichen-Vorschau der Oberfläche
+        'instagram_handle': str(getattr(city, 'instagram_handle', '') or ''),
+        'city_handle': stadt_variablen(city).get('city_handle', ''),
+    }
+    paket = _stil_paket_map().get(eintrag['paket'])
+    eintrag['paket_name'] = (paket or {}).get('name', '') if paket else ''
+    if mit_stil:
+        eintrag['stil'] = stil
+    return eintrag
+
+
+def _stil_antwort(city, zeile=None):
+    """Die vollständige Antwort für eine einzelne Stadt (GET und PUT liefern dasselbe)."""
+    daten = _stadt_stil_dict(city, zeile)
+    daten['felder'] = _stil_felder_liste()
+    daten['pakete'] = _stil_kurzliste()
+    daten['fonts'] = _public_fonts()
+    return daten
+
+
+# ── Einzelfelder prüfen und setzen ─────────────────────────────────────────────
+
+def _stil_wert_pruefen(feld, wert):
+    """(bereinigter Wert, Fehlertext). Genau einer von beiden ist gesetzt."""
+    art, label = _STIL_FELD_MAP.get(feld, (None, feld))
+    if art is None:
+        return None, f'Unbekanntes Feld: {feld}'
+    if art == 'farbe':
+        s = str(wert or '').strip()
+        if not s:
+            return None, f'{label}: keine Farbe angegeben'
+        try:
+            if R.parse_color(s) is None:
+                return None, f'{label}: „{s}“ ist keine Farbe'
+        except Exception:
+            return None, f'{label}: „{s}“ ist keine Farbe'
+        return s, None
+    if art == 'schrift':
+        s = str(wert or '').strip()
+        if not s:
+            return None, f'{label}: keine Schrift angegeben'
+        bekannt = {f.get('key') for f in R.list_fonts()}
+        if s not in bekannt:
+            return None, f'{label}: Schrift „{s}“ gibt es nicht'
+        return s, None
+    if art == 'wahl':
+        s = str(wert or '').strip().lower()
+        erlaubt = _stil_wahlwerte(feld)
+        if s not in erlaubt:
+            return None, f'{label}: „{wert}“ ist nicht erlaubt (möglich: {", ".join(erlaubt)})'
+        return s, None
+    if art == 'zahl':
+        try:
+            z = int(round(float(wert)))
+        except (TypeError, ValueError):
+            return None, f'{label}: „{wert}“ ist keine Zahl'
+        return max(0, min(40, z)), None
+    if art == 'ja_nein':
+        if isinstance(wert, bool):
+            return wert, None
+        s = str(wert).strip().lower()
+        if s in ('1', 'true', 'ja', 'an', 'on'):
+            return True, None
+        if s in ('0', 'false', 'nein', 'aus', 'off'):
+            return False, None
+        return None, f'{label}: „{wert}“ ist kein Ja/Nein'
+    if art == 'paket':
+        s = str(wert or '').strip().lower()
+        if s and s not in _stil_paket_map():
+            return None, f'{label}: „{wert}“ gibt es nicht'
+        return s, None
+    return None, f'Unbekannte Art für {feld}'                # pragma: no cover
+
+
+def _stil_zeile_sichern(city, zeile):
+    """Vorhandene Zeile oder eine neue, mit den abgeleiteten Werten vorbelegt.
+
+    Vorbelegen ist wichtig: wer nur die Akzentfarbe ändert, soll nicht plötzlich die
+    Vorgabe-Schrift bekommen, sondern seinen bisherigen (abgeleiteten) Stil behalten."""
+    if zeile is not None:
+        return zeile
+    modell = _stil_modell()
+    stil = _city_brand(city)
+    zeile = modell(city_id=city.id)
+    for feld, ziel in (('primary', 'primary'), ('secondary', 'secondary'),
+                       ('accent', 'accent'), ('dark', 'dark'), ('light', 'light'),
+                       ('font_headline', 'headline'), ('font_body', 'body'),
+                       ('schreibweise', 'schreibweise'), ('kasten', 'kasten'),
+                       ('radius', 'radius'), ('kontur', 'kontur'),
+                       ('schatten', 'schatten'),
+                       ('wasserzeichen_ecke', 'wasserzeichen_ecke')):
+        if stil.get(ziel) not in (None, ''):
+            setattr(zeile, feld, stil[ziel])
+    db.session.add(zeile)
+    return zeile
+
+
+# ── Routen: Stil lesen und setzen ──────────────────────────────────────────────
+
+@bp.route('/api/stil/pakete', methods=['GET'])
+@studio_login_required
+def api_stil_pakete():
+    """Die Stil-Pakete mit Beschreibung – acht Handschriften zur Auswahl."""
+    pakete = _stil_paket_liste()
+    if not pakete:
+        return jsonify({'error': 'Stil-Pakete sind in dieser Version nicht vorhanden'}), 501
+    return jsonify({'pakete': pakete,
+                    'felder': _stil_felder_liste(),
+                    'fonts': _public_fonts(),
+                    'rollen': _rollen_liste(),
+                    'stil_tokens': _stil_token_liste()})
+
+
+@bp.route('/api/stil/staedte', methods=['GET'])
+@studio_login_required
+def api_stil_staedte():
+    """Je Stadt der aktuelle Stil plus das Kennzeichen, ob er nur vom Standard abgeleitet ist."""
+    zeilen = _stil_zeilen_map()
+    staedte = [_stadt_stil_dict(c, zeilen.get(c.id)) for c in _cities()]
+    zusammenfassung = {}
+    for s in staedte:
+        schluessel = s['paket'] or ('ohne_paket' if not s['abgeleitet'] else 'ohne_stil')
+        zusammenfassung[schluessel] = zusammenfassung.get(schluessel, 0) + 1
+    return jsonify({'staedte': staedte,
+                    'pakete': _stil_kurzliste(),
+                    'zusammenfassung': zusammenfassung,
+                    'ohne_stil': sum(1 for s in staedte if s['abgeleitet'])})
+
+
+@bp.route('/api/stil/stadt/<int:city_id>', methods=['GET'])
+@studio_login_required
+def api_stil_stadt_get(city_id):
+    city = City.query.get_or_404(city_id)
+    return jsonify(_stil_antwort(city, _stil_zeile(city_id)))
+
+
+@bp.route('/api/stil/stadt/<int:city_id>', methods=['PUT'])
+@studio_login_required
+def api_stil_stadt_put(city_id):
+    """Einzelne Stil-Felder einer Stadt setzen. Alles, was nicht im Rumpf steht, bleibt."""
+    city = City.query.get_or_404(city_id)
+    if _stil_modell() is None:
+        return jsonify({'ok': False, 'errors': ['Stadt-Stile gibt es in dieser Version nicht']}), 501
+    d = request.get_json(silent=True) or {}
+    if isinstance(d.get('stil'), dict):          # beide Formen zulassen: flach oder unter 'stil'
+        d = d['stil']
+    gewuenscht = {k: v for k, v in d.items() if k in _STIL_FELD_MAP}
+    unbekannt = [k for k in d if k not in _STIL_FELD_MAP]
+    if not gewuenscht:
+        return jsonify({'ok': False,
+                        'errors': ['Kein bekanntes Stil-Feld im Rumpf'
+                                   + (f' (unbekannt: {", ".join(sorted(unbekannt))})' if unbekannt else '')],
+                        'felder': _stil_felder_liste()}), 400
+    werte, fehler = {}, []
+    for feld, roh in gewuenscht.items():
+        wert, meldung = _stil_wert_pruefen(feld, roh)
+        if meldung:
+            fehler.append(meldung)
+        else:
+            werte[feld] = wert
+    if fehler:
+        return jsonify({'ok': False, 'errors': fehler}), 400
+
+    zeile = _stil_zeile_sichern(city, _stil_zeile(city_id))
+    geaendert = []
+    for feld, wert in werte.items():
+        if getattr(zeile, feld, None) != wert:
+            setattr(zeile, feld, wert)
+            geaendert.append(feld)
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Studio: Stil von Stadt %s nicht speicherbar: %s', city_id, ex)
+        return jsonify({'ok': False, 'errors': [f'Nicht gespeichert: {ex}']}), 500
+    antwort = _stil_antwort(city, zeile)
+    antwort['ok'] = True
+    antwort['geaendert'] = sorted(geaendert)
+    return jsonify(antwort)
+
+
+@bp.route('/api/stil/stadt/<int:city_id>/paket', methods=['POST'])
+@studio_login_required
+def api_stil_stadt_paket(city_id):
+    """Ein ganzes Stil-Paket auf eine Stadt anwenden."""
+    city = City.query.get_or_404(city_id)
+    modell = _stil_modell()
+    if modell is None:
+        return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
+    d = request.get_json(silent=True) or {}
+    key = str(d.get('paket') or '').strip().lower()
+    if key not in _stil_paket_map():
+        return jsonify({'ok': False,
+                        'error': f'Unbekanntes Stil-Paket: {d.get("paket")!r}',
+                        'pakete': [p['key'] for p in _stil_kurzliste()]}), 400
+    zeile = _stil_zeile(city_id) or modell(city_id=city.id)
+    if not zeile.paket_setzen(key):                  # pragma: no cover – key ist geprüft
+        return jsonify({'ok': False, 'error': 'Paket nicht anwendbar'}), 400
+    db.session.add(zeile)
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Studio: Paket für Stadt %s nicht speicherbar: %s', city_id, ex)
+        return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+    antwort = _stil_antwort(city, zeile)
+    antwort['ok'] = True
+    return jsonify(antwort)
+
+
+# ── Pakete über die Städte verteilen ───────────────────────────────────────────
+# Der Sinn: Nachbarstädte sollen NICHT gleich aussehen. Wer Frankfurt und Offenbach
+# nebeneinander im Feed sieht, soll zwei verschiedene Seiten sehen.
+
+def _nachbarn_map(staedte, radius_km=None):
+    """{city_id: set(city_id)} – Nachbarschaft laut Planer.
+
+    Ohne planer_bp (oder wenn es dort klemmt) der Rückfall „gleiches Bundesland“:
+    lieber eine grobe Nachbarschaft als gar keine."""
+    ids = {c.id for c in staedte}
+    karte = {c.id: set() for c in staedte}
+    fn = None
+    try:
+        import planer_bp
+        fn = getattr(planer_bp, 'neighbors', None)
+    except Exception as ex:
+        log.warning('Studio: Planer nicht ladbar, Nachbarn nach Bundesland: %s', ex)
+    ok = callable(fn)
+    if ok:
+        for c in staedte:
+            try:
+                for other in (fn(c, radius_km) or []):
+                    if getattr(other, 'id', None) in ids and other.id != c.id:
+                        karte[c.id].add(other.id)
+            except Exception as ex:
+                log.warning('Studio: Nachbarn von %s nicht bestimmbar: %s', c.name, ex)
+                ok = False
+                break
+    if not ok:
+        karte = {c.id: set() for c in staedte}
+        for a in staedte:
+            for b in staedte:
+                if a.id != b.id and (a.state or '') and (a.state or '') == (b.state or ''):
+                    karte[a.id].add(b.id)
+    for a, nachbarn in list(karte.items()):          # Nachbarschaft ist wechselseitig
+        for b in nachbarn:
+            karte.setdefault(b, set()).add(a)
+    return karte
+
+
+def _verteilen_planen(staedte, paket_keys, karte, paket_von, hat_zeile, nur_ohne_stil):
+    """Wer bekommt welches Paket? Reine Rechnung ohne Datenbank – dadurch prüfbar.
+
+    Reihenfolge: Städte mit den meisten Nachbarn zuerst; die sind am schwersten
+    unterzubringen. Je Stadt wird ein Paket gewählt, das KEIN Nachbar hat; gibt es keines,
+    das insgesamt am seltensten benutzte (und die Stadt landet in 'konflikte').
+
+    Das bisherige Paket einer Stadt bleibt, solange es weiterhin bei keinem Nachbarn
+    vorkommt. Ein zweiter Lauf auf einem konfliktfreien Stand ändert deshalb nichts mehr
+    und wirft keine Handarbeit weg; geändert wird nur, wo es sich stößt oder noch fehlt."""
+    zuteilung = dict(paket_von)
+    anzahl = {k: 0 for k in paket_keys}
+    for key in paket_von.values():
+        if key in anzahl:
+            anzahl[key] += 1
+    plan, konflikte = [], []
+    for c in sorted(staedte, key=lambda s: (-len(karte.get(s.id) or ()), s.id)):
+        if nur_ohne_stil and c.id in hat_zeile:
+            plan.append({'city_id': c.id, 'name': c.name, 'paket': paket_von.get(c.id, ''),
+                         'neu': False, 'uebersprungen': True})
+            continue
+        belegt = {zuteilung.get(n) for n in karte.get(c.id, ())} - {None, ''}
+        frei = [k for k in paket_keys if k not in belegt]
+        if not frei:
+            frei = list(paket_keys)
+            konflikte.append({'city_id': c.id, 'name': c.name,
+                              'grund': 'Alle Pakete kommen bei Nachbarn schon vor'})
+        vorher = paket_von.get(c.id, '')
+        if vorher in anzahl:
+            anzahl[vorher] = max(0, anzahl[vorher] - 1)   # diese Stadt wird gleich neu gezählt
+        # Bleibt es konfliktfrei, bleibt es: sonst wäre die Verteilung nicht wiederholbar
+        # und ein zweiter Lauf würde von Hand gesetzte Stile stillschweigend überschreiben.
+        wahl = vorher if vorher in frei else min(frei, key=lambda k: (anzahl.get(k, 0), k))
+        anzahl[wahl] = anzahl.get(wahl, 0) + 1
+        zuteilung[c.id] = wahl
+        plan.append({'city_id': c.id, 'name': c.name, 'paket': wahl,
+                     'neu': wahl != vorher, 'uebersprungen': False})
+    return plan, konflikte
+
+
+@bp.route('/api/stil/verteilen', methods=['POST'])
+@studio_login_required
+def api_stil_verteilen():
+    """Stil-Pakete automatisch über die Städte verteilen, so dass Nachbarn verschieden aussehen.
+
+    Rumpf (alles optional):
+      paket_keys    Liste der Pakete, die benutzt werden dürfen (Vorgabe: alle)
+      nur_ohne_stil true = Städte mit eigener Stil-Zeile bleiben, wie sie sind
+      radius_km     Nachbarschafts-Radius (Vorgabe: die Einstellung des Planers)
+    """
+    modell = _stil_modell()
+    if modell is None or not _stil_paket_map():
+        return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
+    d = request.get_json(silent=True) or {}
+
+    alle = [p['key'] for p in _stil_kurzliste()]
+    gewuenscht = d.get('paket_keys')
+    if gewuenscht in (None, '', []):
+        paket_keys = alle
+    else:
+        if not isinstance(gewuenscht, (list, tuple)):
+            return jsonify({'ok': False, 'error': 'paket_keys muss eine Liste sein'}), 400
+        paket_keys = [str(k).strip().lower() for k in gewuenscht]
+        unbekannt = [k for k in paket_keys if k not in alle]
+        if unbekannt:
+            return jsonify({'ok': False,
+                            'error': f'Unbekannte Pakete: {", ".join(sorted(set(unbekannt)))}',
+                            'pakete': alle}), 400
+        paket_keys = sorted(set(paket_keys), key=alle.index)
+    if not paket_keys:
+        return jsonify({'ok': False, 'error': 'Keine Pakete zur Auswahl'}), 400
+
+    radius = d.get('radius_km')
+    try:
+        radius = float(radius) if radius not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'radius_km muss eine Zahl sein'}), 400
+    nur_ohne_stil = bool(d.get('nur_ohne_stil'))
+
+    staedte = _cities()
+    if not staedte:
+        return jsonify({'ok': False, 'error': 'Keine Städte vorhanden'}), 400
+    zeilen = _stil_zeilen_map()
+    paket_von = {c.id: str((zeilen[c.id].paket or '')).strip().lower()
+                 for c in staedte if c.id in zeilen}
+    hat_zeile = set(zeilen.keys())
+    karte = _nachbarn_map(staedte, radius)
+    plan, konflikte = _verteilen_planen(staedte, paket_keys, karte, paket_von,
+                                        hat_zeile, nur_ohne_stil)
+
+    stadt_von_id = {c.id: c for c in staedte}
+    geaendert = 0
+    for eintrag in plan:
+        if eintrag['uebersprungen'] or not eintrag['neu']:
+            continue
+        zeile = zeilen.get(eintrag['city_id']) or modell(city_id=eintrag['city_id'])
+        if zeile.paket_setzen(eintrag['paket']):
+            db.session.add(zeile)
+            geaendert += 1
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Studio: Verteilung nicht speicherbar: %s', ex)
+        return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+
+    paket_namen = {p['key']: p['name'] for p in _stil_kurzliste()}
+    zuweisungen = []
+    for eintrag in sorted(plan, key=lambda e: stadt_von_id[e['city_id']].name):
+        stadt = stadt_von_id[eintrag['city_id']]
+        zuweisungen.append({
+            'city_id': stadt.id, 'name': stadt.name, 'state': stadt.state or '',
+            'paket': eintrag['paket'],
+            'paket_name': paket_namen.get(eintrag['paket'], ''),
+            'neu': eintrag['neu'], 'uebersprungen': eintrag['uebersprungen'],
+            'nachbarn': sorted(stadt_von_id[n].name for n in karte.get(stadt.id, ())
+                               if n in stadt_von_id),
+        })
+    zusammenfassung = {}
+    for z in zuweisungen:
+        if z['paket']:
+            zusammenfassung[z['paket']] = zusammenfassung.get(z['paket'], 0) + 1
+    return jsonify({'ok': True,
+                    'zuweisungen': zuweisungen,
+                    'zusammenfassung': zusammenfassung,
+                    'konflikte': konflikte,
+                    'geaendert': geaendert,
+                    'staedte': len(staedte),
+                    'radius_km': radius,
+                    'paket_keys': paket_keys})
+
+
+@bp.route('/api/stil/aehnlich', methods=['GET'])
+@studio_login_required
+def api_stil_aehnlich():
+    """Welche NACHBARstädte sehen gleich aus? Genau da fällt es im Feed auf.
+
+    Verglichen wird zuerst das Paket, sonst der optische Kern des Stils (Palette,
+    Schriftpaar, Anmutung). Städte ohne eigene Stil-Zeile sehen alle gleich aus – deshalb
+    steht ihre Zahl gesondert in der Antwort."""
+    radius = request.args.get('radius_km')
+    try:
+        radius = float(radius) if radius not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({'error': 'radius_km muss eine Zahl sein'}), 400
+    staedte = _cities()
+    zeilen = _stil_zeilen_map()
+    karte = _nachbarn_map(staedte, radius)
+    stil_von = {c.id: _city_brand(c) for c in staedte}
+    kern_von = {cid: _stil_kern(s) for cid, s in stil_von.items()}
+    name_von = {c.id: c.name for c in staedte}
+
+    paare, gesehen = [], set()
+    for c in staedte:
+        for n in sorted(karte.get(c.id, ())):
+            if n not in name_von:
+                continue
+            schluessel = (min(c.id, n), max(c.id, n))
+            if schluessel in gesehen:
+                continue
+            gesehen.add(schluessel)
+            a_paket = str(stil_von[c.id].get('paket') or '')
+            b_paket = str(stil_von[n].get('paket') or '')
+            if a_paket and a_paket == b_paket:
+                grund = 'gleiches Stil-Paket'
+            elif kern_von[c.id] == kern_von[n]:
+                grund = 'gleiche Farben und Schriften'
+            else:
+                continue
+            paare.append({
+                'a': {'city_id': c.id, 'name': c.name},
+                'b': {'city_id': n, 'name': name_von[n]},
+                'paket': a_paket, 'grund': grund,
+                'beide_ohne_stil': c.id not in zeilen and n not in zeilen,
+            })
+    paare.sort(key=lambda p: (p['a']['name'], p['b']['name']))
+    ohne_stil = sum(1 for c in staedte if c.id not in zeilen)
+    if not paare:
+        text = 'Keine zwei Nachbarstädte sehen gleich aus.'
+    else:
+        text = (f'{len(paare)} Nachbarpaare sehen gleich aus'
+                + (f'; {ohne_stil} Städte haben noch gar keinen eigenen Stil.'
+                   if ohne_stil else '.'))
+    return jsonify({'paare': paare[:_AEHNLICH_MAX_PAARE],
+                    'anzahl': len(paare),
+                    'gekuerzt': len(paare) > _AEHNLICH_MAX_PAARE,
+                    'staedte_ohne_stil': ohne_stil,
+                    'radius_km': radius,
+                    'zusammenfassung': text})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VORLAGEN-PRÜFUNG – taugt diese Vorlage für hundert Städte?
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sechs Prüfungen gegen die echten Werte echter Städte. Sie ersetzen das, was sonst erst
+# im fertigen Massenlauf auffällt: Text, der geschrumpft werden muss, Schrift, die man auf
+# dem Foto nicht liest, Elemente, die im Instagram-Raster gar nicht zu sehen sind.
+
+def _pruef_element_id(el, nummer):
+    return str(el.get('id') or el.get('var') or f'Element {nummer}')
+
+
+def _pruef_werte(city, config):
+    """Nur die ECHTEN Werte einer Stadt – Platzhalter wie '[park_name]' fallen weg.
+    Mit Platzhaltern zu messen hieße, eine erfundene Textlänge zu prüfen."""
+    werte = {}
+    for name, wert in (_values_for_city(city, config) or {}).items():
+        if wert is None:
+            continue
+        s = str(wert)
+        if not s.strip() or s == R.sample_values_placeholder(name):
+            continue
+        werte[name] = s
+    return werte
+
+
+def _pruef_text(el, werte):
+    """(Text, fehlende Variablen) für dieses Element bei diesen Werten.
+
+    Fester Text mit {var} wird eingesetzt; ein reines var-Element ohne Wert liefert None –
+    dann steht die Fläche im fertigen Bild leer (das prüft „ohne Rückfallwert“)."""
+    fehlend = []
+    fest = el.get('text')
+    if fest not in (None, ''):
+        def ersetzen(treffer):
+            wert = werte.get(treffer.group(1))
+            if wert in (None, ''):
+                fehlend.append(treffer.group(1))
+                return ''
+            return str(wert)
+        return _VAR_RE.sub(ersetzen, str(fest)), fehlend
+    var = str(el.get('var') or '').strip()
+    if var:
+        wert = werte.get(var)
+        if wert in (None, ''):
+            return None, [var]
+        return str(wert), []
+    return None, []
+
+
+def _pruef_untergrund(el, canvas, stil, bg_pfad, config, cache):
+    """(Farbe hinter dem Text, Beschreibung). Erst der Textkasten, dann eine gesetzte
+    Hintergrundfarbe, sonst der Durchschnitt des Hintergrundbilds in genau dieser Box."""
+    kasten = el.get('box')
+    if isinstance(kasten, dict) and kasten.get('fill') not in (None, '', False):
+        farbe = kasten['fill']
+        if not isinstance(farbe, dict):              # Verlauf im Kasten: nicht messbar
+            return farbe, 'Textkasten'
+    # Das Hintergrundbild ist für alle Städte dasselbe – gemerkt wird nach Bildausschnitt,
+    # damit dieselbe Box nicht für jede Handschrift neu gemessen wird.
+    schluessel = tuple(int(round(v)) for v in _pruef_zuschnitt_box(el, canvas))
+    if schluessel not in cache:
+        farbe = None
+        if bg_pfad:
+            try:
+                farbe = R.hintergrund_farbe_im_bereich(bg_pfad, el, canvas)
+            except Exception as ex:                  # pragma: no cover – defensiv
+                log.warning('Studio: Hintergrundfarbe nicht messbar: %s', ex)
+        if farbe is None:
+            # Gemerkt wird die ANGABE, nicht die fertige Farbe: 'brand:bg' löst sich je
+            # Stadt anders auf. Ein Verlauf kommt so als Objekt durch und wird nicht
+            # beurteilt (lieber kein Befund als ein falscher).
+            grund = _hintergrundfarbe(config, stil)
+            farbe = grund if grund is not None else '#ffffff'
+        cache[schluessel] = farbe
+    return cache[schluessel], ('Hintergrundbild' if bg_pfad else 'Hintergrundfarbe')
+
+
+def _pruef_farbe(wert, stil):
+    """Farbtoken -> '#rrggbb'. Verlauf oder unlesbar -> None (dann wird nicht geurteilt).
+
+    parse_color liefert für 'stil:auto' eine Zeichenkette statt eines Tupels – deshalb wird
+    ein Zeichenketten-Ergebnis noch einmal durchgereicht statt es blind zu indizieren."""
+    if wert in (None, '', False) or isinstance(wert, dict):
+        return None
+    try:
+        rgba = R.parse_color(wert, stil, None)
+        if isinstance(rgba, str):
+            rgba = R.parse_color(rgba, stil, None)
+    except Exception:
+        return None
+    if not isinstance(rgba, (tuple, list)) or len(rgba) < 3:
+        return None
+    try:
+        return '#%02x%02x%02x' % (int(rgba[0]), int(rgba[1]), int(rgba[2]))
+    except (TypeError, ValueError):                  # pragma: no cover – defensiv
+        return None
+
+
+def _pruef_zuschnitt_box(el, canvas):
+    """Rechteck eines Elements (x0, y0, x1, y1)."""
+    try:
+        return tuple(R._el_box(el, canvas))
+    except Exception:                                # pragma: no cover – defensiv
+        x = float(el.get('x') or 0)
+        y = float(el.get('y') or 0)
+        w = float(el.get('width') or 0) or (canvas[0] - x)
+        h = float(el.get('height') or 0) or canvas[1] * 0.08
+        return (x, y, x + w, y + h)
+
+
+def _pruef_stil_benutzt(config):
+    """(benutzt 'stil:'-Token?, benutzt Rollen?) – die Grundlage für „alle Städte gleich“."""
+    try:
+        text = json.dumps(config, ensure_ascii=False).lower()
+    except Exception:                                # pragma: no cover – defensiv
+        text = ''
+    token = 'stil:' in text
+    rollen = False
+    for el in (config or {}).get('elements') or []:
+        if isinstance(el, dict):
+            name = str(el.get('role') or '').strip().lower()
+            if name and name != 'frei':
+                rollen = True
+    return token, rollen
+
+
+def _budget_fuer(el, canvas, stil, rueckfall=None):
+    """Zeichen-Budget dieses Elements für GENAU diese Handschrift.
+    Ohne die Renderer-Funktion oder bei einem Fehler: der mitgegebene Rückfallwert."""
+    fn = getattr(R, 'zeichen_budget', None)
+    if not callable(fn):
+        return rueckfall
+    try:
+        return int(fn(el, canvas, stil))
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('Studio: Zeichen-Budget nicht berechenbar: %s', ex)
+        return rueckfall
+
+
+def _pruefe_vorlage(template, config, staedte, budgets=None):
+    """Die sechs Prüfungen. Liefert (befunde, Anzahl geprüfter Städte)."""
+    befunde = []
+    elemente = [el for el in (config or {}).get('elements') or [] if isinstance(el, dict)]
+    text_elemente = [(i, el) for i, el in enumerate(elemente, 1)
+                     if str(el.get('type') or 'text') == 'text' and not R._bool(el.get('hidden'))]
+
+    bg_pfad = _bg_path(template)
+    bild_groesse = _image_size(bg_pfad) if bg_pfad else None
+    canvas_dict = _canvas_for(config, bild_groesse)
+    canvas = (int(canvas_dict['width']), int(canvas_dict['height']))
+    budgets = budgets if budgets is not None else _zeichen_budgets(config, canvas)
+
+    # Werte und Stil je Stadt einmal besorgen
+    werte_von, stil_von = {}, {}
+    for c in staedte:
+        werte_von[c.id] = _pruef_werte(c, config)
+        stil_von[c.id] = _city_brand(c)
+
+    # ── 1. Text passt nicht ────────────────────────────────────────────────────
+    # Gemessen wird je Schrift-Handschrift (Auszeichnung, Grundschrift, Schreibweise) –
+    # nur die entscheidet über die Textbreite. Innerhalb einer Handschrift genügt die
+    # längste vorkommende Belegung; passt die, passen die kürzeren erst recht.
+    for nummer, el in text_elemente:
+        el_id = _pruef_element_id(el, nummer)
+        var_name = (str(el.get('var') or '').strip()
+                    or ', '.join(_VAR_RE.findall(str(el.get('text') or ''))))
+        laengste = {}
+        for c in staedte:
+            text, _fehlend = _pruef_text(el, werte_von[c.id])
+            if not text or not text.strip():
+                continue
+            stil = stil_von[c.id]
+            sig = (str(stil.get('headline')), str(stil.get('body')),
+                   str(stil.get('schreibweise')))
+            vorher = laengste.get(sig)
+            if vorher is None or len(text) > len(vorher[0]):
+                laengste[sig] = (text, c, stil)
+        eng = []
+        for text, stadt, stil in laengste.values():
+            try:
+                ergebnis = R.passt_text(text, el, canvas, brand=stil)
+            except Exception as ex:                  # pragma: no cover – defensiv
+                log.warning('Studio: Textprüfung fehlgeschlagen (%s): %s', el_id, ex)
+                continue
+            if ergebnis.get('passt'):
+                continue
+            eng.append((float(ergebnis.get('noetige_verkleinerung') or 0), text, stadt, stil))
+        # Nur die schlimmsten Fälle je Element: acht Handschriften ergäben sonst achtmal
+        # denselben Satz. Wer den schlimmsten behebt, behebt die anderen mit.
+        eng.sort(key=lambda e: (-e[0], -len(e[1])))
+        weitere = max(0, len(eng) - _PRUEF_MAX_JE_ELEMENT)
+        for i, (verkleinerung, text, stadt, stil) in enumerate(eng[:_PRUEF_MAX_JE_ELEMENT]):
+            kleiner = int(round(verkleinerung * 100))
+            # Die Zahl im Vorschlag muss zu der Stadt passen, an der es scheitert: eine
+            # breitere Schrift verträgt weniger Zeichen als die Vorgabe-Handschrift.
+            platz = _budget_fuer(el, canvas, stil, budgets.get(el_id))
+            vorschlag = (f'Höchstens {platz} Zeichen für dieses Element '
+                         f'(dieser Text hat {len(text)}).' if platz else
+                         'Text kürzen oder die Box größer machen.')
+            meldung = (f'„{text[:60]}“ passt nicht: müsste {kleiner} % kleiner sein als '
+                       f'die Mindestgröße.' if kleiner else
+                       f'„{text[:60]}“ passt nicht in die Box.')
+            if i == 0 and weitere:
+                meldung += f' Gilt in {weitere} weiteren Handschriften genauso.'
+            befunde.append({
+                'art': 'text_passt_nicht', 'schwere': 'fehler', 'element_id': el_id,
+                'stadt': stadt.name, 'variable': var_name,
+                'text': meldung, 'vorschlag': vorschlag,
+            })
+
+    # ── 2. Lesbarkeit ──────────────────────────────────────────────────────────
+    # Gerechnet wird je Handschrift, nicht je Stadt: zwei Städte mit demselben Paket
+    # ergeben denselben Kontrast. Die Städte hängen als Liste am Befund, damit man sieht,
+    # wie viele es betrifft.
+    handschriften = {}
+    for c in staedte:
+        handschriften.setdefault(_stil_kern(stil_von[c.id]),
+                                 (stil_von[c.id], []))[1].append(c.name)
+    hintergrund_cache = {}
+    for nummer, el in text_elemente:
+        el_id = _pruef_element_id(el, nummer)
+        schlecht = {}
+        for stil, stadtnamen in handschriften.values():
+            try:
+                voll = R.rolle_anwenden(el, stil, canvas[1])
+            except Exception:                        # pragma: no cover – defensiv
+                voll = el
+            untergrund_roh, woher = _pruef_untergrund(voll, canvas, stil, bg_pfad,
+                                                      config, hintergrund_cache)
+            untergrund = _pruef_farbe(untergrund_roh, stil)
+            if untergrund is None:
+                continue
+            farbwert = voll.get('color')
+            if str(farbwert).strip().lower() == 'stil:auto':
+                # Genau das macht der Renderer auch: Schwarz oder Weiß, je nachdem, was auf
+                # DIESEM Untergrund besser lesbar ist.
+                try:
+                    farbwert = R.auto_farbe(untergrund, stil)
+                except Exception:                    # pragma: no cover – defensiv
+                    pass
+            schrift = _pruef_farbe(farbwert, stil)
+            if schrift is None:
+                continue
+            # Eine kräftige Kontur trägt die Lesbarkeit – aber nur, wenn sie sich von der
+            # Schrift selbst abhebt. Schwarze Kontur um schwarze Schrift macht den Text nur
+            # dicker; dann zählt weiter, was wirklich dahinter liegt. Es gilt also, was von
+            # beidem den Text besser trägt.
+            kontur = _pruef_farbe(voll.get('stroke'), stil)
+            try:
+                breite = float(voll.get('stroke_width') or 0)
+            except (TypeError, ValueError):
+                breite = 0.0
+            try:
+                verhaeltnis = float(R.kontrast(schrift, untergrund, stil))
+                if kontur and breite >= 2:
+                    mit_kontur = float(R.kontrast(schrift, kontur, stil))
+                    if mit_kontur > verhaeltnis:
+                        untergrund, woher, verhaeltnis = kontur, 'Kontur', mit_kontur
+            except Exception:                        # pragma: no cover – defensiv
+                continue
+            if verhaeltnis >= _KONTRAST_HINWEIS:
+                continue
+            # Dieselbe Farbkombination in mehreren Städten ist EIN Befund, kein Dutzend.
+            schluessel = (schrift, untergrund)
+            if schluessel in schlecht:
+                schlecht[schluessel]['staedte'].extend(stadtnamen)
+                continue
+            schlecht[schluessel] = {'verhaeltnis': verhaeltnis, 'woher': woher,
+                                    'staedte': list(stadtnamen)}
+        for (schrift, untergrund), fall in schlecht.items():
+            anzahl = len(fall['staedte'])
+            befunde.append({
+                'art': 'lesbarkeit',
+                'schwere': 'fehler' if fall['verhaeltnis'] < _KONTRAST_FEHLER else 'hinweis',
+                'element_id': el_id, 'stadt': fall['staedte'][0],
+                'staedte': fall['staedte'][:12],
+                'text': (f'Kontrast {fall["verhaeltnis"]:.1f}:1 zwischen Schrift {schrift} '
+                         f'und {fall["woher"]} {untergrund}'
+                         + (f' – betrifft {anzahl} Städte.' if anzahl > 1 else '.')),
+                'vorschlag': ('Farbe stil:auto benutzen, einen Textkasten setzen oder eine '
+                              'dunkle Kontur geben (mindestens 4,5:1).'),
+            })
+
+    # ── 3. Zuschnitt im Instagram-Raster ───────────────────────────────────────
+    if canvas[1] > canvas[0]:
+        oben = (canvas[1] - canvas[0]) / 2.0
+        unten = oben + canvas[0]
+        for nummer, el in enumerate(elemente, 1):
+            if R._bool(el.get('hidden')):
+                continue
+            x0, y0, x1, y1 = _pruef_zuschnitt_box(el, canvas)
+            if y1 <= oben or y0 >= unten:
+                befunde.append({
+                    'art': 'zuschnitt', 'schwere': 'hinweis',
+                    'element_id': _pruef_element_id(el, nummer), 'stadt': '',
+                    'text': ('Liegt ganz außerhalb des quadratischen Ausschnitts, den '
+                             f'Instagram im Raster zeigt (y {int(oben)} bis {int(unten)}).'),
+                    'vorschlag': f'Element nach y {int(oben)}–{int(unten)} schieben.',
+                })
+
+    # ── 4. Ohne Rückfallwert ───────────────────────────────────────────────────
+    leer_gewesen = set()
+    for c in staedte:
+        for _nummer, el in text_elemente:
+            _text, fehlend = _pruef_text(el, werte_von[c.id])
+            leer_gewesen.update(fehlend)
+    for nummer, el in text_elemente:
+        var = str(el.get('var') or '').strip()
+        namen = [var] if var else _VAR_RE.findall(str(el.get('text') or ''))
+        namen = [n for n in namen if n]
+        if not namen or el.get('fallback') not in (None, ''):
+            continue
+        betroffen = [n for n in namen if n in leer_gewesen]
+        if betroffen:
+            text = (f'{", ".join(betroffen)} ohne Rückfallwert – mindestens eine der '
+                    'geprüften Städte hat dafür keinen Wert, dort bleibt die Fläche leer.')
+        else:
+            text = (f'{", ".join(namen)} ohne Rückfallwert – fehlt der Wert einmal, '
+                    'bleibt die Fläche leer.')
+        befunde.append({
+            'art': 'ohne_rueckfallwert',
+            'schwere': 'fehler' if betroffen else 'hinweis',
+            'element_id': _pruef_element_id(el, nummer), 'stadt': '',
+            'variable': ', '.join(betroffen or namen),
+            'text': text,
+            'vorschlag': 'Feld „fallback“ am Element füllen.',
+        })
+
+    # ── 5. Kein Wasserzeichen ──────────────────────────────────────────────────
+    hat_rolle = any(str(el.get('role') or '').strip().lower() == 'wasserzeichen'
+                    for _n, el in text_elemente)
+    nutzt_handle = any('city_handle' in ([str(el.get('var') or '')]
+                                         + _VAR_RE.findall(str(el.get('text') or '')))
+                       for _n, el in text_elemente)
+    if not hat_rolle and not nutzt_handle:
+        befunde.append({
+            'art': 'wasserzeichen', 'schwere': 'hinweis', 'element_id': '', 'stadt': '',
+            'text': 'Die Vorlage trägt keinen Seitennamen – geklaute Reposts sind nicht zuzuordnen.',
+            'vorschlag': ('Ein Text-Element mit Rolle „wasserzeichen“ und Variable '
+                          'city_handle in eine Ecke setzen.'),
+        })
+    elif nutzt_handle:
+        ohne_handle = [c.name for c in staedte if not werte_von[c.id].get('city_handle')]
+        if ohne_handle:
+            befunde.append({
+                'art': 'wasserzeichen', 'schwere': 'hinweis', 'element_id': '',
+                'stadt': ohne_handle[0],
+                'text': (f'{len(ohne_handle)} von {len(staedte)} Städten haben keinen '
+                         f'Instagram-Namen hinterlegt – dort bleibt das Wasserzeichen leer.'),
+                'vorschlag': 'Instagram-Namen der Städte auf der Städte-Seite eintragen.',
+            })
+
+    # ── 6. Alle Städte gleich ──────────────────────────────────────────────────
+    token, rollen = _pruef_stil_benutzt(config)
+    if not token and not rollen:
+        befunde.append({
+            'art': 'alle_gleich', 'schwere': 'hinweis', 'element_id': '', 'stadt': '',
+            'text': ('Die Vorlage benutzt weder eine Rolle noch einen stil:-Farbwert – '
+                     'alle Städte sehen damit gleich aus, nur der Text ist anders.'),
+            'vorschlag': ('Farben auf stil:primary / stil:accent / stil:auto umstellen oder '
+                          'den Text-Elementen Rollen geben.'),
+        })
+
+    rang = {'fehler': 0, 'hinweis': 1}
+    befunde.sort(key=lambda b: (rang.get(b['schwere'], 2), b['art'], str(b['element_id'])))
+    return befunde, len(staedte)
+
+
+def _zeichen_budgets(config, canvas):
+    """{element_id: Zeichenzahl} – wie viel Platz jedes Text-Element hergibt.
+    Ohne die Renderer-Funktion: leeres Dict."""
+    fn = getattr(R, 'zeichen_budget', None)
+    if not callable(fn):
+        return {}
+    out = {}
+    for nummer, el in enumerate((config or {}).get('elements') or [], 1):
+        if not isinstance(el, dict) or str(el.get('type') or 'text') != 'text':
+            continue
+        try:
+            out[_pruef_element_id(el, nummer)] = int(fn(el, canvas))
+        except Exception as ex:                      # pragma: no cover – defensiv
+            log.warning('Studio: Zeichen-Budget nicht berechenbar: %s', ex)
+    return out
+
+
+@bp.route('/api/studio/<int:template_id>/pruefen', methods=['POST'])
+@studio_login_required
+def api_studio_pruefen(template_id):
+    """Taugt diese Vorlage für hundert Städte?
+
+    Rumpf (beides optional):
+      config     die zu prüfende Config (Vorgabe: die gespeicherte)
+      city_ids   Städte, gegen die geprüft wird (Vorgabe: alle aktiven)
+    """
+    t = MemeTemplate.query.get_or_404(template_id)
+    d = request.get_json(silent=True) or {}
+    config = _config_from_payload(d, t)
+    if config is None:
+        return jsonify({'error': 'config muss ein Objekt sein'}), 400
+
+    ids = d.get('city_ids')
+    if ids in (None, '', []):
+        staedte = _cities()
+    else:
+        if not isinstance(ids, (list, tuple)):
+            return jsonify({'error': 'city_ids muss eine Liste sein'}), 400
+        try:
+            gewuenscht = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return jsonify({'error': 'city_ids muss Zahlen enthalten'}), 400
+        gefunden = {c.id: c for c in City.query.filter(City.id.in_(gewuenscht)).all()}
+        staedte = [gefunden[i] for i in gewuenscht if i in gefunden]
+        if not staedte:
+            return jsonify({'error': 'Keine der genannten Städte gefunden'}), 400
+    gekuerzt = len(staedte) > _PRUEF_MAX_STAEDTE
+    staedte = staedte[:_PRUEF_MAX_STAEDTE]
+
+    try:
+        befunde, geprueft = _pruefe_vorlage(t, config, staedte)
+    except Exception as ex:
+        log.exception('Studio: Vorlagen-Prüfung fehlgeschlagen')
+        return jsonify({'error': f'Prüfung fehlgeschlagen: {type(ex).__name__}: {str(ex)[:160]}'}), 500
+
+    fehler = sum(1 for b in befunde if b['schwere'] == 'fehler')
+    hinweise = len(befunde) - fehler
+    if not befunde:
+        text = f'Keine Beanstandungen bei {geprueft} geprüften Städten.'
+    else:
+        teile = []
+        if fehler:
+            teile.append(f'{fehler} Fehler')
+        if hinweise:
+            teile.append(f'{hinweise} Hinweis' + ('e' if hinweise != 1 else ''))
+        text = ' und '.join(teile) + f' bei {geprueft} geprüften Städten.'
+    if gekuerzt:
+        text += f' (Nur die ersten {_PRUEF_MAX_STAEDTE} Städte geprüft.)'
+    return jsonify({'befunde': befunde[:_PRUEF_MAX_BEFUNDE],
+                    'geprüfte_staedte': geprueft,
+                    'fehler': fehler,
+                    'hinweise': hinweise,
+                    'zusammenfassung': text})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

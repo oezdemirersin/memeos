@@ -2261,6 +2261,8 @@ Deine Aufgabe zu einem Meme-Template und einer Stadt:
 1. Wie gut passt das Template zu der Stadt? (fit_score: 0–100)
    < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
 2. Welche konkreten Werte sollen für die benötigten Variablen eingesetzt werden?
+   Steht beim Template eine Zeichengrenze ("höchstens N Zeichen"), ist sie eine harte
+   Vorgabe: mehr passt nicht ins Bild. Lieber kürzer und schlagend als vollständig.
 3. Schreibe einen kurzen "Manual Brief" für den Fall, dass kein fertiges Template vorliegt
    (was soll der Meme-Creator machen?)
 
@@ -2279,6 +2281,8 @@ Du bekommst MEHRERE Meme-Templates für dieselbe Stadt und bewertest jedes einze
    < 40 = passt nicht, 40–70 = okay, > 70 = sehr gut
 2. Welche konkreten Werte sollen für die benötigten Variablen eingesetzt werden?
    Nutze für jedes Template nur die dort genannten Variablen.
+   Steht beim Template eine Zeichengrenze ("höchstens N Zeichen"), ist sie eine harte
+   Vorgabe: mehr passt nicht ins Bild. Lieber kürzer und schlagend als vollständig.
 3. Schreibe einen kurzen "Manual Brief" für den Fall, dass kein fertiges Template vorliegt.
 
 Gehören die Templates zu einer Serie, sollen die Werte zusammenpassen und sich nicht
@@ -2325,16 +2329,120 @@ def _ki_system_blocks(city, grundtext):
     ]
 
 
-def _template_prompt_teil(template, mit_id=False):
+# ── Zeichen-Budget: wie viel Platz hat die Variable überhaupt? ─────────────────
+# Der wirksamste Hebel gegen Text, der hinterher geschrumpft werden muss: der KI vorher
+# sagen, wie viele Zeichen in die Box passen. Gerechnet wird bei MINDESTgröße – was hier
+# steht, steht im fertigen Bild also in voller Größe da.
+
+_TEXT_VAR_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+
+def _template_config(template):
+    """pil_config einer Vorlage als Dict. Unlesbar -> {}."""
+    try:
+        cfg = json.loads(getattr(template, 'pil_config', '') or '{}')
+    except Exception:
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _template_canvas(template, cfg=None):
+    """(Breite, Höhe) der Leinwand, so wie der Renderer sie sieht: config.canvas gewinnt,
+    sonst die Größe des Hintergrundbilds, sonst die Standardgröße des Renderers.
+
+    Bewusst NUR die schon vorhandene Datei: _template_bg_path() würde ein fehlendes Bild
+    nachladen und dabei in die Datenbank schreiben – das hat beim Bauen eines Prompts
+    nichts zu suchen."""
+    cfg = _template_config(template) if cfg is None else (cfg or {})
+    c = cfg.get('canvas')
+    if isinstance(c, dict):
+        try:
+            b, h = int(float(c['width'])), int(float(c['height']))
+            if b > 0 and h > 0:
+                return (b, h)
+        except (KeyError, TypeError, ValueError):
+            pass
+    name = os.path.basename(getattr(template, 'preview_image', '') or '')
+    if name:
+        pfad = os.path.join(_UPLOAD_DIR, name)
+        try:
+            if os.path.isfile(pfad):
+                with Image.open(pfad) as im:
+                    return (int(im.size[0]), int(im.size[1]))
+        except Exception as ex:
+            log.warning(f'Template {getattr(template, "id", "?")}: Bildgröße nicht lesbar: {ex}')
+    return tuple(getattr(memeos_render, 'DEFAULT_CANVAS', (1080, 1350)))
+
+
+def _template_budgets(template, brand=None):
+    """{Variablenname: Zeichenzahl} – wie viele Zeichen der Platz in dieser Vorlage hergibt.
+
+    Grundlage ist memeos_render.zeichen_budget() je Text-Element (Schriftmaße bei
+    min_size, mal Zeilenzahl). Benutzt eine Variable mehrere Elemente, zählt das kleinste
+    Budget; stehen mehrere Variablen in EINEM Element, teilen sie sich den Platz.
+    Ohne die Renderer-Funktion oder ohne lesbare Config: leeres Dict – dann steht im
+    Prompt einfach nichts dazu."""
+    budget_fn = getattr(memeos_render, 'zeichen_budget', None) if memeos_render else None
+    if not callable(budget_fn):
+        return {}
+    cfg = _template_config(template)
+    elemente = cfg.get('elements')
+    if not isinstance(elemente, list) or not elemente:
+        return {}
+    groesse = _template_canvas(template, cfg)
+    budgets = {}
+    for el in elemente:
+        if not isinstance(el, dict) or str(el.get('type') or 'text') != 'text':
+            continue
+        if el.get('hidden'):
+            continue
+        namen = set()
+        var = str(el.get('var') or '').strip()
+        if var:
+            namen.add(var)
+        namen.update(_TEXT_VAR_RE.findall(str(el.get('text') or '')))
+        if not namen:
+            continue
+        try:
+            platz = int(budget_fn(el, groesse, brand))
+        except Exception as ex:
+            log.warning(f'Zeichen-Budget für {namen} nicht berechenbar: {ex}')
+            continue
+        if platz <= 0:
+            continue
+        anteil = max(1, platz // len(namen))
+        for name in namen:
+            budgets[name] = min(budgets[name], anteil) if name in budgets else anteil
+    return budgets
+
+
+def _budget_zeile(required_vars, budgets):
+    """Die Prompt-Zeile mit den Zeichengrenzen. Ohne Budget: '' (dann nichts dazuschreiben).
+
+    Stadtname, Instagram-Name und Bundesland kommen aus der Stadt-Zeile – für die trifft die
+    KI keine Entscheidung, also kostet ihre Zeichengrenze nur Token."""
+    teile = [f'{v} höchstens {budgets[v]} Zeichen'
+             for v in required_vars if budgets.get(v) and v not in STADT_VARIABLEN]
+    if not teile:
+        return ''
+    return ('Platz im Bild – diese Grenzen bitte einhalten, längerer Text müsste '
+            'verkleinert werden und wird unleserlich: ' + '; '.join(teile))
+
+
+def _template_prompt_teil(template, mit_id=False, brand=None):
     # bild_-Variablen kommen aus den Bildern der Stadt – die KI soll dafür keine
     # Dateinamen erfinden und keine Token dafür ausgeben.
     required_vars = [v for v in template.get_required_vars() if not _ist_stadtbild_var(v)]
     vars_str = ', '.join(required_vars) if required_vars else 'keine'
     kopf = f"Template-ID {template.id}: {template.name}" if mit_id else f"Meme-Template: {template.name}"
-    return (f"{kopf}\n"
-            f"Beschreibung: {template.description or 'keine'}\n"
-            f"Beispiel-Text: {template.example_text or 'keiner'}\n"
-            f"Benötigte Variablen: {vars_str}")
+    zeilen = [kopf,
+              f"Beschreibung: {template.description or 'keine'}",
+              f"Beispiel-Text: {template.example_text or 'keiner'}",
+              f"Benötigte Variablen: {vars_str}"]
+    budget = _budget_zeile(required_vars, _template_budgets(template, brand))
+    if budget:
+        zeilen.append(budget)
+    return '\n'.join(zeilen)
 
 
 def _ki_antwort_zu_ergebnis(data, template, city):
@@ -2342,8 +2450,10 @@ def _ki_antwort_zu_ergebnis(data, template, city):
     required_vars = template.get_required_vars()
     vars_dict = data.get('vars') if isinstance(data.get('vars'), dict) else {}
     vars_dict = {str(k): str(v) for k, v in vars_dict.items() if v is not None}
-    if 'city_name' in required_vars and not vars_dict.get('city_name'):
-        vars_dict['city_name'] = city.name
+    # Stadtname, Instagram-Name und Bundesland kommen aus der Stadt-Zeile, nicht aus der KI.
+    for name, wert in _stadt_variablen(city).items():
+        if name in required_vars and not vars_dict.get(name):
+            vars_dict[name] = wert
     # Stadtbilder kommen aus der Bilderverwaltung der Stadt, nicht aus der KI. Sie gehören
     # in genau dieses Dict: damit rendert die Warteschlange, und daraus baut sie die
     # Metadaten des Beitrags. Fehlt der Stadt ein Bild, sagt das die Warnung.
@@ -2365,9 +2475,10 @@ def _ki_antwort_zu_ergebnis(data, template, city):
 
 
 def _ki_ohne_schluessel(city, template):
-    vars_dict = {v: city.name for v in template.get_required_vars() if v == 'city_name'}
+    stadt = _stadt_variablen(city)
+    vars_dict = {v: stadt[v] for v in template.get_required_vars() if v in stadt}
     fehlend = _stadtbilder_einsetzen(city, template, vars_dict)
-    warnung = 'Kein Anthropic-Key: nur Stadtname und Stadtbilder eingesetzt'
+    warnung = 'Kein Anthropic-Key: nur Stadtwerte und Stadtbilder eingesetzt'
     if fehlend:
         warnung += ' | ' + _stadtbild_warnung(fehlend)
     return {
@@ -2413,7 +2524,9 @@ def _claude_fit_and_vars(city, template):
         return {'error': gesperrt, 'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
 
     system_blocks = _ki_system_blocks(city, _KI_SYSTEM_EINZEL)
-    user_text = _template_prompt_teil(template)
+    # Der Stadt-Stil geht mit in den Template-Teil: die Schrift der Stadt entscheidet mit,
+    # wie viele Zeichen in eine Box passen.
+    user_text = _template_prompt_teil(template, brand=_city_brand(city))
 
     last_error = ''
     hinweise = {}
@@ -2463,8 +2576,10 @@ def _claude_fit_and_vars_multi(city, templates):
 
     system_blocks = _ki_system_blocks(city, _KI_SYSTEM_MULTI)
     ids_str = ', '.join(str(t.id) for t in templates)
+    stadt_stil = _city_brand(city)
     user_text = (f'Bewerte diese {len(templates)} Templates für {city.name}:\n\n'
-                 + '\n\n'.join(_template_prompt_teil(t, mit_id=True) for t in templates)
+                 + '\n\n'.join(_template_prompt_teil(t, mit_id=True, brand=stadt_stil)
+                               for t in templates)
                  + f'\n\nGib für JEDE dieser Template-IDs einen Eintrag zurück: {ids_str}')
     # Reicht für ~350 Token je Template; zu klein bemessen liefern Reasoning-Modelle eine
     # leere Antwort (siehe _deepseek_complete).
@@ -2685,14 +2800,89 @@ def _template_bg_path(template):
         return None
 
 
-def _city_brand(city):
-    """Brandfarben/-schrift einer Stadt als Dict für Renderer und Frontend."""
+def _city_brand_alt(city):
+    """Nur die vier alten Marken-Felder, direkt aus der Stadt-Zeile.
+
+    Rückfall für den Fall, dass das Stil-Modell (models.CityStyle) oder der neue Renderer
+    (memeos_render.stil_dict) noch nicht da ist – dann läuft alles wie vor dem Stil-Umbau."""
     return {
         'bg':     (city.brand_bg if city and city.brand_bg else '#ffffff'),
         'text':   (city.brand_text_color if city and city.brand_text_color else '#000000'),
         'accent': (city.accent_color if city and city.accent_color else '#3b82f6'),
         'font':   (city.brand_font if city and city.brand_font else 'Arial'),
     }
+
+
+def _city_brand(city):
+    """Der vollständige Stil einer Stadt – für Renderer, Editor und Frontend.
+
+    Enthält IMMER die vier alten Schlüssel bg/text/accent/font: jeder Aufrufer, der nur
+    die kennt, und jede Bestandsvorlage mit 'brand:bg' & Co. laufen unverändert weiter.
+    Dazu kommen Palette (primary/secondary/accent/dark/light), Schriftpaar
+    (headline/body) und Anmutung (schreibweise, kasten, radius, kontur, schatten,
+    wasserzeichen_ecke, paket) – genau das lässt die Städte verschieden aussehen.
+
+    Hat die Stadt keine Zeile in city_style, leitet CityStyle.fuer() den Stil aus genau
+    den alten Feldern ab (primary = accent_color, dark = brand_text_color,
+    light = brand_bg, Schriftpaar = brand_font); bg/text/accent/font kommen dann
+    unverändert heraus und alte Vorlagen rendern bitgleich wie vorher.
+    Hat sie eine Zeile, gilt die auch für 'brand:*' – der Stadt-Stil ist die jüngere und
+    genauere Quelle als die vier Einzelfelder auf der Städte-Seite."""
+    alt = _city_brand_alt(city)
+    quelle = None
+    fuer = getattr(getattr(_models, 'CityStyle', None), 'fuer', None)
+    if callable(fuer):
+        try:
+            quelle = fuer(city)
+        except Exception as ex:   # DB weg, Objekt abgelöst – darf den Aufrufer nie stoppen
+            log.warning(f'Stadt-Stil nicht lesbar ({getattr(city, "name", "?")}): {ex}')
+            quelle = None
+    if not isinstance(quelle, dict):
+        quelle = alt
+    vervollstaendigen = getattr(memeos_render, 'stil_dict', None) if memeos_render else None
+    if not callable(vervollstaendigen):
+        return dict(alt)
+    try:
+        stil = vervollstaendigen(quelle)
+    except Exception as ex:       # pragma: no cover – defensiv
+        log.warning(f'Stil-Dict nicht baubar ({getattr(city, "name", "?")}): {ex}')
+        return dict(alt)
+    for feld in ('bg', 'text', 'accent', 'font'):     # Vertrag: die vier sind immer da
+        if not stil.get(feld):
+            stil[feld] = alt[feld]
+    return stil
+
+
+# ── Stadt-Variablen ────────────────────────────────────────────────────────────
+# Werte, die direkt aus der Stadt-Zeile kommen und die die KI nicht erfinden soll.
+# city_name gab es schon; city_handle (Instagram-Name) und city_state (Bundesland) kommen
+# dazu und werden überall dort belegt, wo bisher nur city_name belegt wurde.
+
+STADT_VARIABLEN = ('city_name', 'city_handle', 'city_state')
+
+
+def _stadt_handle(city):
+    """Instagram-Name der Stadt mit genau einem @ davor. Ohne hinterlegten Namen: ''.
+
+    Es wird bewusst KEINER erfunden: ein geratener @-Name zeigt auf ein fremdes Konto.
+    Eine hinterlegte Profil-URL wird auf den Namen gekürzt."""
+    roh = str(getattr(city, 'instagram_handle', '') or '').strip().rstrip('/')
+    if '/' in roh:
+        roh = roh.rsplit('/', 1)[-1]
+    roh = roh.lstrip('@').strip()
+    return ('@' + roh) if roh else ''
+
+
+def _stadt_variablen(city):
+    """{'city_name', 'city_handle', 'city_state'} einer Stadt; leere Werte fallen weg."""
+    if city is None:
+        return {}
+    werte = {
+        'city_name':   str(getattr(city, 'name', '') or ''),
+        'city_handle': _stadt_handle(city),
+        'city_state':  str(getattr(city, 'state', '') or ''),
+    }
+    return {k: v for k, v in werte.items() if v}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

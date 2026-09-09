@@ -232,6 +232,41 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
 .asset-card .del{position:absolute;top:-6px;right:-6px;background:var(--danger);color:white;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:1;cursor:pointer;display:none;}
 .asset-card:hover .del{display:block;}
 
+/* ── Rollen, Stadt-Stil, Stufen ── */
+.panel-title .stufe-seg{margin-left:auto;padding:2px;}
+.panel-title .stufe-seg button{font-family:var(--font-body);font-size:11px;letter-spacing:0;padding:3px 10px;}
+.rolle-box{border:1px solid rgba(139,92,246,.3);background:rgba(139,92,246,.07);border-radius:9px;padding:8px 9px;margin:8px 0;}
+.rolle-box .rolle-txt{font-size:11px;color:var(--muted2);line-height:1.5;margin-top:5px;}
+.von-rolle{opacity:.5;}
+.von-rolle:focus-within,.von-rolle:hover{opacity:1;}
+.rollen-marke{font-size:10px;color:#a78bfa;border:1px solid rgba(139,92,246,.4);border-radius:4px;padding:0 4px;margin-left:6px;white-space:nowrap;}
+.rollen-reset{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:10px;padding:0 4px;margin-left:6px;border:1px solid var(--border);border-radius:4px;}
+.rollen-reset:hover{color:var(--text);background:var(--surface3);}
+.stil-btns{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;}
+.stil-btns button{font-size:10px;padding:3px 7px;}
+.stil-erklaer{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.45;}
+.stilbar{display:flex;align-items:center;gap:4px;}
+.stilbar .sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(255,255,255,.28);display:inline-block;}
+.stilbar .fnt{font-size:11px;color:var(--muted);white-space:nowrap;}
+.baustein-btn{display:block;}
+.baustein-btn .bi{display:block;font-size:10px;color:var(--muted);line-height:1.4;}
+
+/* Sicherheitsbereich (was Instagram beschneidet oder überdeckt) */
+.safe{position:absolute;pointer-events:none;z-index:30;}
+.safe.square{border:1px dashed rgba(96,165,250,.8);}
+.safe.strip{background:repeating-linear-gradient(45deg,rgba(239,68,68,.16) 0 8px,rgba(239,68,68,.05) 8px 16px);border-top:1px dashed rgba(248,113,113,.55);border-bottom:1px dashed rgba(248,113,113,.55);}
+.safe .lbl{position:absolute;top:2px;left:5px;font-size:10px;color:rgba(226,232,240,.8);text-shadow:0 1px 2px #000;}
+
+/* Vorlagen-Prüfung */
+.pruef-leiste{border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;}
+.pruef-kopf{display:flex;align-items:center;gap:8px;padding:6px 10px;flex-wrap:wrap;}
+.pruef-liste{max-height:132px;overflow-y:auto;padding:0 10px 8px;}
+.befund{display:flex;gap:8px;align-items:flex-start;padding:5px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;background:var(--surface2);}
+.befund:hover{border-color:var(--border2);}
+.befund .bt{font-size:12px;line-height:1.45;flex:1;min-width:0;}
+.befund .bo{font-size:10px;color:var(--muted);display:block;}
+.el.gefunden{outline:2px solid var(--warning) !important;box-shadow:0 0 0 3px rgba(245,158,11,.4);}
+
 /* Vorschau-Panel */
 .preview-panel{height:250px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:height .15s;}
 .preview-panel.collapsed{height:44px;}
@@ -296,6 +331,12 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
   Ohne Hintergrundbild trägt allein die Leinwandfarbe.<br>
   <strong>Stadtspezifisch:</strong> Alles, was pro Stadt wechselt (Variable, Farbe <kbd>brand:…</kbd>, Bedingung), bekommt auf der Bühne einen orangen Rahmen
   und steht links unter „Was ändert sich pro Stadt“. Der Schalter „Nur Stadtspezifisches“ dimmt den Rest ab.<br>
+  <strong>Rollen:</strong> Jedes Textelement bekommt eine Rolle (Überschrift, Pointe, Unterzeile, Ort, Kleingedrucktes, Wasserzeichen).
+  Die Rolle holt Schrift, Größe, Farbe, Kasten und Kontur aus dem Stil der Stadt – jeder Wert, den du selbst setzt, schlägt die Rolle.
+  In der Stufe „Alles“ stehen die Werte aus der Rolle blass da; ein Klick auf <kbd>✕ Rolle</kbd> gibt einen selbst gesetzten Wert wieder ab.<br>
+  <strong>Stadt-Stil:</strong> Farben <kbd>stil:primary</kbd> … <kbd>stil:auto</kbd> und die Schriften <kbd>stil:headline</kbd>/<kbd>stil:body</kbd> sind in jeder Stadt andere.
+  Die Auswahl „Stadt-Stil“ über der Bühne zeigt, wie dieselbe Vorlage bei einer anderen Stadt aussieht.
+  „Für alle Städte prüfen“ sagt, wo Text nicht passt, der Kontrast zu schwach ist oder das Wasserzeichen fehlt.<br>
   <strong>Bühne:</strong> Klick wählt aus, <kbd>Umschalt+Klick</kbd> wählt mehrere, Ziehen im Leeren zieht einen Auswahlrahmen auf.
   Acht Griffe ändern die Größe, der runde Griff darüber dreht (<kbd>Umschalt</kbd> rastet in 15°-Schritten).
   <kbd>Alt+Ziehen</kbd> dupliziert. Gesperrte Elemente lassen sich nur über die Ebenenliste anfassen.<br>
@@ -343,6 +384,13 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
         </div>
       </div>
       <button class="btn btn-ghost btn-sm" type="button" data-add="cover">+ Abdeckung</button>
+      <div class="dd" id="dd-baustein">
+        <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-baustein" title="Fertige Gruppen mit Rollen einfügen">+ Baustein ▾</button>
+        <div class="dd-menu" style="min-width:260px;">
+          <div class="hd">Baustein einfügen</div>
+          <div id="baustein-list"></div>
+        </div>
+      </div>
       <span class="sep"></span>
       <div class="dd" id="dd-bg">
         <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-bg">Hintergrund ▾</button>
@@ -403,6 +451,19 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
       <span class="sep"></span>
       <button class="btn btn-ghost btn-sm on" type="button" id="btn-snap" title="Am Raster und an anderen Elementen einrasten">Fangen ●</button>
       <button class="btn btn-ghost btn-sm" type="button" id="btn-cityonly" title="Alles andere abdunkeln">Nur Stadtspezifisches</button>
+      <button class="btn btn-ghost btn-sm on" type="button" id="btn-safe" title="Zeigt, was Instagram beschneidet oder überdeckt">Sicherheitsbereich ●</button>
+      <span class="sep"></span>
+      <label class="small muted">Stadt-Stil</label>
+      <select id="stage-city" title="Bühne in den Farben und Schriften dieser Stadt zeigen"></select>
+      <span class="stilbar" id="stil-swatches" title="Palette und Schriftpaar dieser Stadt"></span>
+    </div>
+    <div class="pruef-leiste">
+      <div class="pruef-kopf">
+        <button class="btn btn-ghost btn-sm" type="button" id="btn-pruefen" title="Prüft, ob die Vorlage bei jeder Stadt trägt">Für alle Städte prüfen</button>
+        <span class="small muted" id="pruef-summe">noch nicht geprüft</span>
+        <button class="ibtn" type="button" id="btn-pruef-zu" title="Liste schließen" hidden>✕</button>
+      </div>
+      <div class="pruef-liste" id="pruef-liste" hidden></div>
     </div>
     <div class="stage-wrap" id="stage-wrap">
       <div class="stage" id="stage"></div>
@@ -411,7 +472,12 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
   </section>
 
   <aside class="panel right">
-    <div class="panel-title">EIGENSCHAFTEN</div>
+    <div class="panel-title">EIGENSCHAFTEN
+      <div class="seg stufe-seg" id="stufe-seg">
+        <button type="button" data-stufe="einfach" title="Nur das Nötige: Rolle, Inhalt, Position">Einfach</button>
+        <button type="button" data-stufe="alles" title="Jeder Wert, den der Renderer kennt">Alles</button>
+      </div>
+    </div>
     <div class="panel-body" id="props"></div>
   </aside>
 </div>
@@ -606,17 +672,251 @@ function moveGroup(rects, dx, dy, canvas, keepInside) {
   return rects.map(r => ({x: Math.round(r.x + dx), y: Math.round(r.y + dy)}));
 }
 
+// ── Stadt-Stil ────────────────────────────────────────────────────────────────
+// Spiegel von memeos_render.STIL_STANDARD / stil_dict(). Der Editor braucht die Werte,
+// um die Bühne ohne Serverfrage in den Farben und Schriften einer Stadt zu zeichnen.
+// Verbindlich ist immer die Vorschau, die der Server rendert.
+const STIL_STANDARD = {
+  primary: '#3b82f6', secondary: '#1e40af', accent: '#f59e0b', dark: '#0f172a', light: '#ffffff',
+  headline: 'anton', body: 'bold', schreibweise: 'gross', kasten: 'keiner', radius: 16,
+  kontur: 'dunkel', schatten: true, wasserzeichen_ecke: 'unten_rechts', paket: '',
+};
+const SCHREIBWEISEN = ['gross', 'normal'];
+const KASTEN_ARTEN = ['keiner', 'voll', 'weich', 'umriss'];
+const KONTUR_ARTEN = ['keine', 'dunkel', 'palette'];
+const WASSERZEICHEN_ECKEN = ['unten_links', 'unten_rechts', 'oben_rechts', 'keins'];
+/** Die Farbtoken des Stadt-Stils mit Klarnamen – Reihenfolge wie im Farbwähler. */
+const STIL_FARB_TOKEN = [
+  {k: 'primary', l: 'Hauptfarbe'}, {k: 'secondary', l: 'Zweitfarbe'}, {k: 'accent', l: 'Akzent'},
+  {k: 'dark', l: 'Dunkel'}, {k: 'light', l: 'Hell'}, {k: 'auto', l: 'Automatisch'},
+];
+
+function hexRgb(v) {
+  const s = String(v == null ? '' : v).trim();
+  const m = /^#([0-9a-fA-F]{3,8})$/.exec(s);
+  if (m) {
+    let h = m[1];
+    if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map(c => c + c).join('');
+    if (h.length >= 6) return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  const r = /^rgba?\(([^)]+)\)$/i.exec(s);
+  if (r) { const p = r[1].split(',').map(x => parseInt(x, 10)); if (p.length >= 3 && p.every(isFinite)) return [p[0], p[1], p[2]]; }
+  return null;
+}
+function rgbHex(rgb) { return '#' + rgb.map(v => clamp(Math.round(num(v, 0)), 0, 255).toString(16).padStart(2, '0')).join(''); }
+/** Relative Leuchtdichte 0..1 (sRGB linearisiert) – dieselbe Rechnung wie im Renderer. */
+function leuchtdichte(farbe) {
+  const rgb = hexRgb(farbe) || [0, 0, 0];
+  const lin = c => { const x = c / 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+}
+function kontrastVon(a, b) {
+  const la = leuchtdichte(a), lb = leuchtdichte(b);
+  const hell = Math.max(la, lb), dunkel = Math.min(la, lb);
+  return (hell + 0.05) / (dunkel + 0.05);
+}
+/** Schwarz oder Weiß – was auf diesem Untergrund besser lesbar ist. */
+function autoFarbeAuf(untergrund) {
+  return kontrastVon('#000000', untergrund) >= kontrastVon('#ffffff', untergrund) ? '#000000' : '#ffffff';
+}
+function abdunkeln(farbe, faktor) {
+  const rgb = hexRgb(farbe); if (!rgb) return STIL_STANDARD.secondary;
+  const f = clamp(num(faktor, 0.62), 0, 1);
+  return rgbHex(rgb.map(c => Math.round(c * f)));
+}
+function mitAlpha(farbe, alpha) {
+  const rgb = hexRgb(farbe) || [0, 0, 0];
+  const a = Math.round(clamp(num(alpha, 1), 0, 1) * 255);
+  return rgbHex(rgb) + a.toString(16).padStart(2, '0');
+}
+function wahl(wert, erlaubt, vorgabe) {
+  const w = String(wert == null ? '' : wert).trim().toLowerCase();
+  return erlaubt.indexOf(w) >= 0 ? w : vorgabe;
+}
+/** Beliebige Teilangabe (altes brand-Dict oder CityStyle) -> vollständiges Stil-Dict. */
+function stilAus(quelle) {
+  const q = quelle && typeof quelle === 'object' ? quelle : {};
+  const hol = (...keys) => { for (const k of keys) { const v = q[k]; if (v !== null && v !== undefined && v !== '') return v; } return null; };
+  const primary = hol('primary', 'accent') || STIL_STANDARD.primary;
+  const dark = hol('dark', 'text') || STIL_STANDARD.dark;
+  const light = hol('light', 'bg') || STIL_STANDARD.light;
+  const headline = String(hol('headline', 'font_headline', 'font') || STIL_STANDARD.headline);
+  const body = String(hol('body', 'font_body') || headline);
+  return {
+    primary: primary, secondary: hol('secondary') || abdunkeln(primary, 0.62),
+    accent: hol('accent') || primary, dark: dark, light: light,
+    headline: headline, body: body,
+    schreibweise: wahl(hol('schreibweise'), SCHREIBWEISEN, STIL_STANDARD.schreibweise),
+    kasten: wahl(hol('kasten'), KASTEN_ARTEN, STIL_STANDARD.kasten),
+    radius: clamp(Math.round(num(hol('radius'), STIL_STANDARD.radius)), 0, 40),
+    kontur: wahl(hol('kontur'), KONTUR_ARTEN, STIL_STANDARD.kontur),
+    schatten: hol('schatten') == null ? STIL_STANDARD.schatten : !!hol('schatten'),
+    wasserzeichen_ecke: wahl(hol('wasserzeichen_ecke'), WASSERZEICHEN_ECKEN, STIL_STANDARD.wasserzeichen_ecke),
+    paket: String(hol('paket') || ''),
+    // Altbestand: brand:bg | brand:text | brand:accent laufen unverändert weiter
+    bg: light, text: dark, font: headline,
+  };
+}
+
+// ── Rollen ────────────────────────────────────────────────────────────────────
+// Spiegel von memeos_render.ROLLEN. Der Server schickt die Tabelle im GET mit
+// (S.rollen); diese Fassung trägt, solange er das noch nicht tut.
+const ROLLEN_FALLBACK = {
+  ueberschrift: {beschreibung: 'Die Zeile, die den Beitrag ansagt – ruhig, lesbar, im Kasten des Stils.',
+    schrift: 'headline', farbe: 'stil:auto', max: 0.075, min: 0.035, gross: 'stil', kasten: 'stil', kontur: 'stil', schatten: false, opacity: null},
+  pointe: {beschreibung: 'Der Satz, auf den es ankommt – am größten, in der Akzentfarbe, immer mit dunkler Kontur.',
+    schrift: 'headline', farbe: 'stil:accent', max: 0.095, min: 0.045, gross: false, kasten: false, kontur: 'dunkel', schatten: 'stil', opacity: null},
+  unterzeile: {beschreibung: 'Erklärt die Überschrift in einem halben Satz – kleiner, ohne Kasten.',
+    schrift: 'body', farbe: 'stil:auto', max: 0.042, min: 0.024, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
+  ort: {beschreibung: 'Der Stadt- oder Ortsname – in der Hauptfarbe und immer in Großbuchstaben.',
+    schrift: 'headline', farbe: 'stil:primary', max: 0.085, min: 0.040, gross: true, kasten: false, kontur: false, schatten: false, opacity: null},
+  klein: {beschreibung: 'Beiwerk wie Quelle, Datum oder Hinweis – klein und zurückhaltend.',
+    schrift: 'body', farbe: 'stil:dark', max: 0.026, min: 0.018, gross: false, kasten: false, kontur: false, schatten: false, opacity: 0.85},
+  wasserzeichen: {beschreibung: 'Der eigene Seitenname in der Ecke – da, aber nie im Weg.',
+    schrift: 'body', farbe: 'stil:light', max: 0.024, min: 0.016, gross: false, kasten: false, kontur: false, schatten: false, opacity: 0.7},
+  frei: {beschreibung: 'Keine Vorgaben – jeder Wert wird am Element selbst gesetzt.',
+    schrift: null, farbe: null, max: null, min: null, gross: false, kasten: false, kontur: false, schatten: false, opacity: null},
+};
+const ROLLEN_LABEL = {ueberschrift: 'Überschrift', pointe: 'Pointe', unterzeile: 'Unterzeile', ort: 'Ort',
+  klein: 'Kleingedrucktes', wasserzeichen: 'Wasserzeichen', frei: 'Frei (keine Vorgaben)'};
+/** Welche Element-Felder eine Rolle überhaupt belegen kann. */
+const ROLLEN_FELDER = ['font', 'color', 'max_size', 'min_size', 'uppercase', 'box', 'stroke', 'stroke_width', 'shadow', 'opacity'];
+
+function rolleVon(el) { return String((el && el.role) || '').trim().toLowerCase(); }
+function kastenVorgabe(stil) {
+  if (stil.kasten === 'voll') return {fill: stil.light, radius: stil.radius, per_line: true};
+  if (stil.kasten === 'weich') return {fill: mitAlpha(stil.light, 0.78), radius: Math.max(num(stil.radius, 0), 18), per_line: true};
+  if (stil.kasten === 'umriss') return {stroke: stil.primary, stroke_width: 3, radius: stil.radius, per_line: false};
+  return null;
+}
+/** Die Vorgaben einer Rolle als Element-Felder (nur gesetzte Schlüssel). */
+function rollenVorgaben(name, stilQuelle, canvasHoehe, tabelle) {
+  const r = (tabelle || ROLLEN_FALLBACK)[name] || {};
+  const stil = stilAus(stilQuelle);
+  const h = Math.max(1, num(canvasHoehe, 1350));
+  const out = {};
+  if (r.schrift) out.font = 'stil:' + r.schrift;
+  if (r.farbe) out.color = r.farbe;
+  if (r.max) out.max_size = Math.max(1, Math.round(num(r.max, 0) * h));
+  if (r.min) out.min_size = Math.max(1, Math.round(num(r.min, 0) * h));
+  if (r.gross === true) out.uppercase = true;
+  else if (r.gross === 'stil') out.uppercase = stil.schreibweise === 'gross';
+  if (r.kasten === 'stil') { const k = kastenVorgabe(stil); if (k) out.box = k; }
+  const strich = Math.max(2, Math.round(0.005 * h));
+  if (r.kontur === 'dunkel') { out.stroke = stil.dark; out.stroke_width = strich; }
+  else if (r.kontur === 'stil') {
+    if (stil.kontur === 'dunkel') { out.stroke = stil.dark; out.stroke_width = strich; }
+    else if (stil.kontur === 'palette') { out.stroke = stil.secondary; out.stroke_width = strich; }
+  }
+  if (r.schatten === true || (r.schatten === 'stil' && stil.schatten)) {
+    const v = Math.max(1, Math.round(0.004 * h));
+    out.shadow = {dx: v, dy: v, blur: Math.max(1, Math.round(0.006 * h)), color: mitAlpha(stil.dark, 0.55)};
+  }
+  if (r.opacity != null) out.opacity = r.opacity;
+  return out;
+}
+/**
+ * Element mit eingesetzten Rollenvorgaben – dieselbe Regel wie im Renderer:
+ * ein Wert der Rolle greift nur, wenn das Element den Schlüssel gar nicht hat
+ * oder er null bzw. leer ist. Ohne Rolle kommt dasselbe Objekt zurück.
+ */
+function mitRolle(el, stilQuelle, canvasHoehe, tabelle) {
+  if (!el || typeof el !== 'object') return el;
+  const name = rolleVon(el);
+  const tab = tabelle || ROLLEN_FALLBACK;
+  if (!name || name === 'frei' || !tab[name]) return el;
+  const v = rollenVorgaben(name, stilQuelle, canvasHoehe, tab);
+  const neu = Object.assign({}, el);
+  const hat = k => Object.prototype.hasOwnProperty.call(neu, k);
+  for (const k of Object.keys(v)) if (!hat(k) || neu[k] === null || neu[k] === '') neu[k] = v[k];
+  return neu;
+}
+
+// ── Bausteine ─────────────────────────────────────────────────────────────────
+// Fertige Gruppen mit Rollen und Prozentmaßen. bausteinElemente() rechnet sie auf
+// die aktuelle Leinwand um; die Anmutung kommt danach aus dem Stil der Stadt.
+const BAUSTEINE = [
+  {key: 'ueberschrift_oben', name: 'Überschrift oben', info: 'Eine Zeile, die den Beitrag ansagt.',
+    els: [{type: 'text', role: 'ueberschrift', varname: 'headline', fallback: 'Überschrift der Stadt',
+           xp: 0.06, yp: 0.06, wp: 0.88, hp: 0.16, align: 'center', valign: 'middle'}]},
+  {key: 'pointe_unten', name: 'Pointe unten', info: 'Der Satz, auf den es ankommt.',
+    els: [{type: 'text', role: 'pointe', varname: 'pointe', fallback: 'Und dann kam die Pointe',
+           xp: 0.06, yp: 0.70, wp: 0.88, hp: 0.22, align: 'center', valign: 'middle'}]},
+  {key: 'ort_zeile', name: 'Ort-Zeile', info: 'Der Stadtname, groß und in der Hauptfarbe.',
+    els: [{type: 'text', role: 'ort', varname: 'city_name', fallback: 'Stadt',
+           xp: 0.06, yp: 0.05, wp: 0.6, hp: 0.10, align: 'left', valign: 'middle'}]},
+  {key: 'wasserzeichen', name: 'Wasserzeichen', info: 'Der eigene Seitenname aus city_handle, in der Ecke des Stils.',
+    els: [{type: 'text', role: 'wasserzeichen', varname: 'city_handle', fallback: '@stadtseite',
+           ecke: true, wp: 0.44, hp: 0.05}]},
+  {key: 'balken_untertitel', name: 'Balken-Untertitel', info: 'Farbiger Balken mit heller Unterzeile darauf.',
+    gruppe: true,
+    els: [{type: 'shape', shape: 'rect', fill: 'stil:primary', xp: 0, yp: 0.78, wp: 1, hp: 0.12},
+          {type: 'text', role: 'unterzeile', color: 'stil:light', varname: 'unterzeile', fallback: 'Kurz erklärt, worum es geht',
+           xp: 0.05, yp: 0.79, wp: 0.9, hp: 0.10, align: 'center', valign: 'middle'}]},
+  {key: 'dreizeiler', name: 'Dreizeiler', info: 'Überschrift, Unterzeile und Pointe untereinander.',
+    gruppe: true,
+    els: [{type: 'text', role: 'ueberschrift', varname: 'headline', fallback: 'Überschrift der Stadt',
+           xp: 0.06, yp: 0.08, wp: 0.88, hp: 0.15, align: 'center', valign: 'middle'},
+          {type: 'text', role: 'unterzeile', varname: 'unterzeile', fallback: 'Kurz erklärt, worum es geht',
+           xp: 0.08, yp: 0.25, wp: 0.84, hp: 0.09, align: 'center', valign: 'middle'},
+          {type: 'text', role: 'pointe', varname: 'pointe', fallback: 'Und dann kam die Pointe',
+           xp: 0.06, yp: 0.70, wp: 0.88, hp: 0.20, align: 'center', valign: 'middle'}]},
+];
+/** Ecke des Wasserzeichens -> Position in Prozent der Leinwand. */
+function eckeProzent(ecke, wp, hp) {
+  const rand = 0.04;
+  if (ecke === 'unten_links') return {xp: rand, yp: 1 - rand - hp, align: 'left'};
+  if (ecke === 'oben_rechts') return {xp: 1 - rand - wp, yp: rand, align: 'right'};
+  return {xp: 1 - rand - wp, yp: 1 - rand - hp, align: 'right'};   // unten_rechts
+}
+/** Baustein -> fertige Elementliste in Leinwandpixeln (ohne id, die vergibt der Editor). */
+function bausteinElemente(def, canvas, stil) {
+  const W = Math.max(1, num(canvas && canvas.width, 1080));
+  const H = Math.max(1, num(canvas && canvas.height, 1350));
+  const s = stilAus(stil);
+  return (def.els || []).map(spec => {
+    let xp = num(spec.xp, 0), yp = num(spec.yp, 0);
+    const wp = num(spec.wp, 0.5), hp = num(spec.hp, 0.1);
+    let align = spec.align || 'left';
+    if (spec.ecke) {
+      if (s.wasserzeichen_ecke === 'keins') return null;
+      const pos = eckeProzent(s.wasserzeichen_ecke, wp, hp);
+      xp = pos.xp; yp = pos.yp; align = pos.align;
+    }
+    const el = {type: spec.type || 'text', x: Math.round(xp * W), y: Math.round(yp * H),
+      width: Math.round(wp * W), height: Math.round(hp * H)};
+    if (spec.role) el.role = spec.role;
+    if (spec.varname) el.var = spec.varname;
+    if (spec.fallback) el.fallback = spec.fallback;
+    if (spec.text) el.text = spec.text;
+    if (spec.shape) el.shape = spec.shape;
+    if (spec.fill) el.fill = spec.fill;
+    if (spec.color) el.color = spec.color;
+    if (spec.type !== 'shape') { el.align = align; el.valign = spec.valign || 'middle'; }
+    return el;
+  }).filter(Boolean);
+}
+
 // ── Farben und Verläufe ───────────────────────────────────────────────────────
 function isGradient(v) { return !!v && typeof v === 'object' && (v.type === 'linear' || v.type === 'radial') && Array.isArray(v.stops); }
 function isBrandRef(v) { return typeof v === 'string' && v.indexOf('brand:') === 0; }
 function brandKey(v) { return isBrandRef(v) ? String(v).slice(6) : null; }
-/** brand:… auflösen, Hex durchreichen. */
+function isStilRef(v) { return typeof v === 'string' && String(v).slice(0, 5).toLowerCase() === 'stil:'; }
+function stilKey(v) { return isStilRef(v) ? String(v).slice(5).trim().toLowerCase() : null; }
+/** brand:… und stil:… auflösen, Hex durchreichen.
+    'stil:auto' kennt hier keinen Untergrund – der Aufrufer legt ihn vorher als
+    brand.__auto ab (die Bühne tut das je Element, siehe autoFuer). */
 function resolveColor(c, brand, fallback) {
   // fallback darf ausdrücklich null sein ("keine Farbe") – deshalb auf undefined prüfen
   if (c == null || c === '') return fallback === undefined ? 'transparent' : fallback;
   if (isGradient(c)) return fallback === undefined ? 'transparent' : fallback;
   const s = String(c);
   if (isBrandRef(s)) { const k = brandKey(s); return (brand && brand[k]) || fallback || '#000000'; }
+  if (isStilRef(s)) {
+    const k = stilKey(s);
+    if (k === 'auto') return (brand && brand.__auto) || '#ffffff';
+    return (brand && brand[k]) || STIL_STANDARD[k] || fallback || '#000000';
+  }
   return s;
 }
 /** Winkelkonvention: 0° = von links nach rechts, gegen den Uhrzeigersinn steigend. */
@@ -657,8 +957,17 @@ function colorSlots(el) {
   return out;
 }
 function paintUsesBrand(v) {
-  if (isBrandRef(v)) return true;
-  if (isGradient(v)) return (v.stops || []).some(s => isBrandRef(s.color));
+  if (isBrandRef(v) || isStilRef(v)) return true;
+  if (isGradient(v)) return (v.stops || []).some(s => isBrandRef(s.color) || isStilRef(s.color));
+  return false;
+}
+function istAutoToken(v) { return isStilRef(v) && stilKey(v) === 'auto'; }
+/** Nutzt das Element irgendwo 'stil:auto'? Nur dann lohnt die Untergrundrechnung. */
+function brauchtAuto(el) {
+  for (const slot of colorSlots(el)) {
+    if (istAutoToken(slot.val)) return true;
+    if (isGradient(slot.val) && (slot.val.stops || []).some(s => istAutoToken(s.color))) return true;
+  }
   return false;
 }
 /**
@@ -674,6 +983,9 @@ function cityBinding(el) {
     if (vars.length && reasons.indexOf('Variable') < 0) reasons.push('Variable im Text');
   }
   for (const slot of colorSlots(el)) if (paintUsesBrand(slot.val)) { reasons.push('Stadtfarbe'); break; }
+  if (isStilRef(el.font)) reasons.push('Stadt-Schrift');
+  const rolle = rolleVon(el);
+  if (rolle && rolle !== 'frei') reasons.push('Rolle ' + (ROLLEN_LABEL[rolle] || rolle));
   if (el.only_if && String(el.only_if).trim()) { vars.push(String(el.only_if).trim()); reasons.push('nur wenn ' + el.only_if); }
   if (el.skip_if && String(el.skip_if).trim()) { vars.push(String(el.skip_if).trim()); reasons.push('nicht wenn ' + el.skip_if); }
   const uniq = Array.from(new Set(vars));
@@ -792,7 +1104,11 @@ if (typeof module !== 'undefined' && module.exports) {
     clamp, esc, num, isNum, deg2rad, isShape, shapeOf, rectOf, aabbOf, groupBounds, rectsOverlap, rotatePoint,
     snapAngle, normAngle, computeSnap, alignRects, distributeRects, moveGroup, isGradient, isBrandRef, brandKey,
     resolveColor, gradientCss, paintCss, serializeGradient, defaultGradient, colorSlots, paintUsesBrand,
-    cityBinding, isCityVar, collectVars, paddingOf, textValue, fitTextLines, quickErrors, layerName, normalizeElement};
+    cityBinding, isCityVar, collectVars, paddingOf, textValue, fitTextLines, quickErrors, layerName, normalizeElement,
+    STIL_STANDARD, STIL_FARB_TOKEN, SCHREIBWEISEN, KASTEN_ARTEN, KONTUR_ARTEN, WASSERZEICHEN_ECKEN,
+    ROLLEN_FALLBACK, ROLLEN_LABEL, ROLLEN_FELDER, BAUSTEINE,
+    isStilRef, stilKey, istAutoToken, brauchtAuto, hexRgb, rgbHex, leuchtdichte, kontrastVon, autoFarbeAuf, abdunkeln, mitAlpha, wahl,
+    stilAus, rolleVon, kastenVorgabe, rollenVorgaben, mitRolle, eckeProzent, bausteinElemente};
 }
 </script>
 
@@ -819,11 +1135,19 @@ const FALLBACK_CANVAS_PRESETS = [
 const S = {
   template: null, config: {elements: []}, canvas: {width: 1080, height: 1350}, imageSize: null,
   bgUrl: null, bgVisible: true, fonts: [], variables: [], cities: [],
-  brand: {bg: '#ffffff', text: '#000000', accent: '#3b82f6', font: 'Arial'},
+  // brand trägt seit v3.1 das ganze Stil-Dict: brand:bg|text|accent und stil:primary … stil:light
+  brand: stilAus({bg: '#ffffff', text: '#000000', accent: '#3b82f6', font: 'Arial'}),
   cityAssets: [], assets: [], presets: [], canvasPresets: FALLBACK_CANVAS_PRESETS.slice(),
   aiAvailable: false, sel: [], zoom: 'fit', scale: 1, saved: '', saving: false,
   undo: [], redo: [], propsKey: '', focusSnap: false, arrowSnapAt: 0,
   snapOn: true, cityOnly: false, gridSel: [], aiValues: {}, gridMissing: {}, gridMax: 12,
+  // Stadt-Stil, Rollen, Stufen, Prüfung
+  rollen: null,                 // Tabelle vom Server, sonst ROLLEN_FALLBACK
+  stil: stilAus(null),          // Stil der Vorschau-Stadt (vollständig)
+  stilTokens: null,             // Farbtoken vom Server, sonst STIL_FARB_TOKEN
+  stilStaedte: {},              // {city_id: Stil-Dict} aus /api/stil/staedte
+  stufe: 'einfach',             // 'einfach' | 'alles'
+  safeOn: true, befunde: [],
 };
 const measureCtx = document.createElement('canvas').getContext('2d');
 const registeredFonts = new Set();
@@ -872,6 +1196,11 @@ function fontEntry(key) {
       || null;
 }
 function fontCss(key) {
+  // stil:headline / stil:body kommen aus dem Schriftpaar der Stadt
+  if (isStilRef(key)) {
+    const k = stilKey(key);
+    key = (k === 'body' ? (S.brand.body || S.brand.font) : (S.brand.headline || S.brand.font));
+  }
   if (key === 'brand') return `"${S.brand.font}", "mf_anton", Impact, sans-serif`;
   const f = fontEntry(key) || S.fonts.find(x => x.key === 'anton') || S.fonts[0];
   // Der Schlüssel stammt aus einem hochgeladenen Dateinamen und landet in einer
@@ -935,7 +1264,19 @@ function stageValues() {
   const ai = city ? (S.aiValues[city.id] || null) : null;
   if (ai) for (const k of Object.keys(ai)) if (ai[k] != null && String(ai[k]).trim()) vals[k] = String(ai[k]);
   vals.city_name = city ? city.name : '[city_name]';
+  vals.city_state = city && city.state ? city.state : '[city_state]';
+  vals.city_handle = stadtHandle(city);
   return vals;
+}
+/**
+ * Instagram-Name der Stadt mit @ davor. Ohne hinterlegten Namen bleibt der Platzhalter
+ * stehen – erfunden wird hier nichts, der Server setzt in dem Fall auch nichts ein.
+ */
+function stadtHandle(city) {
+  const roh = String((city && (city.instagram_handle || city.handle)) || '').trim().replace(/\/+$/, '');
+  if (!roh) return '[city_handle]';
+  const name = roh.indexOf('/') >= 0 ? roh.split('/').pop() : roh;
+  return '@' + name.replace(/^@/, '');
 }
 /** Wird das Element in der Vorschau-Stadt überhaupt gezeichnet? */
 function conditionSkips(el, vals) {
@@ -988,9 +1329,11 @@ function commit(opts) {
   else syncPropsGeometry();
   renderChips();
   updateSaveState();
+  if (S.befunde.length) befundeVeralten();
   schedulePreview();
 }
 function renderAll() {
+  renderStilBar();
   renderLayers(); renderCityBar(); renderStage(); renderProps(true); renderChips();
   renderCanvasBgField(); renderCanvasPresets(); renderAssets(); renderSelInfo();
   updateSaveState(); schedulePreview();
@@ -1012,7 +1355,12 @@ async function load() {
   if (bgKeep !== undefined) S.config.canvas.background = bgKeep;
   S.bgUrl = d.background_url;
   S.fonts = d.fonts || []; S.variables = d.variables || []; S.cities = d.cities || [];
-  S.brand = d.brand_example || S.brand; S.aiAvailable = !!d.ai_available;
+  S.aiAvailable = !!d.ai_available;
+  // Rollen und Stadt-Stil: was der Server schickt, sonst die eingebaute Fassung
+  S.rollen = normRollen(d.rollen);
+  S.stilTokens = normStilTokens(d.stil_tokens);
+  S.stil = stilAus(d.stil || d.brand_example || S.brand);
+  S.brand = Object.assign({}, d.brand_example || {}, S.stil);
   S.cityAssets = normCityAssets(d.city_assets);
   S.assets = Array.isArray(d.assets) ? d.assets : [];
   S.presets = Array.isArray(d.presets) ? d.presets : [];
@@ -1020,9 +1368,16 @@ async function load() {
   $('#tpl-name').value = d.template.name || '';
   $('#tpl-series').value = d.template.series || '';
   $('#tpl-series-pos').value = d.template.series_position || '';
-  const sel = $('#pv-city'); sel.innerHTML = S.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  if (!S.cities.length) sel.innerHTML = '<option value="">Keine Stadt</option>';
+  const stadtOpts = S.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+    || '<option value="">Keine Stadt</option>';
+  const sel = $('#pv-city'); sel.innerHTML = stadtOpts;
+  $('#stage-city').innerHTML = stadtOpts;
   S.gridSel = S.cities.slice(0, 6).map(c => c.id);
+  // city_handle und city_state gibt es auch dann zur Auswahl, wenn der Server sie noch nicht führt
+  for (const zusatz of [{key: 'city_handle', label: 'Instagram-Name der Stadt', kind: 'city'},
+                        {key: 'city_state', label: 'Bundesland', kind: 'city'}]) {
+    if (!S.variables.some(v => v.key === zusatz.key)) S.variables.push(zusatz);
+  }
   if (d.city_count) S.cityCount = d.city_count;
   $('#btn-ai').title = S.aiAvailable ? 'Echte Werte per KI holen und rendern' : 'Kein Anthropic-Key hinterlegt';
   $('#cv-w').value = S.canvas.width; $('#cv-h').value = S.canvas.height;
@@ -1031,14 +1386,20 @@ async function load() {
     const a = localStorage.getItem('studio_auto_preview'); if (a !== null) $('#pv-auto').checked = a === '1';
     const z = localStorage.getItem('studio_zoom'); if (z) { S.zoom = z; $('#zoom').value = z; }
     const sn = localStorage.getItem('studio_snap'); if (sn !== null) S.snapOn = sn === '1';
+    const st = localStorage.getItem('studio_stufe'); if (st === 'einfach' || st === 'alles') S.stufe = st;
+    const sf = localStorage.getItem('studio_safe'); if (sf !== null) S.safeOn = sf === '1';
   } catch (_) {}
   $('#btn-snap').classList.toggle('on', S.snapOn);
   $('#btn-snap').textContent = 'Fangen ' + (S.snapOn ? '●' : '○');
-  renderAll(); renderGridCities();
-  registerFonts();
+  $('#btn-safe').classList.toggle('on', S.safeOn);
+  $('#btn-safe').textContent = 'Sicherheitsbereich ' + (S.safeOn ? '●' : '○');
+  zeichneStufeSchalter();
+  renderAll(); renderGridCities(); renderBausteine();
+  registerFonts(); bgProbeLaden();
   // Bibliothek und Stile nachladen, falls der GET sie (noch) nicht mitliefert
   if (!d.assets) loadAssets();
   if (!d.presets) loadPresets();
+  if (!d.stil || S.cities.length > 1) loadStilStaedte();
   if (!S.bgUrl && !(S.config.canvas && S.config.canvas.background)) {
     toast('Leere Vorlage: unter „Hintergrund“ eine Farbe wählen oder ein Bild hochladen.', 'info');
   }
@@ -1054,6 +1415,150 @@ async function registerFonts() {
     } catch (e) { /* Bühne nutzt dann die Ersatzschrift */ }
   }
   if (changed) renderStage();
+}
+
+// ── Stadt-Stil: laden, umschalten, anzeigen ───────────────────────────────────
+/**
+ * Rollentabelle des Servers auf {name: {…}} bringen. Der Server schickt Schlüssel,
+ * Name und Beschreibung; die Rechengrößen (Schriftanteile, Kasten, Kontur) stehen in
+ * ROLLEN_FALLBACK und werden untergelegt – so bleibt die Bühne nah am Renderer.
+ */
+function normRollen(roh) {
+  if (!roh) return null;
+  const out = {};
+  const dazu = (k, r) => {
+    const key = String(k || '').trim().toLowerCase();
+    if (!key) return;
+    out[key] = Object.assign({}, ROLLEN_FALLBACK[key] || {}, r || {});
+  };
+  if (Array.isArray(roh)) roh.forEach(r => dazu(r && (r.key || r.name || r.rolle), r));
+  else if (typeof roh === 'object') Object.keys(roh).forEach(k => dazu(k, roh[k]));
+  return Object.keys(out).length ? out : null;
+}
+/** Name einer Rolle für die Auswahl: was der Server sagt, sonst die eingebaute Bezeichnung. */
+function rollenName(key) {
+  const r = rollenTabelle()[key];
+  return String((r && r.label) || ROLLEN_LABEL[key] || key);
+}
+/** Farbtoken des Servers auf [{k, l}] bringen; leer -> STIL_FARB_TOKEN. */
+function normStilTokens(roh) {
+  if (!Array.isArray(roh) || !roh.length) return null;
+  // 'Stil: Hauptfarbe' -> 'Hauptfarbe'; alles ab der Klammer ist Erklärung, nicht Beschriftung
+  const kurz = s => String(s || '').replace(/^stil:\s*/i, '').split('(')[0].trim();
+  const out = roh.map(t => {
+    if (typeof t === 'string') { const k = stilKey(t) || t; const f = STIL_FARB_TOKEN.find(x => x.k === k); return {k: k, l: (f ? f.l : k)}; }
+    const k = String((t && (t.stil_key || t.key || t.k || t.token)) || '').replace(/^stil:/i, '');
+    if (!k) return null;
+    const f = STIL_FARB_TOKEN.find(x => x.k === k);
+    return {k: k, l: kurz(t.label || t.l) || (f ? f.l : k)};
+  }).filter(Boolean);
+  return out.length ? out : null;
+}
+function stilTokenListe() { return S.stilTokens || STIL_FARB_TOKEN; }
+function rollenTabelle() { return S.rollen || ROLLEN_FALLBACK; }
+/** Der Stil einer Stadt: eigene Zeile, sonst der Stil der Vorlage. */
+function stilFuerStadt(city) {
+  if (city && S.stilStaedte[city.id]) return S.stilStaedte[city.id];
+  return S.stil;
+}
+async function loadStilStaedte() {
+  let d;
+  try { d = await api('GET', '/api/stil/staedte'); }
+  catch (e) { return; }                       // Route gibt es evtl. noch nicht – ein Stil für alle
+  const liste = Array.isArray(d) ? d : (d.staedte || d.cities || d.stile || []);
+  const map = {};
+  for (const row of (Array.isArray(liste) ? liste : [])) {
+    if (!row || typeof row !== 'object') continue;
+    const cid = row.city_id != null ? row.city_id : (row.stadt_id != null ? row.stadt_id : row.id);
+    const quelle = row.stil || row.style || (row.primary || row.font_headline ? row : null);
+    if (cid == null || !quelle) continue;
+    map[cid] = stilAus(quelle);
+  }
+  if (!Object.keys(map).length) return;
+  S.stilStaedte = map;
+  anwendenStadtStil();
+}
+/** Bühne und Farbfelder auf den Stil der gewählten Vorschau-Stadt umstellen. */
+function anwendenStadtStil() {
+  const city = currentCity();
+  const stil = stilFuerStadt(city);
+  S.brand = Object.assign({}, S.brand, stil);
+  delete S.brand.__auto;
+  renderStilBar(); renderStage(); renderCityBar();
+  S.propsKey = ''; renderProps(true); renderCanvasBgField();
+}
+function renderStilBar() {
+  const box = $('#stil-swatches'); if (!box) return;
+  const s = S.brand;
+  const namen = {primary: 'Hauptfarbe', secondary: 'Zweitfarbe', accent: 'Akzent', dark: 'Dunkel', light: 'Hell'};
+  const felder = Object.keys(namen).map(k =>
+    `<span class="sw" style="background:${esc(s[k] || '#000')}" title="${esc(namen[k])}: ${esc(s[k] || '')} (stil:${k})"></span>`).join('');
+  const schrift = esc((s.headline || '') + (s.body && s.body !== s.headline ? ' / ' + s.body : ''));
+  box.innerHTML = felder + `<span class="fnt" title="Auszeichnungs- und Grundschrift der Stadt">${schrift}</span>`;
+  const sel = $('#stage-city'); const city = currentCity();
+  if (sel && city && String(sel.value) !== String(city.id)) sel.value = String(city.id);
+}
+
+// ── Untergrund für stil:auto ──────────────────────────────────────────────────
+// Der Renderer nimmt für 'stil:auto' die Kastenfarbe, sonst den Bildmittelwert im
+// Bereich des Elements. Die Bühne bildet das mit einer kleinen Kopie des Bildes nach.
+let bgProbe = null;
+function bgProbeLaden() {
+  bgProbe = null;
+  if (!S.bgUrl) return;
+  const im = new Image();
+  im.onload = () => {
+    try {
+      const W = 96, H = Math.max(1, Math.round(96 * S.canvas.height / S.canvas.width));
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      const f = Math.max(W / im.width, H / im.height);      // wie ImageOps.fit: füllen, mittig
+      const dw = im.width * f, dh = im.height * f;
+      ctx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.getImageData(0, 0, 1, 1);                          // früh scheitern, wenn gesperrt
+      bgProbe = {ctx: ctx, w: W, h: H};
+      renderStage();
+    } catch (_) { bgProbe = null; }
+  };
+  im.onerror = () => { bgProbe = null; };
+  im.src = S.bgUrl;
+}
+function elementHoehe(el) {
+  if (isNum(el.height) && num(el.height, 0) > 0) return num(el.height, 0);
+  const h = num(el.max_size, 0) * (num(el.line_height, 1.15) || 1.15);
+  return h > 0 ? h : S.canvas.height * 0.08;
+}
+function bgMittel(el) {
+  if (!bgProbe || !S.bgVisible) return null;
+  try {
+    const px = v => clamp(Math.floor(v), 0, bgProbe.w - 1);
+    const py = v => clamp(Math.floor(v), 0, bgProbe.h - 1);
+    const x0 = px(num(el.x, 0) / S.canvas.width * bgProbe.w);
+    const y0 = py(num(el.y, 0) / S.canvas.height * bgProbe.h);
+    const x1 = px((num(el.x, 0) + Math.max(1, num(el.width, 1))) / S.canvas.width * bgProbe.w);
+    const y1 = py((num(el.y, 0) + Math.max(1, elementHoehe(el))) / S.canvas.height * bgProbe.h);
+    const w = Math.max(1, x1 - x0 + 1), h = Math.max(1, y1 - y0 + 1);
+    const d = bgProbe.ctx.getImageData(x0, y0, w, h).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    if (!n) return null;
+    return rgbHex([r / n, g / n, b / n]);
+  } catch (_) { return null; }
+}
+/** Schwarz oder Weiß für 'stil:auto' an der Stelle dieses Elements. */
+function autoFuer(el) {
+  let unter = null;
+  const box = el && el.box && typeof el.box === 'object' ? el.box : null;
+  if (box && box.fill && !isGradient(box.fill) && !(isStilRef(box.fill) && stilKey(box.fill) === 'auto')) {
+    unter = resolveColor(box.fill, S.brand, null);
+  }
+  if (!unter) unter = bgMittel(el || {});
+  if (!unter) {
+    const cv = S.config.canvas ? S.config.canvas.background : null;
+    if (cv && !isGradient(cv)) unter = resolveColor(cv, S.brand, null);
+    else if (cv && isGradient(cv) && cv.stops && cv.stops.length) unter = resolveColor(cv.stops[0].color, S.brand, null);
+  }
+  return autoFarbeAuf(unter || '#ffffff');
 }
 
 // ── Auswahl ───────────────────────────────────────────────────────────────────
@@ -1294,13 +1799,17 @@ function renderStage() {
   if (S.bgUrl && S.bgVisible) parts.push(`<img class="stage-bg" src="${esc(S.bgUrl)}" alt="">`);
   else if (!cvBg) parts.push(`<div class="stage-nobg">Kein Hintergrund<br><span class="small">„Hintergrund“ in der Werkzeugleiste: Bild oder Farbe</span></div>`);
   const vals = stageValues();
-  els().forEach(el => {
-    const isSel = S.sel.indexOf(el.id) >= 0;
-    if (el.hidden && !isSel) return;
+  els().forEach(roh => {
+    const isSel = S.sel.indexOf(roh.id) >= 0;
+    if (roh.hidden && !isSel) return;
+    // Die Rolle liefert Schrift, Größe, Farbe, Kasten und Kontur aus dem Stil der Stadt.
+    // Gezeichnet wird das Ergebnis, gespeichert bleibt das rohe Element.
+    const el = mitRolle(roh, S.brand, S.canvas.height, rollenTabelle());
+    if (brauchtAuto(el)) S.brand.__auto = autoFuer(el); else delete S.brand.__auto;
     const x = num(el.x, 0) * sc, y = num(el.y, 0) * sc, w = Math.max(4, num(el.width, 100) * sc);
     let h = num(el.height, 0) * sc;
     const op = el.opacity == null ? 1 : clamp(num(el.opacity, 1), 0, 1);
-    const cb = cityBinding(el);
+    const cb = cityBinding(roh);
     let inner = '';
     if (el.type === 'text') {
       inner = textInner(el, sc, vals);
@@ -1335,11 +1844,35 @@ function renderStage() {
       + ` style="left:${x}px;top:${y}px;width:${w}px;height:${Math.max(4, h)}px;opacity:${skip ? op * 0.35 : op};${rot ? `transform:rotate(${rot}deg);` : ''}">`
       + `<div class="inner" style="position:absolute;inset:0;${innerTrans}${blend}">${inner}</div>${handles}${tailHandle}</div>`);
   });
+  delete S.brand.__auto;
+  parts.push(sicherheitsBereiche(sc));
   stage.innerHTML = parts.join('');
   const skipped = els().filter(e => !e.hidden && conditionSkips(e, vals)).length;
   $('#stage-info').textContent = `${S.canvas.width} × ${S.canvas.height} px · ${Math.round(sc * 100)} %`
     + (S.imageSize && (S.imageSize.width !== S.canvas.width || S.imageSize.height !== S.canvas.height) ? ` · Bild ${S.imageSize.width} × ${S.imageSize.height} wird eingepasst` : '')
     + (skipped ? ` · ${skipped} Element(e) fallen in dieser Stadt weg` : '');
+}
+/**
+ * Was Instagram vom Bild wegnimmt: Bei 4:5 zeigt das Profilraster nur den mittigen
+ * 1:1-Ausschnitt, bei 9:16 liegen oben und unten die Bedienelemente der Story darüber.
+ */
+function sicherheitsBereiche(sc) {
+  if (!S.safeOn) return '';
+  const W = S.canvas.width, H = S.canvas.height;
+  if (!W || !H) return '';
+  const v = H / W;
+  const out = [];
+  if (Math.abs(v - 1.25) < 0.04) {
+    const top = (H - W) / 2;
+    out.push(`<div class="safe square" style="left:0;top:${(top * sc).toFixed(1)}px;width:${(W * sc).toFixed(1)}px;height:${(W * sc).toFixed(1)}px;">`
+      + `<span class="lbl">1:1 – nur das zeigt das Profilraster</span></div>`);
+  } else if (v > 1.6) {
+    out.push(`<div class="safe strip" style="left:0;top:0;width:100%;height:${(H * 0.13 * sc).toFixed(1)}px;">`
+      + `<span class="lbl">Story: hier liegt der Kopf der App</span></div>`);
+    out.push(`<div class="safe strip" style="left:0;bottom:0;width:100%;height:${(H * 0.20 * sc).toFixed(1)}px;">`
+      + `<span class="lbl">Story: hier liegen die Bedienelemente</span></div>`);
+  }
+  return out.join('');
 }
 function positionElementDom(el) {
   const d = $(`#stage .el[data-id="${CSS.escape(el.id)}"]`); if (!d) return;
@@ -1385,6 +1918,32 @@ function addElement(type, extra) {
 }
 $$('[data-add]').forEach(b => b.addEventListener('click', () => addElement(b.dataset.add)));
 $$('[data-add-shape]').forEach(b => b.addEventListener('click', () => { closeDropdowns(); addElement('shape', {shape: b.dataset.addShape}); }));
+
+// ── Bausteine ─────────────────────────────────────────────────────────────────
+function renderBausteine() {
+  $('#baustein-list').innerHTML = BAUSTEINE.map(b =>
+    `<button type="button" class="baustein-btn" data-baustein="${esc(b.key)}" title="${esc(b.info)}">${esc(b.name)}<span class="bi">${esc(b.info)}</span></button>`).join('');
+}
+function bausteinEinfuegen(key) {
+  const def = BAUSTEINE.find(b => b.key === key); if (!def) return;
+  const neu = bausteinElemente(def, S.canvas, S.brand);
+  if (!neu.length) { toast('Der Stil dieser Stadt sieht kein Wasserzeichen vor.', 'info'); return; }
+  snapshot();
+  const taken = []; const ids = [];
+  const gid = def.gruppe && neu.length > 1 ? 'g' + Date.now().toString(36) : null;
+  for (const el of neu) {
+    el.id = newId(taken); taken.push(el.id);
+    if (gid) el.group = gid;
+    if (el.var) ensureVariable(el.var);
+    els().push(el); ids.push(el.id);
+  }
+  setSelection(ids, {raw: true}); commit();
+  toast('Baustein „' + def.name + '“ eingefügt – Feinheiten kommen aus dem Stil der Stadt.', 'success');
+}
+$('#baustein-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-baustein]'); if (!b) return;
+  closeDropdowns(); bausteinEinfuegen(b.dataset.baustein);
+});
 
 function duplicateElements(ids) {
   const list = ids.map(byId).filter(Boolean);
@@ -1665,6 +2224,19 @@ $('#btn-cityonly').addEventListener('click', () => {
   $('#btn-cityonly').classList.toggle('on', S.cityOnly);
   renderStage();
 });
+$('#btn-safe').addEventListener('click', () => {
+  S.safeOn = !S.safeOn;
+  $('#btn-safe').classList.toggle('on', S.safeOn);
+  $('#btn-safe').textContent = 'Sicherheitsbereich ' + (S.safeOn ? '●' : '○');
+  try { localStorage.setItem('studio_safe', S.safeOn ? '1' : '0'); } catch (_) {}
+  renderStage();
+});
+// Die Bühne folgt der Vorschau-Stadt: eine Auswahl, zwei Anzeigen
+$('#stage-city').addEventListener('change', e => {
+  const sel = $('#pv-city');
+  if (sel.value !== e.target.value) { sel.value = e.target.value; schedulePreview(); }
+  anwendenStadtStil();
+});
 $('#btn-undo').addEventListener('click', undo);
 $('#btn-redo').addEventListener('click', redo);
 
@@ -1727,9 +2299,19 @@ function paintField(prop, value, opts) {
   opts = opts || {};
   const grad = isGradient(value);
   const v = grad ? '' : (value == null ? '' : String(value));
-  const shown = grad ? '#000000' : (isBrandRef(v) ? (S.brand[brandKey(v)] || '#000000')
+  const shown = grad ? '#000000' : ((isBrandRef(v) || isStilRef(v)) ? (resolveColor(v, S.brand, '#000000') || '#000000')
     : (/^#[0-9a-fA-F]{6}$/.test(v) ? v : (/^#[0-9a-fA-F]{3}$/.test(v) ? '#' + v.slice(1).split('').map(c => c + c).join('') : '#000000')));
   const brandBtn = (k, label, target, gi) => `<button type="button" class="btn btn-ghost btn-xs" data-brand="${k}" data-target="${esc(target)}" ${gi == null ? '' : `data-gi="${gi}"`} title="${label} der Stadt (brand:${k})"><span class="sw" style="background:${esc(S.brand[k])}"></span>${label}</button>`;
+  // Farben des Stadt-Stils: in jeder Stadt andere, hier in den Farben der Vorschau-Stadt
+  const stilBtn = (t, target, gi) => {
+    const farbe = t.k === 'auto' ? (S.brand.__auto || autoFuer(selected() || {}))
+                                 : (S.brand[t.k] || STIL_STANDARD[t.k] || '#000000');
+    const titel = t.k === 'auto' ? 'Schwarz oder Weiß – je nachdem, was auf dem Untergrund lesbar ist (stil:auto)'
+                                 : t.l + ' der Stadt (stil:' + t.k + ')';
+    return `<button type="button" class="btn btn-ghost btn-xs" data-stil="${esc(t.k)}" data-target="${esc(target)}" ${gi == null ? '' : `data-gi="${gi}"`} title="${esc(titel)}"><span class="sw" style="background:${esc(farbe)}"></span>${esc(t.l)}</button>`;
+  };
+  const stilReihe = (target, gi) => `<div class="stil-btns">${stilTokenListe().map(t => stilBtn(t, target, gi)).join('')}</div>`
+    + `<div class="stil-erklaer">Diese sechs Farben sind in jeder Stadt andere – so sieht nicht jede Seite gleich aus.</div>`;
   let inner;
   if (grad) {
     const stops = (value.stops || []).map((s, i) => {
@@ -1740,7 +2322,8 @@ function paintField(prop, value, opts) {
         <input type="text" data-gstop="color" data-pp="${esc(prop)}" data-gi="${i}" value="${esc(s.color || '')}" title="Hex oder brand:…">
         <button type="button" class="ibtn" data-gdel data-pp="${esc(prop)}" data-gi="${i}" title="Farbstopp entfernen" ${(value.stops || []).length <= 2 ? 'disabled' : ''}>✕</button>
       </div>
-      <div class="brand-btns">${brandBtn('accent', 'Akzent', prop, i)}${brandBtn('text', 'Text', prop, i)}${brandBtn('bg', 'Hintergrund', prop, i)}</div>`;
+      <div class="brand-btns">${brandBtn('accent', 'Akzent', prop, i)}${brandBtn('text', 'Text', prop, i)}${brandBtn('bg', 'Hintergrund', prop, i)}</div>
+      ${stilReihe(prop, i)}`;
     }).join('');
     inner = `<div class="grad-prev" style="background:${esc(gradientCss(value, S.brand))}"></div>
       <div class="form-row">
@@ -1760,7 +2343,8 @@ function paintField(prop, value, opts) {
         <input type="text" value="${esc(v)}" data-prop="${esc(prop)}" data-kind="color" placeholder="${opts.optional ? 'keine' : '#rrggbb'}" title="Hex-Farbe oder brand:accent / brand:text / brand:bg">
         ${opts.optional ? `<button type="button" class="ibtn" data-clear="${esc(prop)}" title="Farbe entfernen">✕</button>` : ''}
       </div>
-      <div class="brand-btns">${brandBtn('accent', 'Stadt-Akzent', prop)}${brandBtn('text', 'Stadt-Text', prop)}${brandBtn('bg', 'Stadt-Hintergrund', prop)}${isBrandRef(v) ? `<span class="badge badge-blue">${esc(v)}</span>` : ''}</div>`;
+      <div class="brand-btns">${brandBtn('accent', 'Stadt-Akzent', prop)}${brandBtn('text', 'Stadt-Text', prop)}${brandBtn('bg', 'Stadt-Hintergrund', prop)}${(isBrandRef(v) || isStilRef(v)) ? `<span class="badge badge-blue">${esc(v)}</span>` : ''}</div>
+      ${stilReihe(prop, null)}`;
   }
   return `<div class="color-wrap">
     <div class="color-tabs">
@@ -1798,22 +2382,25 @@ function condOptions(current) {
   return html;
 }
 function fontSelectOptions(current) {
-  const cur = current || 'anton'; const entry = fontEntry(cur);
-  let html = `<option value="brand" ${cur === 'brand' ? 'selected' : ''}>Stadt-Schrift (brand)</option>`;
+  const cur = current || 'anton'; const entry = isStilRef(cur) ? null : fontEntry(cur);
+  let html = `<optgroup label="Aus dem Stadt-Stil">`
+    + `<option value="stil:headline" ${cur === 'stil:headline' ? 'selected' : ''}>Auszeichnungsschrift der Stadt (${esc(S.brand.headline || '')})</option>`
+    + `<option value="stil:body" ${cur === 'stil:body' ? 'selected' : ''}>Grundschrift der Stadt (${esc(S.brand.body || '')})</option>`
+    + `<option value="brand" ${cur === 'brand' ? 'selected' : ''}>Stadt-Schrift (brand, Altbestand)</option></optgroup>`;
   const groups = {builtin: 'Eingebaut', user: 'Hochgeladen'};
   for (const src of ['builtin', 'user']) {
     const fs = S.fonts.filter(f => f.source === src); if (!fs.length) continue;
     html += `<optgroup label="${groups[src]}">${fs.map(f => `<option value="${esc(f.key)}" ${(entry ? entry.key : '') === f.key ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</optgroup>`;
   }
-  if (cur !== 'brand' && !entry) html += `<option value="${esc(cur)}" selected>${esc(cur)} (unbekannt → Anton)</option>`;
+  if (cur !== 'brand' && !isStilRef(cur) && !entry) html += `<option value="${esc(cur)}" selected>${esc(cur)} (unbekannt → Anton)</option>`;
   return html;
 }
 
 // ── Eigenschaften zeichnen ────────────────────────────────────────────────────
 function propsKeyFor() {
-  if (S.sel.length !== 1) return 'sel:' + S.sel.length;
-  const el = selected(); if (!el) return 'canvas';
-  return [el.id, el.type, shapeOf(el), el.var ? 'v' : 't', el.shadow ? 's' : '', el.box ? 'b' : '', el.crop ? 'c' : '', el.adjust ? 'a' : '',
+  if (S.sel.length !== 1) return 'sel:' + S.sel.length + '|' + S.stufe;
+  const el = selected(); if (!el) return 'canvas|' + S.stufe;
+  return [S.stufe, rolleVon(el), el.id, el.type, shapeOf(el), el.var ? 'v' : 't', el.shadow ? 's' : '', el.box ? 'b' : '', el.crop ? 'c' : '', el.adjust ? 'a' : '',
     isGradient(el.color) ? 'gc' : '', isGradient(el.fill) ? 'gf' : '', isGradient(el.stroke) ? 'gs' : '',
     el.box && isGradient(el.box.fill) ? 'gbf' : '', el.box && el.box.per_line ? 'bl' : '',
     S.fonts.length, S.presets.length, S.assets.length, S.cityAssets.length].join('|');
@@ -1840,19 +2427,23 @@ function conditionSection(el) {
     <div class="kv small">Damit fällt ein Element in Städten ohne den Wert einfach weg, statt leer dazustehen.</div>
   </div>`;
 }
+/** Inhalt eines Textelements – in beiden Stufen dieselbe Zeile. */
+function textInhaltSection(el) {
+  return `<div class="prop-section"><h4>Inhalt</h4>
+      <div class="form-group"><label>Variable oder fester Text</label><select data-varsel="var">${variableOptions(el.var, 'Fester Text (in jeder Stadt gleich)', '__text__')}</select></div>
+      ${el.var ? `<div class="kv small">Wert kommt beim Rendern aus dem Stadtwissen (<b>${esc(varLabel(el.var))}</b>).</div>`
+               : `<div class="form-group"><label>Fester Text ({variable} wird ersetzt)</label><textarea data-prop="text" data-kind="str" rows="3">${esc(el.text || '')}</textarea></div>`}
+      <div class="form-group"><label>Ersatztext, wenn der Wert fehlt (leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}"></div>
+    </div>`;
+}
 function textProps(el) {
   const boxCfg = el.box && typeof el.box === 'object' ? el.box : null;
   const pad = paddingOf(el.padding);
   const presets = S.presets.length
     ? S.presets.map(p => `<span class="preset-chip" data-preset="${esc(p.id)}" title="Stil anwenden">${esc(p.name)}<button type="button" class="ibtn" data-preset-del="${esc(p.id)}" title="Stil löschen">✕</button></span>`).join('')
     : '<span class="muted small">Noch keine Stile gespeichert.</span>';
-  return `<div class="prop-section"><h4>Inhalt</h4>
-      <div class="form-group"><label>Variable oder fester Text</label><select data-varsel="var">${variableOptions(el.var, 'Fester Text (in jeder Stadt gleich)', '__text__')}</select></div>
-      ${el.var ? `<div class="kv small">Wert kommt beim Rendern aus dem Stadtwissen (<b>${esc(varLabel(el.var))}</b>).</div>`
-               : `<div class="form-group"><label>Fester Text ({variable} wird ersetzt)</label><textarea data-prop="text" data-kind="str" rows="3">${esc(el.text || '')}</textarea></div>`}
-      <div class="form-group"><label>Ersatztext, wenn der Wert fehlt (leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}"></div>
-    </div>
-    <div class="prop-section"><h4>Schrift</h4>
+  return textInhaltSection(el)
+    + `<div class="prop-section"><h4>Schrift</h4>
       <div class="form-group"><label>Schriftart</label><select data-prop="font" data-kind="str">${fontSelectOptions(el.font)}</select></div>
       <div class="form-row">${numField('Max. Größe', 'max_size', el.max_size, 'min="4"')}${numField('Min. Größe', 'min_size', el.min_size, 'min="4"')}</div>
       <div class="form-group"><label>Umbruchverhalten</label>${segField('fit', el.fit || 'shrink', [{v: 'shrink', l: 'Verkleinern', t: 'so lange kleiner, bis es passt'}, {v: 'wrap', l: 'Nur umbrechen', t: 'Größe bleibt, es wird umgebrochen'}, {v: 'clip', l: 'Abschneiden', t: 'kein Umbruch, Rest fällt weg'}])}</div>
@@ -1888,9 +2479,8 @@ function textProps(el) {
       <button type="button" class="btn btn-ghost btn-xs" id="btn-preset-save" style="margin-top:6px;">Stil aus diesem Text speichern</button>
     </div>`;
 }
-function imageProps(el) {
-  const cr = el.crop && typeof el.crop === 'object' ? el.crop : {x: 0, y: 0, w: 1, h: 1};
-  const a = el.adjust && typeof el.adjust === 'object' ? el.adjust : {};
+/** Quelle eines Bildelements – in beiden Stufen dieselbe Zeile. */
+function bildQuelleSection(el) {
   const lib = S.assets.length
     ? `<div class="asset-grid" style="margin-top:6px;">${S.assets.map(x => `<div class="asset-card" data-pick-asset="${esc(assetUrl(x))}" title="${esc(x.name)}"><img src="${esc(assetUrl(x))}" alt=""><span class="an">${esc(x.name)}</span></div>`).join('')}</div>`
     : '<div class="kv small">Noch keine Aufkleber in der Bibliothek – oben über „+ Aufkleber“ hochladen.</div>';
@@ -1900,8 +2490,12 @@ function imageProps(el) {
           ? `<div class="kv small">Kommt aus den Bildern der Stadt, Schlüssel <b>${esc(el.var.slice(CITY_ASSET_PREFIX.length))}</b>. ${(() => { const i = cityAssetInfo(el.var.slice(CITY_ASSET_PREFIX.length)); if (!i) return '<span class="badge badge-yellow">bisher bei keiner Stadt hinterlegt</span>'; if (i.cities == null) return ''; return i.cities >= (i.total_cities || 0) ? '<span class="badge badge-green">bei allen Städten da</span>' : '<span class="badge badge-yellow">nur bei ' + i.cities + ' von ' + (i.total_cities || '?') + ' Städten</span>'; })()}</div>`
           : `<div class="kv small">Der Wert der Variable muss ein Bildpfad oder eine URL sein.</div>`)
         : `<div class="form-group"><label>URL oder Dateipfad</label><input type="url" data-prop="src" data-kind="str" value="${esc(el.src || '')}" placeholder="https://… oder /uploads/…"></div>${lib}`}
-    </div>
-    <div class="prop-section"><h4>Darstellung</h4>
+    </div>`;
+}
+function imageProps(el) {
+  const cr = el.crop && typeof el.crop === 'object' ? el.crop : {x: 0, y: 0, w: 1, h: 1};
+  const a = el.adjust && typeof el.adjust === 'object' ? el.adjust : {};
+  return bildQuelleSection(el) + `<div class="prop-section"><h4>Darstellung</h4>
       <div class="form-group"><label>Einpassen</label>${segField('fit', el.fit || 'contain', [{v: 'contain', l: 'Einpassen', t: 'ganz sichtbar'}, {v: 'cover', l: 'Füllen', t: 'Box füllen, ggf. beschneiden'}, {v: 'stretch', l: 'Verzerren', t: 'auf die Box ziehen'}])}</div>
       <div class="form-group"><label>Maske</label>${segField('mask', el.mask || 'none', [{v: 'none', l: 'Keine'}, {v: 'rounded', l: 'Abgerundet'}, {v: 'circle', l: 'Kreis'}])}</div>
       ${numField('Eckenradius (px)', 'radius', el.radius == null ? 0 : el.radius, 'min="0"')}
@@ -1975,29 +2569,131 @@ function canvasProps() {
       ${t.example_text ? `<div class="kv small" style="margin-top:6px;">Beispiel: ${esc(t.example_text)}</div>` : ''}
     </div>`;
 }
+// ── Rolle ─────────────────────────────────────────────────────────────────────
+/** Erste Zeile im Eigenschaftenfeld: die Rolle und was sie bedeutet. */
+function rolleZeile(el) {
+  if (!el || el.type !== 'text') return '';
+  const tab = rollenTabelle();
+  const namen = Object.keys(tab);
+  if (namen.indexOf('frei') < 0) namen.push('frei');
+  const cur = rolleVon(el) || 'frei';
+  if (namen.indexOf(cur) < 0) namen.push(cur);
+  const eintrag = tab[cur] || {};
+  const text = String(eintrag.beschreibung || (ROLLEN_FALLBACK[cur] || {}).beschreibung || '');
+  return `<div class="rolle-box">
+    <div class="form-group" style="margin:0;"><label>Rolle – holt Schrift, Größe, Farbe und Kasten aus dem Stil der Stadt</label>
+      <select data-rolle>${namen.map(n => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(rollenName(n))}</option>`).join('')}</select></div>
+    ${text ? `<div class="rolle-txt">${esc(text)}</div>` : ''}
+    ${cur !== 'frei' ? `<button type="button" class="btn btn-ghost btn-xs" data-el-act="rolle-frei" style="margin-top:6px;" title="Alle eigenen Werte entfernen, die die Rolle liefern kann">Alles der Rolle überlassen</button>` : ''}
+  </div>`;
+}
+/**
+ * Blass mit „aus der Rolle“ markieren, was die Rolle liefert; bei selbst gesetzten
+ * Werten ein Kreuz, das den Rollenwert wiederherstellt (Feld aus dem Element entfernen).
+ */
+function markiereRollenFelder(roh) {
+  if (!roh || roh.type !== 'text') return;
+  const name = rolleVon(roh);
+  if (!name || name === 'frei' || !rollenTabelle()[name]) return;
+  const v = rollenVorgaben(name, S.brand, S.canvas.height, rollenTabelle());
+  const schalter = {__box__: 'box', __shadow__: 'shadow'};
+  const eigenes = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
+  $$('#props [data-prop]').forEach(inp => {
+    const prop = String(inp.dataset.prop || '');
+    const wurzel = eigenes(schalter, prop) ? schalter[prop] : prop.split('.')[0];
+    if (!eigenes(v, wurzel)) return;
+    const grp = inp.closest('.form-group') || inp.closest('.slider-row') || inp.closest('.check-row') || inp.closest('.color-wrap');
+    if (!grp || grp.dataset.rollenmarke) return;
+    grp.dataset.rollenmarke = wurzel;
+    const abschnitt = grp.closest('.prop-section');
+    const ziel = grp.matches('.check-row') ? grp
+      : (grp.querySelector('label') || (abschnitt && abschnitt.querySelector('h4')) || grp);
+    const eigen = roh[wurzel] !== undefined && roh[wurzel] !== null && roh[wurzel] !== '';
+    if (eigen) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'rollen-reset'; b.dataset.rollenReset = wurzel;
+      b.title = 'Eigenen Wert entfernen – dann gilt wieder die Rolle';
+      b.textContent = '✕ Rolle';
+      ziel.appendChild(b);
+    } else {
+      grp.classList.add('von-rolle');
+      const s = document.createElement('span');
+      s.className = 'rollen-marke'; s.textContent = 'aus der Rolle';
+      ziel.appendChild(s);
+    }
+  });
+}
+
+// ── Stufe „Einfach“ ───────────────────────────────────────────────────────────
+function geometrieSection(el) {
+  return `<div class="prop-section"><h4>Platz auf der Leinwand</h4>
+    <div class="form-row">${numField('X', 'x', el.x)}${numField('Y', 'y', el.y)}</div>
+    <div class="form-row">${numField('Breite', 'width', el.width, 'min="1"')}${numField('Höhe', 'height', el.height, 'min="1"')}</div>
+    <div class="kv small">Ziehen und Griffe auf der Bühne machen dasselbe.</div>
+  </div>`;
+}
+function einfachProps(el) {
+  let inhalt = '';
+  if (el.type === 'text') inhalt = textInhaltSection(el);
+  else if (el.type === 'image') inhalt = bildQuelleSection(el);
+  else if (el.type === 'cover') inhalt = coverProps(el);
+  else if (isShape(el)) {
+    inhalt = `<div class="prop-section"><h4>Form</h4>${selectField('Art', '__shape__', shapeOf(el), SHAPES.map(s => ({v: s, l: SHAPE_LABEL[s]})))}</div>`
+      + `<div class="prop-section"><h4>Füllung</h4>${paintField('fill', el.fill, {optional: true})}</div>`;
+  }
+  return inhalt + geometrieSection(el)
+    + `<div class="prop-section">
+        <button type="button" class="btn btn-ghost btn-sm" data-el-act="mehr" style="width:100%;justify-content:center;">Mehr einstellen</button>
+        <div class="kv small" style="margin-top:6px;">Die Stufe „Alles“ zeigt jeden Wert, den der Renderer kennt. Was aus der Rolle kommt, steht dort blass da.</div>
+      </div>
+      <div class="prop-section" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button>
+        <button type="button" class="btn btn-ghost btn-xs" data-el-act="copy">Kopieren</button>
+        <button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button>
+      </div>`;
+}
+function zeichneStufeSchalter() {
+  $$('#stufe-seg button').forEach(b => b.classList.toggle('on', b.dataset.stufe === S.stufe));
+}
+function setStufe(stufe) {
+  S.stufe = stufe === 'alles' ? 'alles' : 'einfach';
+  try { localStorage.setItem('studio_stufe', S.stufe); } catch (_) {}
+  zeichneStufeSchalter(); S.propsKey = ''; renderProps(true);
+}
+
 function renderProps(force) {
   const box = $('#props');
   const key = propsKeyFor();
   if (!force && key === S.propsKey) { syncPropsGeometry(); return; }
   S.propsKey = key;
   if (S.sel.length > 1) { box.innerHTML = multiProps(); return; }
-  const el = selected();
-  if (!el) { box.innerHTML = canvasProps(); return; }
-  let body = '';
-  if (el.type === 'text') body = textProps(el);
-  else if (el.type === 'image') body = imageProps(el);
-  else if (el.type === 'cover') body = coverProps(el);
-  else if (isShape(el)) body = shapeProps(el);
+  const roh = selected();
+  if (!roh) { box.innerHTML = canvasProps(); return; }
+  // Angezeigt wird, was gezeichnet wird: das Element mit den Vorgaben seiner Rolle.
+  // Geschrieben wird immer auf das rohe Element – erst dann steht der Wert wirklich drin.
+  const el = mitRolle(roh, S.brand, S.canvas.height, rollenTabelle());
+  let body;
+  if (S.stufe === 'einfach') body = einfachProps(el);
+  else {
+    let typ = '';
+    if (el.type === 'text') typ = textProps(el);
+    else if (el.type === 'image') typ = imageProps(el);
+    else if (el.type === 'cover') typ = coverProps(el);
+    else if (isShape(el)) typ = shapeProps(el);
+    body = commonSection(el) + typ + conditionSection(el)
+      + `<div class="prop-section" style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-el-act="copy">Kopieren</button>
+          <button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button>
+        </div>`;
+  }
   const errs = quickErrors(el);
-  const cb = cityBinding(el);
-  box.innerHTML = (errs.length ? `<div class="badge badge-red" style="margin:8px 0;">${esc(errs.join(' · '))}</div>` : '')
+  const cb = cityBinding(roh);
+  box.innerHTML = rolleZeile(roh)
+    + (errs.length ? `<div class="badge badge-red" style="margin:8px 0;">${esc(errs.join(' · '))}</div>` : '')
     + (cb.city ? `<div class="badge badge-yellow" style="margin:8px 0;">wechselt pro Stadt: ${esc(cb.reasons.join(' · '))}</div>` : '')
-    + commonSection(el) + body + conditionSection(el)
-    + `<div class="prop-section" style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button type="button" class="btn btn-ghost btn-xs" data-el-act="dup">Duplizieren</button>
-        <button type="button" class="btn btn-ghost btn-xs" data-el-act="copy">Kopieren</button>
-        <button type="button" class="btn btn-danger btn-xs" data-el-act="del">Löschen</button>
-      </div>`;
+    + body;
+  markiereRollenFelder(roh);
 }
 function syncPropsGeometry() {
   const el = selected(); if (!el || S.sel.length !== 1) return;
@@ -2028,6 +2724,32 @@ function afterPaintChange(t) {
   else commit();
 }
 
+// ── Rollenwerte ───────────────────────────────────────────────────────────────
+/** Die Werte, die „+ Text“ von sich aus setzt – niemand hat sie ausdrücklich gewählt. */
+function textGrundwerte() {
+  const W = S.canvas.width;
+  return {font: 'anton', max_size: Math.round(W / 12), min_size: Math.round(W / 36),
+    color: '#ffffff', stroke: '#000000', stroke_width: Math.max(2, Math.round(W / 270)), uppercase: false};
+}
+/** Was die Rolle dieses Elements für ein Feld vorgibt (undefined = nichts). */
+function rollenWert(el, key) {
+  const name = rolleVon(el);
+  if (!name || name === 'frei' || !rollenTabelle()[name]) return undefined;
+  return rollenVorgaben(name, S.brand, S.canvas.height, rollenTabelle())[key];
+}
+/**
+ * Vor dem Schreiben eines Teilwerts (box.radius, shadow.dx …) den ganzen Rollenwert
+ * ins Element holen. Sonst stünde dort nur das eine Feld und der Rest der Rolle wäre weg.
+ */
+function rollenwertSichern(el, prop) {
+  const p = String(prop);
+  if (p.indexOf('.') < 0) return;
+  const wurzel = p.split('.')[0];
+  if (el[wurzel] !== undefined && el[wurzel] !== null && el[wurzel] !== '') return;
+  const v = rollenWert(el, wurzel);
+  if (v && typeof v === 'object') el[wurzel] = JSON.parse(JSON.stringify(v));
+}
+
 // ── Werte übernehmen ──────────────────────────────────────────────────────────
 function applyProp(el, prop, kind, raw, checked) {
   if (prop === '__canvas_w' || prop === '__canvas_h') {
@@ -2040,6 +2762,7 @@ function applyProp(el, prop, kind, raw, checked) {
     return;
   }
   if (!el) return;
+  rollenwertSichern(el, prop);
   if (kind === 'bool') { setNested(el, prop, checked ? true : undefined); return; }
   if (kind === 'bool-inv') { setNested(el, prop, checked ? undefined : true); return; }
   if (kind === 'int' || kind === 'num') {
@@ -2119,6 +2842,30 @@ function onPropsInput(e) {
 }
 function onPropsChange(e) {
   const t = e.target; const el = selected();
+  if (t.matches('[data-rolle]')) {
+    if (!el) return;
+    const alt = rolleVon(el);
+    const neu = t.value === 'frei' ? '' : String(t.value || '');
+    snapshot();
+    // Werte, die genau so aus der alten Rolle oder aus den Vorgaben von „+ Text“ kommen,
+    // hat der Nutzer nicht ausdrücklich gesetzt – sie gehen weg, damit die neue Rolle greift.
+    const abgeben = {};
+    const merke = obj => { for (const k of Object.keys(obj)) (abgeben[k] = abgeben[k] || []).push(obj[k]); };
+    if (alt && alt !== 'frei' && rollenTabelle()[alt]) merke(rollenVorgaben(alt, S.brand, S.canvas.height, rollenTabelle()));
+    merke(textGrundwerte());
+    for (const k of Object.keys(abgeben)) {
+      if (el[k] === undefined) continue;
+      const jetzt = JSON.stringify(el[k]);
+      if (abgeben[k].some(v => JSON.stringify(v) === jetzt)) delete el[k];
+    }
+    if (neu) el.role = neu; else delete el.role;
+    S.propsKey = ''; commit();
+    if (neu) {
+      const eigene = ROLLEN_FELDER.filter(k => el[k] !== undefined);
+      if (eigene.length) toast('Eigene Werte bleiben: ' + eigene.join(', ') + '. „Alles der Rolle überlassen“ gibt sie ab.', 'info');
+    }
+    return;
+  }
   if (t.matches('[data-varsel]')) {
     if (!el) return;
     let v = t.value;
@@ -2135,12 +2882,18 @@ function onPropsChange(e) {
   }
   if (t.matches('[data-kind="toggle-shadow"]')) {
     if (!el) return; snapshot();
-    if (t.checked) el.shadow = {dx: 3, dy: 3, color: '#000000', blur: 4}; else delete el.shadow;
+    const vonRolle = rollenWert(el, 'shadow');
+    if (t.checked) { if (vonRolle) delete el.shadow; else el.shadow = {dx: 3, dy: 3, color: '#000000', blur: 4}; }
+    else if (vonRolle) el.shadow = false;          // ausdrücklich keiner, trotz Rolle
+    else delete el.shadow;
     S.propsKey = ''; commit(); return;
   }
   if (t.matches('[data-kind="toggle-box"]')) {
     if (!el) return; snapshot();
-    if (t.checked) el.box = {fill: '#ffffff', radius: 8, padding: 10}; else delete el.box;
+    const vonRolle = rollenWert(el, 'box');
+    if (t.checked) { if (vonRolle) delete el.box; else el.box = {fill: '#ffffff', radius: 8, padding: 10}; }
+    else if (vonRolle) el.box = false;             // ausdrücklich keiner, trotz Rolle
+    else delete el.box;
     S.propsKey = ''; commit(); return;
   }
   if (t.id === 'cv-bg-on') {
@@ -2215,6 +2968,25 @@ function onPropsClick(e) {
     } else setNested(tg.obj, tg.path, 'brand:' + brand.dataset.brand);
     S.propsKey = ''; afterPaintChange(tg); return;
   }
+  const stil = e.target.closest('[data-stil]');
+  if (stil) {
+    const tg = paintTarget(stil.dataset.target); if (!tg) return;
+    snapshot();
+    const token = 'stil:' + stil.dataset.stil;
+    if (stil.dataset.gi != null) {
+      const g = getNested(tg.obj, tg.path);
+      if (isGradient(g) && g.stops[parseInt(stil.dataset.gi, 10)]) g.stops[parseInt(stil.dataset.gi, 10)].color = token;
+    } else setNested(tg.obj, tg.path, token);
+    S.propsKey = ''; afterPaintChange(tg); return;
+  }
+  const rz = e.target.closest('[data-rollen-reset]');
+  if (rz) {
+    if (!el) return; snapshot();
+    delete el[rz.dataset.rollenReset];
+    S.propsKey = ''; commit();
+    toast('Wieder aus der Rolle: ' + rz.dataset.rollenReset, 'info');
+    return;
+  }
   const clear = e.target.closest('[data-clear]');
   if (clear) { const tg = paintTarget(clear.dataset.clear); if (!tg) return; snapshot(); setNested(tg.obj, tg.path, undefined); S.propsKey = ''; afterPaintChange(tg); return; }
   const seg = e.target.closest('[data-seg] button');
@@ -2241,6 +3013,14 @@ function onPropsClick(e) {
     else if (a === 'ungroup') doUngroup();
     else if (a === 'crop-reset' && el) { snapshot(); delete el.crop; S.propsKey = ''; commit(); }
     else if (a === 'adjust-reset' && el) { snapshot(); delete el.adjust; S.propsKey = ''; commit(); }
+    else if (a === 'mehr') setStufe('alles');
+    else if (a === 'rolle-frei' && el) {
+      snapshot();
+      let weg = 0;
+      for (const k of ROLLEN_FELDER) if (el[k] !== undefined) { delete el[k]; weg++; }
+      S.propsKey = ''; commit();
+      toast(weg ? weg + ' eigene Werte entfernt – jetzt gilt überall die Rolle.' : 'Es gab keine eigenen Werte.', 'success');
+    }
     return;
   }
   if (e.target.id === 'btn-canvas-img' && S.imageSize) {
@@ -2258,6 +3038,11 @@ function onPropsClick(e) {
   n.addEventListener('input', onPropsInput);
   n.addEventListener('change', onPropsChange);
   n.addEventListener('click', onPropsClick);
+});
+// Zwei Stufen: einfach im Normalfall, alles auf Wunsch
+$('#stufe-seg').addEventListener('click', e => {
+  const b = e.target.closest('[data-stufe]'); if (!b) return;
+  setStufe(b.dataset.stufe);
 });
 
 // ── Leinwand: Farbe und Voreinstellungen ──────────────────────────────────────
@@ -2290,7 +3075,7 @@ function setCanvas(w, h) {
   S.config.canvas = Object.assign({}, S.config.canvas, {width: w, height: h});
   S.canvas = {width: w, height: h};
   $('#cv-w').value = w; $('#cv-h').value = h;
-  S.propsKey = ''; commit();
+  S.propsKey = ''; commit(); bgProbeLaden();
 }
 $('#btn-cv-apply').addEventListener('click', () => setCanvas($('#cv-w').value, $('#cv-h').value));
 $('#btn-cv-img').addEventListener('click', () => { if (S.imageSize) setCanvas(S.imageSize.width, S.imageSize.height); else toast('Kein Hintergrundbild vorhanden.', 'error'); });
@@ -2563,7 +3348,7 @@ $('#bg-file').addEventListener('change', async e => {
     const d = await api('POST', `/api/studio/${TID}/background`, fd);
     S.bgUrl = d.background_url + '?v=' + Date.now(); S.imageSize = d.image_size || null; S.bgVisible = true;
     if (d.canvas) { S.canvas = d.canvas; S.config.canvas = Object.assign({}, S.config.canvas, {width: d.canvas.width, height: d.canvas.height}); }
-    S.propsKey = ''; renderAll();
+    S.propsKey = ''; renderAll(); bgProbeLaden();
     toast('Hintergrund ersetzt' + (d.cloudinary ? ' und in Cloudinary gesichert' : ''), 'success');
   } catch (err) { toast('Upload fehlgeschlagen: ' + err.message, 'error'); }
 });
@@ -2688,7 +3473,82 @@ $('#btn-ai').addEventListener('click', async () => {
   finally { $('#btn-ai').disabled = false; }
 });
 $('#pv-auto').addEventListener('change', e => { try { localStorage.setItem('studio_auto_preview', e.target.checked ? '1' : '0'); } catch (_) {} if (e.target.checked) schedulePreview(); });
-$('#pv-city').addEventListener('change', () => { renderStage(); renderCityBar(); schedulePreview(); });
+$('#pv-city').addEventListener('change', () => { anwendenStadtStil(); schedulePreview(); });
+
+// ── Vorlagen-Prüfung: taugt diese Vorlage für alle Städte? ────────────────────
+const SCHWERE_RANG = {fehler: 0, hinweis: 1, info: 2};
+const SCHWERE_BADGE = {fehler: 'badge-red', hinweis: 'badge-yellow', info: 'badge-gray'};
+const SCHWERE_WORT = {fehler: 'Fehler', hinweis: 'Hinweis', info: 'Info'};
+/** Befund des Servers auf eine feste Form bringen – die Namen dürfen wandern. */
+function normBefund(b) {
+  if (!b || typeof b !== 'object') return null;
+  const s = String(b.schwere || b.severity || b.stufe || 'hinweis').toLowerCase();
+  const schwere = (s.indexOf('fehler') >= 0 || s.indexOf('error') >= 0) ? 'fehler' : (s.indexOf('info') >= 0 ? 'info' : 'hinweis');
+  const text = String(b.text || b.meldung || b.message || b.beschreibung || b.hinweis || '');
+  if (!text) return null;
+  return {schwere: schwere, art: String(b.art || b.typ || b.kind || ''), text: text,
+    vorschlag: String(b.vorschlag || b.tipp || ''),
+    element: String(b.element_id || b.element || b.el_id || ''),
+    stadt: String(b.stadt || b.city || b.city_name || ''),
+    variable: String(b.variable || b.var || '')};
+}
+function setPruefText(html) { $('#pruef-summe').innerHTML = html || ''; }
+function befundeVeralten() {
+  const box = $('#pruef-summe');
+  if (!box || box.dataset.veraltet === '1') return;
+  box.dataset.veraltet = '1';
+  box.innerHTML = box.innerHTML + ' <span style="color:var(--warning)">· seither geändert</span>';
+}
+function renderBefunde() {
+  const liste = $('#pruef-liste');
+  $('#btn-pruef-zu').hidden = !S.befunde.length;
+  if (!S.befunde.length) {
+    liste.hidden = false;
+    liste.innerHTML = '<div class="kv small" style="padding:6px 2px;">Nichts gefunden – die Vorlage trägt bei allen geprüften Städten.</div>';
+    return;
+  }
+  liste.hidden = false;
+  liste.innerHTML = S.befunde.map((b, i) => {
+    const wo = [b.stadt ? 'Stadt: ' + b.stadt : '', b.variable ? '{' + b.variable + '}' : '',
+      b.element ? 'Element ' + (byId(b.element) ? layerName(byId(b.element)) : b.element) : '', b.art].filter(Boolean).join(' · ');
+    return `<div class="befund" data-befund="${i}" title="${b.element ? 'Zum Element springen' : ''}">
+      <span class="badge ${SCHWERE_BADGE[b.schwere]}">${esc(SCHWERE_WORT[b.schwere])}</span>
+      <span class="bt">${esc(b.text)}${b.vorschlag ? `<span class="bo">→ ${esc(b.vorschlag)}</span>` : ''}${wo ? `<span class="bo">${esc(wo)}</span>` : ''}</span></div>`;
+  }).join('');
+}
+$('#pruef-liste').addEventListener('click', e => {
+  const row = e.target.closest('[data-befund]'); if (!row) return;
+  const b = S.befunde[parseInt(row.dataset.befund, 10)]; if (!b || !b.element) return;
+  if (!byId(b.element)) { toast('Das Element gibt es nicht mehr.', 'info'); return; }
+  select(b.element);
+  const d = $(`#stage .el[data-id="${CSS.escape(b.element)}"]`);
+  if (d) { d.scrollIntoView({block: 'nearest', inline: 'nearest'}); d.classList.add('gefunden'); setTimeout(() => d.classList.remove('gefunden'), 2000); }
+});
+$('#btn-pruef-zu').addEventListener('click', () => { $('#pruef-liste').hidden = true; $('#btn-pruef-zu').hidden = true; });
+$('#btn-pruefen').addEventListener('click', async () => {
+  if (!S.cities.length) { toast('Keine Städte vorhanden.', 'error'); return; }
+  const btn = $('#btn-pruefen'); btn.disabled = true;
+  $('#pruef-summe').dataset.veraltet = '';
+  setPruefText('<span class="spinner"></span> prüft alle Städte …');
+  try {
+    const d = await api('POST', `/api/studio/${TID}/pruefen`, {config: S.config, city_ids: S.cities.map(c => c.id)});
+    const roh = Array.isArray(d) ? d : (Array.isArray(d.befunde) ? d.befunde : []);
+    S.befunde = roh.map(normBefund).filter(Boolean)
+      .sort((a, b) => (SCHWERE_RANG[a.schwere] - SCHWERE_RANG[b.schwere]));
+    const geprueft = d['geprüfte_staedte'] != null ? d['geprüfte_staedte']
+      : (d.gepruefte_staedte != null ? d.gepruefte_staedte : S.cities.length);
+    const fehler = S.befunde.filter(x => x.schwere === 'fehler').length;
+    const hinweise = S.befunde.length - fehler;
+    const summe = typeof d.zusammenfassung === 'string' && d.zusammenfassung.trim()
+      ? d.zusammenfassung
+      : `${geprueft} Städte geprüft, ${fehler} Fehler, ${hinweise} Hinweise`;
+    setPruefText(esc(summe));
+    renderBefunde();
+  } catch (e) {
+    setPruefText('<span style="color:var(--danger)">Prüfung nicht möglich: ' + esc(e.message) + '</span>');
+    toast('Prüfung fehlgeschlagen: ' + e.message, 'error');
+  } finally { btn.disabled = false; }
+});
 $('#btn-pv-toggle').addEventListener('click', () => {
   const p = $('#preview-panel'); p.classList.toggle('collapsed');
   $('#btn-pv-toggle').textContent = p.classList.contains('collapsed') ? '▴' : '▾';

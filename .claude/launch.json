@@ -3,8 +3,11 @@
   "configurations": [
     {
       "name": "memeos",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/ersinozdemir/Downloads/memeos/app.py"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/ersinozdemir/Downloads/memeos && MEMEOS_SCHEDULER=0 MEMEOS_WORKERS=2 exec python3 /Users/ersinozdemir/Downloads/memeos/app.py"
+      ],
       "port": 5200
     }
   ]

@@ -16,6 +16,17 @@ Vertrag (Element-Spezifikation v3):
     Konstanten: ELEMENT_TYPES, SHAPES, BLEND_MODES, FIT_MODES, IMAGE_FITS, TEXT_FITS,
                 MASKS, ALIGNS, VALIGNS
 
+Vertrag Stadt-Stil und Rollen (v3.1, rein additiv):
+    stil_dict(quelle)                             -> vollständiges Stil-Dict (alle Schlüssel)
+    rolle_anwenden(el, brand, canvas_hoehe)       -> Element mit eingesetzten Rollenvorgaben
+    zeichen_budget(el, canvas_groesse, brand=None)-> int (Zeichen bei Mindestgröße)
+    passt_text(text, el, canvas_groesse, brand=None)
+        -> {'passt', 'groesse', 'zeilen', 'noetige_verkleinerung'}
+    kontrast(farbe_a, farbe_b, brand=None)        -> float 1..21
+    hintergrund_farbe_im_bereich(bg_bild, el, canvas_groesse) -> '#rrggbb'
+    Konstanten: ROLLEN, STIL_STANDARD, STIL_SCHLUESSEL, SCHREIBWEISEN, KASTEN_ARTEN,
+                KONTUR_ARTEN, WASSERZEICHEN_ECKEN
+
 Config-Format:
     {"canvas": {"width": W, "height": H, "background": <Farbe|Verlauf|null>},
      "elements": [ {...}, ... ]}                    # Reihenfolge = Zeichenreihenfolge, letztes oben
@@ -26,6 +37,9 @@ Hintergrundbild gesetzt ist (Bauen von Null). Ohne beides: Weiß + Warnung.
 Farbwert (überall, wo unten „Farbe“ steht):
     '#rgb' | '#rrggbb' | '#rrggbbaa' | CSS-Name | 'rgb(...)' | (r,g,b[,a])
     'brand:bg' | 'brand:text' | 'brand:accent'
+    'stil:primary' | 'stil:secondary' | 'stil:accent' | 'stil:dark' | 'stil:light'
+    'stil:auto'  – Schwarz oder Weiß, je nachdem was auf dem Untergrund besser lesbar ist
+                   (Untergrund = gesetzte Kastenfarbe, sonst der Bildmittelwert im Bereich)
     Verlauf: {'type':'linear','angle':0..360,'stops':[{'at':0.0,'color':'#...'}, ...]}
              {'type':'radial','stops':[...]}           (optional 'center':{'x','y'} 0..1)
     Winkel: 0 = von links nach rechts, 90 = von oben nach unten (im Uhrzeigersinn).
@@ -34,7 +48,9 @@ Gemeinsame Element-Eigenschaften:
     id, type, name, x, y, width, height, rotation (Grad, positiv = im Uhrzeigersinn,
     Drehpunkt Boxmitte), opacity (0..1), hidden, locked (nur Editor), flip_h, flip_v,
     blend ('normal'|'multiply'|'screen'|'overlay'|'darken'|'lighten'),
-    group (Kennung, nur Editor), only_if (Variablenname), skip_if (Variablenname)
+    group (Kennung, nur Editor), only_if (Variablenname), skip_if (Variablenname),
+    role (Rolle aus ROLLEN – liefert Vorgaben aus dem Stadt-Stil; JEDER am Element
+          gesetzte Wert schlägt die Rolle. Ohne role ändert sich nichts.)
 
 type 'text':   var | text ({var} wird ersetzt), fallback, font, max_size, min_size, color,
                stroke, stroke_width, shadow {dx,dy,color,blur}, align, valign, uppercase,
@@ -81,6 +97,11 @@ __all__ = [
     'element_defaults',
     'ELEMENT_TYPES', 'SHAPES', 'BLEND_MODES', 'FIT_MODES', 'IMAGE_FITS', 'TEXT_FITS',
     'MASKS', 'ALIGNS', 'VALIGNS', 'DEFAULT_CANVAS',
+    # Stadt-Stil und Rollen (v3.1)
+    'stil_dict', 'rolle_anwenden', 'zeichen_budget', 'passt_text', 'kontrast',
+    'hintergrund_farbe_im_bereich', 'leuchtdichte', 'auto_farbe',
+    'ROLLEN', 'STIL_STANDARD', 'STIL_SCHLUESSEL', 'SCHREIBWEISEN', 'KASTEN_ARTEN',
+    'KONTUR_ARTEN', 'WASSERZEICHEN_ECKEN',
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -156,6 +177,178 @@ _EXACT_ALIASES = {'anton', 'oswald', 'oswaldbold', 'arialroundedmtbold', 'arialr
 
 _BRAND_DEFAULTS = {'bg': '#ffffff', 'text': '#000000', 'accent': '#3b82f6', 'font': 'Arial'}
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Stadt-Stil – die Handschrift einer Stadt
+# ═══════════════════════════════════════════════════════════════════════════════
+# Das Dict, das render() als `brand` bekommt, kann seit v3.1 mehr tragen als die vier
+# alten Felder. stil_dict() macht aus JEDER Teilangabe ein vollständiges Stil-Dict:
+# aus dem alten vierfeldrigen brand-Dict genauso wie aus CityStyle.to_dict().
+# Die alten Schlüssel bg/text/accent/font bleiben immer erhalten – 'brand:bg' & Co.
+# funktionieren unverändert weiter.
+
+SCHREIBWEISEN        = ('gross', 'normal')
+KASTEN_ARTEN         = ('keiner', 'voll', 'weich', 'umriss')
+KONTUR_ARTEN         = ('keine', 'dunkel', 'palette')
+WASSERZEICHEN_ECKEN  = ('unten_links', 'unten_rechts', 'oben_rechts', 'keins')
+
+# Alle Schlüssel, die ein vollständiges Stil-Dict trägt (Vertrag für Editor und Fabrik).
+STIL_SCHLUESSEL = (
+    'primary', 'secondary', 'accent', 'dark', 'light',      # Palette
+    'headline', 'body',                                     # Schriftpaar
+    'schreibweise', 'kasten', 'radius', 'kontur', 'schatten',
+    'wasserzeichen_ecke', 'paket',
+    'bg', 'text', 'font',                                   # Altbestand (brand:*)
+)
+
+# Vorgabe-Handschrift für Städte ohne eigenen Stil: läuft auf jedem Foto, weil sie
+# nicht auf einen hellen Untergrund baut (keine Kästen, dunkle Kontur, Schatten an).
+# ACHTUNG: dieselben Werte stehen als Spalten-Vorgaben in models.CityStyle –
+# der Test test_i1_stil.py prüft, dass beide Listen gleich bleiben.
+STIL_STANDARD = {
+    'primary':   '#3b82f6',
+    'secondary': '#1e40af',
+    'accent':    '#f59e0b',
+    'dark':      '#0f172a',
+    'light':     '#ffffff',
+    'headline':  'anton',
+    'body':      'bold',
+    'schreibweise': 'gross',
+    'kasten':    'keiner',
+    'radius':    16,
+    'kontur':    'dunkel',
+    'schatten':  True,
+    'wasserzeichen_ecke': 'unten_rechts',
+    'paket':     '',
+}
+
+_STIL_FARBEN = ('primary', 'secondary', 'accent', 'dark', 'light')
+
+
+def _hex(rgb):
+    """(r, g, b[, a]) -> '#rrggbb'."""
+    r, g, b = (int(_clamp(_num(v, 0), 0, 255)) for v in tuple(rgb)[:3])
+    return '#%02x%02x%02x' % (r, g, b)
+
+
+def _abdunkeln(farbe, faktor=0.62):
+    """Farbe auf faktor ihrer Helligkeit ziehen -> '#rrggbb'. Unbrauchbar -> Vorgabe."""
+    rgba = parse_color(farbe, None, None)
+    if rgba is None:
+        return STIL_STANDARD['secondary']
+    f = _clamp(_num(faktor, 0.62), 0.0, 1.0)
+    return _hex(tuple(int(round(c * f)) for c in rgba[:3]))
+
+
+def _mit_alpha(farbe, alpha):
+    """Farbe mit Deckkraft 0..1 als '#rrggbbaa'."""
+    rgba = parse_color(farbe, None, (0, 0, 0, 255)) or (0, 0, 0, 255)
+    a = int(round(_clamp(_num(alpha, 1.0), 0.0, 1.0) * 255))
+    return '#%02x%02x%02x%02x' % (rgba[0], rgba[1], rgba[2], a)
+
+
+def _schriftpaar(quelle):
+    """(Auszeichnungsschrift, Grundschrift) aus einer beliebigen Teilangabe.
+    Eigene Funktion, weil resolve_font_path() sie bei JEDEM load_font() braucht und dafür
+    nicht das ganze Stil-Dict bauen soll."""
+    q = quelle if isinstance(quelle, dict) else {}
+
+    def hol(*keys):
+        for k in keys:
+            v = q.get(k)
+            if v not in (None, ''):
+                return v
+        return None
+
+    roh_headline = hol('headline', 'font_headline', 'font')
+    roh_body     = hol('body', 'font_body')
+    headline = str(roh_headline or STIL_STANDARD['headline'])
+    if roh_body not in (None, ''):
+        body = str(roh_body)
+    elif roh_headline not in (None, ''):
+        body = headline                    # altes brand-Dict: eine Schrift für beides
+    else:
+        body = STIL_STANDARD['body']       # gar keine Angabe: die Vorgabe-Handschrift
+    return headline, body
+
+
+def stil_dict(quelle=None):
+    """Beliebige Teilangabe -> vollständiges Stil-Dict mit allen STIL_SCHLUESSEL.
+
+    quelle darf sein:
+      * None                      -> STIL_STANDARD
+      * das alte brand-Dict       {'bg','text','accent','font'}
+      * CityStyle.to_dict()       {'primary','secondary',…,'font_headline','font_body',…}
+      * jede Mischung/Teilmenge davon
+
+    Ableitung aus dem alten brand-Dict (so, wie models.CityStyle.fuer() es auch tut):
+      primary = accent, accent = primary, dark = text, light = bg,
+      secondary = abgedunkeltes primary, headline = body = font.
+    Umgekehrt werden bg/text/font aus light/dark/headline ergänzt, damit ein reines
+    Stil-Dict weiterhin als brand für 'brand:*' taugt."""
+    q = {}
+    if isinstance(quelle, dict):
+        q = {str(k): v for k, v in quelle.items() if v not in (None, '')}
+
+    def hol(*keys):
+        for k in keys:
+            if k in q:
+                return q[k]
+        return None
+
+    def farbe(wert, vorgabe):
+        if wert in (None, ''):
+            return vorgabe
+        return _hex(parse_color(wert, None, None) or parse_color(vorgabe, None, (0, 0, 0, 255)))
+
+    def brauchbar(wert):
+        """True, wenn überhaupt eine lesbare Farbe angegeben wurde."""
+        return wert not in (None, '') and parse_color(wert, None, None) is not None
+
+    roh_primary = hol('primary') or hol('accent')
+    primary   = farbe(roh_primary, STIL_STANDARD['primary'])
+    # Die Ableitungen accent = primary und secondary = abgedunkeltes primary gelten dem
+    # alten brand-Dict. Ohne jede Farbangabe (stil_dict(None) oder stil_dict({})) darf
+    # nichts abgeleitet werden – sonst käme statt STIL_STANDARD ein anderer Stil heraus.
+    ableiten = brauchbar(roh_primary)
+    accent    = farbe(hol('accent'), primary if ableiten else STIL_STANDARD['accent'])
+    dark      = farbe(hol('dark') or hol('text'), STIL_STANDARD['dark'])
+    light     = farbe(hol('light') or hol('bg'), STIL_STANDARD['light'])
+    secondary = farbe(hol('secondary'),
+                      _abdunkeln(primary) if ableiten else STIL_STANDARD['secondary'])
+
+    headline, body = _schriftpaar(quelle)
+
+    schreibweise = str(hol('schreibweise') or STIL_STANDARD['schreibweise']).strip().lower()
+    if schreibweise not in SCHREIBWEISEN:
+        schreibweise = STIL_STANDARD['schreibweise']
+    kasten = str(hol('kasten') or STIL_STANDARD['kasten']).strip().lower()
+    if kasten not in KASTEN_ARTEN:
+        kasten = STIL_STANDARD['kasten']
+    kontur = str(hol('kontur') or STIL_STANDARD['kontur']).strip().lower()
+    if kontur not in KONTUR_ARTEN:
+        kontur = STIL_STANDARD['kontur']
+    ecke = str(hol('wasserzeichen_ecke') or STIL_STANDARD['wasserzeichen_ecke']).strip().lower()
+    if ecke not in WASSERZEICHEN_ECKEN:
+        ecke = STIL_STANDARD['wasserzeichen_ecke']
+
+    radius = int(_clamp(_num(hol('radius'), STIL_STANDARD['radius']), 0, 40))
+    schatten = _bool(hol('schatten')) if 'schatten' in q else STIL_STANDARD['schatten']
+
+    return {
+        'primary': primary, 'secondary': secondary, 'accent': accent,
+        'dark': dark, 'light': light,
+        'headline': headline, 'body': body,
+        'schreibweise': schreibweise, 'kasten': kasten, 'radius': radius,
+        'kontur': kontur, 'schatten': bool(schatten), 'wasserzeichen_ecke': ecke,
+        'paket': str(hol('paket') or ''),
+        # Altbestand: 'brand:bg' | 'brand:text' | 'brand:accent' und font 'brand'
+        'bg':   farbe(hol('bg'), light),
+        'text': farbe(hol('text'), dark),
+        'font': str(hol('font') or headline),
+    }
+
+
 _font_cache = {}
 _font_lock = threading.Lock()
 
@@ -217,12 +410,18 @@ def _fallback_path():
     return os.path.join(FONT_BASE_DIR, _BUILTIN_FONTS[_FALLBACK_KEY][1])
 
 
+_STIL_FONT_TOKEN = {'stil:headline': 'headline', 'stil:body': 'body'}
+
+
 def font_key_for(name):
     """Liefert (key, exact). key versteht resolve_font_path; exact=False heißt: Ersatzschrift.
-    'brand' bleibt 'brand' (wird beim Rendern über brand['font'] aufgelöst)."""
+    'brand' bleibt 'brand' (wird beim Rendern über brand['font'] aufgelöst),
+    'stil:headline'/'stil:body' bleiben ebenso stehen (Auflösung über den Stadt-Stil)."""
     s = str(name or '').strip()
     if s.lower() == 'brand':
         return 'brand', True
+    if s.lower() in _STIL_FONT_TOKEN:
+        return s.lower(), True
     n = _norm(s)
     if not n:
         return _FALLBACK_KEY, False
@@ -244,10 +443,14 @@ def font_key_for(name):
 def resolve_font_path(name_or_key, brand=None):
     """Pfad zur Schriftdatei. Tolerant gegen Groß-/Kleinschreibung, Leerzeichen, Bindestriche,
     '.ttf'. Kennt Canva-/Systemnamen (CANVA_FONT_MAP), eigene Uploads, absolute Pfade und
-    'brand' (-> brand['font']). Fallback: anton."""
+    'brand' (-> brand['font']) sowie 'stil:headline'/'stil:body' (-> Schriftpaar des
+    Stadt-Stils). Fallback: anton."""
     s = str(name_or_key or '').strip()
     if s.lower() == 'brand':
         s = str((brand or {}).get('font') or _BRAND_DEFAULTS['font'])
+    elif s.lower() in _STIL_FONT_TOKEN:
+        headline, body = _schriftpaar(brand)
+        s = headline if _STIL_FONT_TOKEN[s.lower()] == 'headline' else body
     if not s:
         return _fallback_path()
     if os.path.isabs(s) and os.path.isfile(s) and s.lower().endswith(_FONT_EXTS):
@@ -343,7 +546,12 @@ def _is_gradient(spec):
 
 def parse_color(spec, brand=None, default=None):
     """Farbangabe -> RGBA-Tupel. Versteht '#rgb', '#rrggbb', '#rrggbbaa', CSS-Namen, 'rgb(...)',
-    Tupel/Listen und 'brand:bg'|'brand:text'|'brand:accent'. Ungültig -> default.
+    Tupel/Listen, 'brand:bg'|'brand:text'|'brand:accent' und 'stil:primary'|'stil:secondary'|
+    'stil:accent'|'stil:dark'|'stil:light'|'stil:auto'. Ungültig -> default.
+
+    'stil:auto' wird beim Rendern VORHER durch Schwarz oder Weiß ersetzt (der Renderer kennt
+    den Untergrund, siehe _auto_ersetzen). Kommt es hier trotzdem an, entscheidet der Kontrast
+    gegen 'light' des Stils – das ist die Annahme „heller Untergrund“.
 
     Ein Verlauf-Objekt liefert seine mittlere Stopfarbe (Ersatzwert für Stellen, die nur eine
     einzelne Farbe verarbeiten können); die Fläche selbst zeichnet fill_flaeche()."""
@@ -375,6 +583,15 @@ def parse_color(spec, brand=None, default=None):
             log.warning('Unbekannte Brand-Farbe %r', spec)
             return default
         s = str(s).strip()
+    elif s.lower().startswith('stil:'):
+        key = s.split(':', 1)[1].strip().lower()
+        stil = stil_dict(brand)
+        if key == 'auto':
+            return auto_farbe(stil['light'])
+        if key not in _STIL_FARBEN:
+            log.warning('Unbekannte Stil-Farbe %r', spec)
+            return default
+        s = str(stil[key]).strip()
     try:
         return ImageColor.getcolor(s, 'RGBA')
     except (ValueError, TypeError):
@@ -544,6 +761,141 @@ def fill_flaeche(groesse, farbwert, brand=None):
     if img is None:
         img = _gradient_pillow((w, h), value['type'], value['angle'], value['center'], stops)
     return img.convert('RGBA')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Lesbarkeit: Leuchtdichte, Kontrast, 'stil:auto'
+# ═══════════════════════════════════════════════════════════════════════════════
+# Gerechnet wird nach der üblichen relativen Leuchtdichte: sRGB linearisieren, dann
+# 0.2126·R + 0.7152·G + 0.0722·B. Das Kontrastverhältnis ist (L_hell + 0.05)/(L_dunkel + 0.05)
+# und liegt damit zwischen 1 (gleiche Farbe) und 21 (Schwarz auf Weiß).
+
+SCHWARZ = '#000000'
+WEISS   = '#ffffff'
+
+
+def _linear(kanal):
+    c = kanal / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def leuchtdichte(farbe, brand=None):
+    """Relative Leuchtdichte 0..1 einer Farbe (Alpha wird ignoriert)."""
+    rgba = parse_color(farbe, brand, (0, 0, 0, 255)) or (0, 0, 0, 255)
+    return (0.2126 * _linear(rgba[0]) + 0.7152 * _linear(rgba[1]) + 0.0722 * _linear(rgba[2]))
+
+
+def kontrast(farbe_a, farbe_b, brand=None):
+    """Kontrastverhältnis zweier Farben, 1.0 .. 21.0. Schwarz gegen Weiß ergibt 21.0.
+    Alpha bleibt außen vor – halbdurchsichtige Farben vorher selbst verrechnen."""
+    la = leuchtdichte(farbe_a, brand)
+    lb = leuchtdichte(farbe_b, brand)
+    hell, dunkel = (la, lb) if la >= lb else (lb, la)
+    return (hell + 0.05) / (dunkel + 0.05)
+
+
+def auto_farbe(untergrund, brand=None):
+    """Schwarz oder Weiß – was auf diesem Untergrund besser lesbar ist."""
+    return SCHWARZ if kontrast(SCHWARZ, untergrund, brand) >= kontrast(WEISS, untergrund, brand) else WEISS
+
+
+def _bereich_mittel(img, box, standard=(255, 255, 255)):
+    """Mittlere RGB-Farbe eines Bildausschnitts. Leerer/ungültiger Bereich -> standard."""
+    if img is None:
+        return standard
+    try:
+        x0, y0, x1, y1 = (int(round(float(v))) for v in tuple(box)[:4])
+    except (TypeError, ValueError):
+        return standard
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    x0 = int(_clamp(x0, 0, img.width))
+    x1 = int(_clamp(x1, 0, img.width))
+    y0 = int(_clamp(y0, 0, img.height))
+    y1 = int(_clamp(y1, 0, img.height))
+    if x1 <= x0 or y1 <= y0:
+        return standard
+    try:
+        aus = img.crop((x0, y0, x1, y1)).convert('RGB')
+        aus = aus.resize((1, 1), getattr(Image, 'BOX', Image.NEAREST))
+        return tuple(aus.getpixel((0, 0)))
+    except Exception as ex:                                    # pragma: no cover
+        log.warning('Bildmittelwert nicht berechenbar: %s', ex)
+        return standard
+
+
+def _el_box(el, canvas_groesse):
+    """Elementrechteck (x0, y0, x1, y1). Ohne height (nur bei Text erlaubt) wird eine
+    Ersatzhöhe aus max_size × line_height angenommen, sonst 8 % der Leinwandhöhe."""
+    cw, ch = canvas_groesse
+    x = _num(el.get('x'), 0.0)
+    y = _num(el.get('y'), 0.0)
+    w = _num(el.get('width'), 0.0) or max(1.0, cw - x)
+    h = el.get('height')
+    if h in (None, '') or _num(h, 0) <= 0:
+        h = _num(el.get('max_size'), 0) * (_num(el.get('line_height'), 1.15) or 1.15)
+        if h <= 0:
+            h = ch * 0.08
+    else:
+        h = _num(h, 0)
+    return (x, y, x + w, y + h)
+
+
+def hintergrund_farbe_im_bereich(bg_bild, el, canvas_groesse):
+    """Mittlere Farbe des Hintergrundbilds im Bereich eines Elements als '#rrggbb'.
+
+    bg_bild wird – wie beim Rendern – auf die Leinwandgröße eingepasst (ImageOps.fit),
+    damit der Bereich derselbe ist wie im fertigen Bild. Ohne lesbares Bild: '#ffffff'
+    (das ist die Grundfläche, auf die render() ohne Hintergrund zeichnet)."""
+    try:
+        size = (int(canvas_groesse[0]), int(canvas_groesse[1]))
+    except (TypeError, ValueError, IndexError):
+        size = DEFAULT_CANVAS
+    if bg_bild in (None, '', False):
+        return WEISS
+    try:
+        img = _open_background(bg_bild)
+    except FileNotFoundError:
+        return WEISS
+    if img.size != size:
+        try:
+            img = ImageOps.fit(img, size, method=Image.LANCZOS)
+        except Exception as ex:                                # pragma: no cover
+            log.warning('Hintergrund nicht einpassbar: %s', ex)
+            return WEISS
+    return _hex(_bereich_mittel(img, _el_box(el if isinstance(el, dict) else {}, size)))
+
+
+_AUTO_TOKEN = 'stil:auto'
+
+
+def _enthaelt_auto(obj):
+    """True, wenn irgendwo in der Struktur der Token 'stil:auto' steht."""
+    if isinstance(obj, str):
+        return obj.strip().lower() == _AUTO_TOKEN
+    if isinstance(obj, dict):
+        return any(_enthaelt_auto(v) for v in obj.values())
+    if isinstance(obj, (list, tuple)):
+        return any(_enthaelt_auto(v) for v in obj)
+    return False
+
+
+def _auto_ersetzen(obj, farbe):
+    """Kopie der Struktur, in der jedes 'stil:auto' durch `farbe` ersetzt ist.
+    Ohne Vorkommen wird dasselbe Objekt zurückgegeben (kein unnötiges Kopieren)."""
+    if not _enthaelt_auto(obj):
+        return obj
+    if isinstance(obj, str):
+        return farbe
+    if isinstance(obj, dict):
+        return {k: _auto_ersetzen(v, farbe) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_auto_ersetzen(v, farbe) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_auto_ersetzen(v, farbe) for v in obj)
+    return obj
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -831,19 +1183,20 @@ def text_metrics(text, el, canvas_groesse, brand=None):
     """Tatsächliche Textmaße eines text-Elements, ohne zu zeichnen – für die Editor-Bühne.
 
     text:            fertiger Text (Variablen bereits ersetzt); uppercase wird hier angewandt
-    el:              das text-Element (dict) aus der Config
+    el:              das text-Element (dict) aus der Config; eine 'role' wird zuerst aufgelöst
     canvas_groesse:  (breite, hoehe) der Leinwand
     Liefert {'lines': [...], 'size': int, 'width': int, 'height': int,
              'line_height': float, 'x': int, 'y': int, 'lines_geom': [...],
              'block': (x0,y0,x1,y1), 'boxes': [...], 'align', 'valign'}"""
     el = el if isinstance(el, dict) else {}
-    s = str(text if text is not None else '')
-    if _bool(el.get('uppercase')):
-        s = s.upper()
     try:
         size = (int(canvas_groesse[0]), int(canvas_groesse[1]))
     except (TypeError, ValueError, IndexError):
         size = DEFAULT_CANVAS
+    el = rolle_anwenden(el, brand, size[1])
+    s = str(text if text is not None else '')
+    if _bool(el.get('uppercase')):
+        s = s.upper()
     lay = _text_layout(s, el, size, brand=brand)
     return {
         'lines': list(lay['lines']),
@@ -858,6 +1211,199 @@ def text_metrics(text, el, canvas_groesse, brand=None):
         'boxes': [tuple(round(v, 2) for v in b) for b in lay['boxes']],
         'align': lay['align'], 'valign': lay['valign'],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Zeichen-Budget und Passprobe (Grundlage für KI-Prompt und Vorlagen-Prüfung)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Probetext für die mittlere Zeichenbreite UND für die Passprobe des Budgets: echte
+# deutsche Wörter mit Leerzeichen, aber bewusst am breiten Rand des Üblichen (rund 9 %
+# breiter als ein Fließsatz). Die genannte Grenze soll auch für breite Wörter halten und
+# nicht nur für 'iiiii'. Der Anfang ist ein einzelnes Wort, weil kurze Belegungen (ein
+# Stadtname) genau so aussehen – ohne Leerzeichen, an dem sich nichts umbrechen lässt.
+_BUDGET_PROBE = 'Potsdam Osnabrueck Wochenmarkt Grossbaustelle Sonderangebot Wohngebiet'
+# Ohne height UND ohne max_lines ist die Box nach unten offen. Für das Budget wird dann
+# mit so vielen Zeilen gerechnet – mehr Text passt zwar, sieht aber nicht mehr aus wie ein Meme.
+_BUDGET_ZEILEN_OHNE_HOEHE = 3
+_MIN_PROBE_GROESSE = 4          # Untergrenze der Suche in passt_text()
+
+
+def _innenmasse(el, canvas_groesse):
+    """(inner_w, inner_h) eines Text-Elements nach Abzug des padding. inner_h kann None sein."""
+    cw, ch = canvas_groesse
+    x = _num(el.get('x'), 0.0)
+    width = _num(el.get('width'), 0.0) or (cw - x)
+    if width <= 0:
+        width = max(1.0, cw - x)
+    hoehe = el.get('height')
+    hoehe = _num(hoehe) if hoehe not in (None, '') else None
+    if hoehe is not None and hoehe <= 0:
+        hoehe = None
+    pt, pr, pb, pl = _padding_box(el.get('padding'), 0.0)
+    return (max(1.0, width - pl - pr),
+            None if hoehe is None else max(1.0, hoehe - pt - pb))
+
+
+def _max_lines_von(el):
+    n = _int(el.get('max_lines'), 0) if el.get('max_lines') not in (None, '', 0) else None
+    return n if (n is None or n >= 1) else None
+
+
+def _budget_probe(n):
+    """Probetext mit genau n Zeichen im Satzbau von _BUDGET_PROBE."""
+    n = max(1, int(n))
+    roh = (_BUDGET_PROBE + ' ') * (n // (len(_BUDGET_PROBE) + 1) + 2)
+    s = roh[:n]
+    return (s[:-1] + 'n') if s.endswith(' ') else s   # kein Text endet auf Leerzeichen
+
+
+def _budget_zaehlen(probe, font, inner_w, spacing, zeilen):
+    """Wie viele Zeichen der Probe in `zeilen` Zeilen der Breite inner_w passen.
+
+    Bricht die Probe genau so um, wie der Renderer es täte, nimmt die erlaubten Zeilen und
+    zählt sie zusammen. Weil der Umbruch an Leerzeichen trennt, ist das Ergebnis wieder ein
+    Anfangsstück der Probe – die gezählte Länge steht also nachweislich im Bild."""
+    lines, _overflow = _wrap(probe, font, inner_w, spacing, hard_break=False)
+    genommen = []
+    for zeile in lines[:max(1, int(zeilen))]:
+        if _text_width(font, zeile, spacing) > inner_w:
+            # Ein einzelnes Wort ist breiter als die Box: so weit kürzen, bis es steht.
+            while zeile and _text_width(font, zeile, spacing) > inner_w:
+                zeile = zeile[:-1]
+            genommen.append(zeile)
+            break
+        genommen.append(zeile)
+    return max(1, len(' '.join(genommen)))
+
+
+def zeichen_budget(el, canvas_groesse, brand=None):
+    """Wie viele Zeichen bei MINDESTgröße in die Box dieses Text-Elements passen.
+
+    Gerechnet, nicht geschätzt: der Probetext wird bei min_size genau so umgebrochen, wie
+    der Renderer es täte, und die erlaubten Zeilen werden gezählt. Ein Text dieser Länge
+    besteht damit auch die Passprobe – die Zahl steht im KI-Prompt und im Prüf-Vorschlag als
+    Grenze, die eingehalten werden SOLL, und muss deshalb halten. (Die frühere Rechnung
+    „mittlere Zeichenbreite × Zeilenzahl“ ließ dem Wortumbruch keine Reserve und fiel dadurch
+    5–10 % zu groß aus; sie sagt jetzt nur noch, wie lang die Probe sein muss.)
+
+    Zeilenzahl: max_lines, sonst height/Zeilenvorschub, sonst _BUDGET_ZEILEN_OHNE_HOEHE (3)."""
+    el = el if isinstance(el, dict) else {}
+    try:
+        size = (int(canvas_groesse[0]), int(canvas_groesse[1]))
+    except (TypeError, ValueError, IndexError):
+        size = DEFAULT_CANVAS
+    el = rolle_anwenden(el, brand, size[1])
+
+    inner_w, inner_h = _innenmasse(el, size)
+    min_size = max(1, _int(el.get('min_size'), 24))
+    max_size = max(1, _int(el.get('max_size'), 64))
+    if min_size > max_size:
+        min_size = max_size
+    lh_factor = _num(el.get('line_height'), 1.15) or 1.15
+    spacing = _num(el.get('letter_spacing'), 0.0)
+
+    font = load_font(el.get('font') or _FALLBACK_KEY, min_size, brand=brand)
+    probe = _BUDGET_PROBE.upper() if _bool(el.get('uppercase')) else _BUDGET_PROBE
+    breite = _text_width(font, probe, spacing)
+    mittel = breite / len(probe) if breite > 0 else max(1.0, font.size * 0.5)
+
+    zeilen = _max_lines_von(el)
+    if inner_h is not None:
+        nach_hoehe = max(1, int(inner_h // max(1.0, font.size * lh_factor)))
+        zeilen = nach_hoehe if zeilen is None else min(zeilen, nach_hoehe)
+    if zeilen is None:
+        zeilen = _BUDGET_ZEILEN_OHNE_HOEHE
+    # Die Schätzung sagt nur noch, wie lang die Probe sein muss, damit sie sicher überläuft.
+    laenge = max(1, int(inner_w * zeilen / mittel)) * 2 + 20
+    gezaehlt = 1
+    for _ in range(3):
+        probe = _budget_probe(laenge)
+        if _bool(el.get('uppercase')):
+            probe = probe.upper()
+        gezaehlt = _budget_zaehlen(probe, font, inner_w, spacing, zeilen)
+        if gezaehlt < laenge:                # Probe war lang genug: die Box war die Grenze
+            return gezaehlt
+        laenge *= 2
+    return gezaehlt
+
+
+def _vollstaendig(lay, text, inner_w, inner_h, max_lines):
+    """True, wenn der Text im Layout ungekürzt, unüberstehend und in der Box steht."""
+    gesetzt = ''.join(''.join(lay['lines']).split())
+    gewollt = ''.join(str(text).split())
+    if gesetzt != gewollt:
+        return False                                   # gekürzt ('…') oder abgeschnitten
+    if lay['width'] > inner_w + 0.5:
+        return False                                   # ein Wort ist breiter als die Box
+    if max_lines is not None and len(lay['lines']) > max_lines:
+        return False
+    if inner_h is not None and lay['height'] > inner_h + 0.5:
+        return False
+    return True
+
+
+def passt_text(text, el, canvas_groesse, brand=None):
+    """Passt dieser Text in dieses Element?
+
+    Liefert {'passt': bool,
+             'groesse': int,                 Schriftgröße, bei der er vollständig steht
+             'zeilen': int,                  Zeilen bei dieser Größe
+             'noetige_verkleinerung': float} 0.0 wenn er passt, sonst der Anteil, um den die
+                                             Mindestgröße noch unterschritten werden müsste
+                                             (0.2 = 20 % kleiner als min_size).
+    Für die Vorlagen-Prüfung über viele Städte: die längste vorkommende Belegung hier
+    hineingeben, dann steht in 'noetige_verkleinerung', wie schlimm es ist.
+
+    Die Suche unterhalb der Mindestgröße ist eine Halbierungssuche und setzt voraus, dass
+    kleinere Schrift eher passt als größere. 'groesse' ist immer eine Größe, bei der der
+    Text nachweislich vollständig steht (nachgeprüft), niemals eine geratene."""
+    el = el if isinstance(el, dict) else {}
+    try:
+        size = (int(canvas_groesse[0]), int(canvas_groesse[1]))
+    except (TypeError, ValueError, IndexError):
+        size = DEFAULT_CANVAS
+    el = rolle_anwenden(el, brand, size[1])
+
+    s = str(text if text is not None else '')
+    if _bool(el.get('uppercase')):
+        s = s.upper()
+    inner_w, inner_h = _innenmasse(el, size)
+    max_lines = _max_lines_von(el)
+    min_size = max(1, _int(el.get('min_size'), 24))
+    max_size = max(1, _int(el.get('max_size'), 64))
+    if min_size > max_size:
+        min_size = max_size
+
+    lay = _text_layout(s, el, size, brand=brand)
+    if _vollstaendig(lay, s, inner_w, inner_h, max_lines):
+        return {'passt': True, 'groesse': int(lay['size']), 'zeilen': len(lay['lines']),
+                'noetige_verkleinerung': 0.0}
+
+    # Passt nicht: größte Schriftgröße UNTER der Mindestgröße suchen, bei der er stünde.
+    def bei(groesse):
+        probe = dict(el)
+        probe['max_size'] = groesse
+        probe['min_size'] = groesse
+        probe['fit'] = 'shrink'
+        return _text_layout(s, probe, size, brand=brand)
+
+    boden = max(1, min(_MIN_PROBE_GROESSE, min_size))
+    lo, hi = boden, max(boden, min_size - 1)
+    treffer = None
+    while lo <= hi:
+        mitte = (lo + hi) // 2
+        kandidat = bei(mitte)
+        if _vollstaendig(kandidat, s, inner_w, inner_h, max_lines):
+            treffer = (mitte, kandidat)
+            lo = mitte + 1
+        else:
+            hi = mitte - 1
+    if treffer is None:
+        treffer = (boden, bei(boden))
+    groesse, kandidat = treffer
+    return {'passt': False, 'groesse': int(groesse), 'zeilen': len(kandidat['lines']),
+            'noetige_verkleinerung': round(max(0.0, 1.0 - groesse / float(min_size)), 3)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -923,6 +1469,159 @@ def element_defaults(typ, shape=None):
                          'fill': '#ffffff',
                          'tail': {'x': 340, 'y': 720}})
     return base
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rollen – eine Entscheidung statt fünfzehn Einzelwerten
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ein Text-Element bekommt optional 'role'. Die Rolle liefert Vorgaben, die aus dem
+# Stadt-Stil aufgelöst werden – dadurch sieht dieselbe Vorlage in jeder Stadt anders aus.
+# JEDER am Element gesetzte Wert schlägt die Rolle. Ohne 'role' ändert sich nichts:
+# rolle_anwenden() gibt dann dasselbe Objekt unverändert zurück.
+#
+# Die Größen sind Anteile der LEINWANDHÖHE, nicht Pixel – dieselbe Rolle sitzt auf
+# 1080×1350 und auf 1080×1080 gleich gut.
+#
+# Bedeutung der Felder einer Rolle:
+#   schrift   'headline' | 'body'   -> font 'stil:headline' bzw. 'stil:body'
+#   farbe     Farbtoken             -> color
+#   max, min  Anteil der Höhe       -> max_size, min_size
+#   gross     True | 'stil' | False -> uppercase (True = immer, 'stil' = Schreibweise des Stils)
+#   kasten    'stil' | False        -> box (Art, Radius und Farbe kommen aus dem Stil)
+#   kontur    'stil' | 'dunkel' | False -> stroke + stroke_width
+#   schatten  'stil' | True | False -> shadow
+#   opacity   Zahl oder None        -> opacity
+
+ROLLEN = {
+    'ueberschrift': {
+        'beschreibung': 'Die Zeile, die den Beitrag ansagt – ruhig, lesbar, im Kasten des Stils.',
+        'schrift': 'headline', 'farbe': 'stil:auto', 'max': 0.075, 'min': 0.035,
+        'gross': 'stil', 'kasten': 'stil', 'kontur': 'stil', 'schatten': False, 'opacity': None,
+    },
+    'pointe': {
+        'beschreibung': 'Der Satz, auf den es ankommt – am größten, in der Akzentfarbe, immer mit dunkler Kontur.',
+        'schrift': 'headline', 'farbe': 'stil:accent', 'max': 0.095, 'min': 0.045,
+        'gross': False, 'kasten': False, 'kontur': 'dunkel', 'schatten': 'stil', 'opacity': None,
+    },
+    'unterzeile': {
+        'beschreibung': 'Erklärt die Überschrift in einem halben Satz – kleiner, ohne Kasten.',
+        'schrift': 'body', 'farbe': 'stil:auto', 'max': 0.042, 'min': 0.024,
+        'gross': False, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': None,
+    },
+    'ort': {
+        'beschreibung': 'Der Stadt- oder Ortsname – in der Hauptfarbe und immer in Großbuchstaben.',
+        'schrift': 'headline', 'farbe': 'stil:primary', 'max': 0.085, 'min': 0.040,
+        'gross': True, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': None,
+    },
+    'klein': {
+        'beschreibung': 'Beiwerk wie Quelle, Datum oder Hinweis – klein und zurückhaltend.',
+        'schrift': 'body', 'farbe': 'stil:dark', 'max': 0.026, 'min': 0.018,
+        'gross': False, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': 0.85,
+    },
+    'wasserzeichen': {
+        'beschreibung': 'Der eigene Seitenname in der Ecke – da, aber nie im Weg.',
+        'schrift': 'body', 'farbe': 'stil:light', 'max': 0.024, 'min': 0.016,
+        'gross': False, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': 0.7,
+    },
+    'frei': {
+        'beschreibung': 'Keine Vorgaben – jeder Wert wird am Element selbst gesetzt.',
+        'schrift': None, 'farbe': None, 'max': None, 'min': None,
+        'gross': False, 'kasten': False, 'kontur': False, 'schatten': False, 'opacity': None,
+    },
+}
+
+ROLLEN_NAMEN = tuple(ROLLEN.keys())
+
+
+def _kasten_vorgabe(stil):
+    """Textkasten aus der Kastenart des Stils. None = kein Kasten.
+    padding bleibt bewusst offen: _text_layout nimmt dann 18 % der Schriftgröße, der Kasten
+    wächst also mit der Schrift mit."""
+    art = stil['kasten']
+    if art == 'voll':
+        return {'fill': stil['light'], 'radius': stil['radius'], 'per_line': True}
+    if art == 'weich':
+        return {'fill': _mit_alpha(stil['light'], 0.78),
+                'radius': max(int(stil['radius']), 18), 'per_line': True}
+    if art == 'umriss':
+        return {'stroke': stil['primary'], 'stroke_width': 3,
+                'radius': stil['radius'], 'per_line': False}
+    return None                                       # 'keiner'
+
+
+def _rollen_vorgaben(name, stil, canvas_hoehe):
+    """Die Vorgaben einer Rolle als Element-Felder (nur gesetzte Schlüssel)."""
+    r = ROLLEN.get(name) or {}
+    h = max(1.0, _num(canvas_hoehe, DEFAULT_CANVAS[1]))
+    out = {}
+    if r.get('schrift'):
+        out['font'] = 'stil:' + r['schrift']
+    if r.get('farbe'):
+        out['color'] = r['farbe']
+    if r.get('max'):
+        out['max_size'] = max(1, int(round(r['max'] * h)))
+    if r.get('min'):
+        out['min_size'] = max(1, int(round(r['min'] * h)))
+
+    gross = r.get('gross')
+    if gross is True:
+        out['uppercase'] = True
+    elif gross == 'stil':
+        out['uppercase'] = (stil['schreibweise'] == 'gross')
+
+    if r.get('kasten') == 'stil':
+        kasten = _kasten_vorgabe(stil)
+        if kasten is not None:
+            out['box'] = kasten
+
+    kontur = r.get('kontur')
+    strichstaerke = max(2, int(round(0.005 * h)))
+    if kontur == 'dunkel':
+        out['stroke'] = stil['dark']
+        out['stroke_width'] = strichstaerke
+    elif kontur == 'stil':
+        if stil['kontur'] == 'dunkel':
+            out['stroke'] = stil['dark']
+            out['stroke_width'] = strichstaerke
+        elif stil['kontur'] == 'palette':
+            out['stroke'] = stil['secondary']
+            out['stroke_width'] = strichstaerke
+
+    schatten = r.get('schatten')
+    if schatten is True or (schatten == 'stil' and stil['schatten']):
+        versatz = max(1, int(round(0.004 * h)))
+        out['shadow'] = {'dx': versatz, 'dy': versatz,
+                         'blur': max(1, int(round(0.006 * h))),
+                         'color': _mit_alpha(stil['dark'], 0.55)}
+
+    if r.get('opacity') is not None:
+        out['opacity'] = r['opacity']
+    return out
+
+
+def rolle_anwenden(el, brand=None, canvas_hoehe=None):
+    """Element-Dict mit eingesetzten Rollenvorgaben.
+
+    el:           ein Element aus der Config (dict)
+    brand:        Stil- oder brand-Dict (wird durch stil_dict() vervollständigt)
+    canvas_hoehe: Höhe der Leinwand in Pixeln (Grundlage aller Rollen-Größen)
+
+    Ein Wert der Rolle wird NUR eingesetzt, wenn das Element den Schlüssel gar nicht hat
+    oder er None bzw. '' ist. Wer 'box': false setzt, bekommt also keinen Kasten, auch wenn
+    der Stil einen vorsieht. Ohne (oder mit unbekannter) 'role' wird el unverändert und als
+    dasselbe Objekt zurückgegeben – alte Vorlagen laufen dadurch bitgleich weiter."""
+    if not isinstance(el, dict):
+        return el
+    name = str(el.get('role') or '').strip().lower()
+    if not name or name not in ROLLEN or name == 'frei':
+        return el
+    stil = stil_dict(brand)
+    hoehe = _num(canvas_hoehe, DEFAULT_CANVAS[1]) or DEFAULT_CANVAS[1]
+    neu = dict(el)
+    for k, v in _rollen_vorgaben(name, stil, hoehe).items():
+        if k not in neu or neu.get(k) in (None, ''):
+            neu[k] = v
+    return neu
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1043,6 +1742,15 @@ def validate_config(config):
                 errors.append(f'{label}: {k} muss ein Variablenname (Text) sein')
         if el.get('group') not in (None, '') and not isinstance(el.get('group'), (str, int)):
             errors.append(f'{label}: group muss ein Text oder eine Zahl sein')
+        rolle = el.get('role')
+        if rolle not in (None, ''):
+            if not isinstance(rolle, str):
+                errors.append(f'{label}: role muss ein Text sein')
+            elif rolle.strip().lower() not in ROLLEN:
+                errors.append(f"{label}: unbekannte Rolle '{rolle}' "
+                              f"(erlaubt: {', '.join(ROLLEN_NAMEN)})")
+            elif t != 'text':
+                errors.append(f'{label}: role wirkt nur auf text-Elemente')
         if el.get('name') not in (None, '') and not isinstance(el.get('name'), str):
             errors.append(f'{label}: name muss ein Text sein')
 
@@ -1370,6 +2078,24 @@ def _rounded_mask(size, radius, box=None):
     return m
 
 
+def _text_untergrund(img, el, lay, brand):
+    """Was liegt hinter diesem Text? Eine gesetzte Kastenfarbe gewinnt (halbdurchsichtige
+    wird über den Bildmittelwert gerechnet), sonst der Mittelwert des bisher gezeichneten
+    Bildes im Textblock. Grundlage für 'stil:auto'."""
+    box_cfg = el.get('box')
+    if isinstance(box_cfg, dict):
+        fuellung = box_cfg.get('fill')
+        if fuellung not in (None, '', False) and not _enthaelt_auto(fuellung):
+            c = parse_color(fuellung, brand, None)
+            if c is not None:
+                if c[3] >= 250:
+                    return tuple(c[:3])
+                hinter = _bereich_mittel(img, lay['block'])
+                a = c[3] / 255.0
+                return tuple(int(round(c[i] * a + hinter[i] * (1 - a))) for i in range(3))
+    return _bereich_mittel(img, lay['block'])
+
+
 def _render_text(img, el, values, brand):
     text = _value_for(el, values)
     if text is None:
@@ -1382,6 +2108,10 @@ def _render_text(img, el, values, brand):
         text = text.upper()
 
     lay = _text_layout(text, el, img.size, brand=brand)
+    # 'stil:auto' braucht den Untergrund und den kennt erst dieser Moment: das Bild ist bis
+    # hierher gezeichnet, die Textgeometrie steht. Danach ist el frei von 'stil:auto'.
+    if _enthaelt_auto(el):
+        el = _auto_ersetzen(el, auto_farbe(_text_untergrund(img, el, lay, brand)))
     font, lines, lh = lay['font'], lay['lines'], lay['line_height']
     spacing = lay['letter_spacing']
     color = parse_color(el.get('color'), brand, (255, 255, 255, 255))
@@ -1952,7 +2682,9 @@ def render(bg_path, config, values, brand=None):
              bisher FileNotFoundError geworfen (der einzige Fehler, der nach außen geht).
     config:  dict (oder JSON-Text) mit 'elements' und optional 'canvas'.
     values:  {var: Wert}; Nicht-Strings werden mit str() gewandelt.
-    brand:   {'bg','text','accent','font'} für 'brand:x'-Farben und font 'brand'.
+    brand:   das alte {'bg','text','accent','font'} ODER ein vollständiges Stil-Dict
+             (CityStyle.to_dict() bzw. stil_dict()). Beides wird verstanden: 'brand:*' und
+             font 'brand' laufen unverändert, zusätzlich gibt es 'stil:*' und die Rollen.
     Fehler einzelner Elemente werden geloggt und übersprungen."""
     try:
         config = _coerce_config(config) or {}
@@ -2001,6 +2733,9 @@ def render(bg_path, config, values, brand=None):
         if not isinstance(el, dict):
             log.warning('Element %d ist kein Objekt, übersprungen', i + 1)
             continue
+        # Rolle zuerst: sie kann Schrift, Größen, Farbe, Kasten, Kontur, Schatten und
+        # opacity setzen. Ohne 'role' kommt dasselbe Objekt zurück (bitgleiche Altlast).
+        el = rolle_anwenden(el, brand, size[1])
         if _bool(el.get('hidden')):
             continue
         opacity = _clamp(_num(el.get('opacity'), 1.0), 0.0, 1.0)
@@ -2019,6 +2754,10 @@ def render(bg_path, config, values, brand=None):
             continue
         if el_type == 'text':
             text_versucht += 1
+        elif _enthaelt_auto(el):
+            # Bei Text entscheidet _render_text selbst (es kennt den echten Textblock);
+            # alle anderen Typen bekommen den Mittelwert ihres Elementrechtecks.
+            el = _auto_ersetzen(el, auto_farbe(_bereich_mittel(img, _el_box(el, size))))
         try:
             result = handler(img, el, values, brand)
             if isinstance(result, tuple):

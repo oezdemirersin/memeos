@@ -396,6 +396,21 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .hl-carousel-strip .hl-slide-num{position:absolute;bottom:2px;right:3px;font-size:10px;font-weight:700;background:rgba(0,0,0,.6);color:#fff;border-radius:3px;padding:1px 3px;}
 .hl-carousel-strip .hl-slide .hl-slide-rm{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:3px;width:16px;height:16px;font-size:9px;cursor:pointer;display:none;align-items:center;justify-content:center;}
 .hl-carousel-strip .hl-slide:hover .hl-slide-rm{display:flex;}
+/* ── Design der Städte (Stadt-Stile) ── */
+.stil-lab{font-size:10px;color:var(--muted);margin-bottom:3px;line-height:1.3;}
+.stil-gruppe{font-size:11px;color:var(--muted2);font-weight:600;margin-bottom:6px;letter-spacing:.3px;}
+input.stil-farbe{width:100%;height:26px;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer;padding:1px;}
+input.stil-hex{width:100%;font-size:10px;padding:3px 4px;margin-top:3px;text-align:center;border-radius:5px;}
+select.stil-sel{font-size:12px;padding:6px 8px;}
+.stil-streifen{display:flex;height:11px;border-radius:3px;overflow:hidden;border:1px solid var(--border);}
+.stil-streifen span{flex:1;}
+.stil-punkt{width:11px;height:11px;border-radius:3px;border:1px solid rgba(255,255,255,.18);}
+.stil-paket-karte{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 9px;cursor:pointer;transition:border-color .15s;}
+.stil-paket-karte:hover{border-color:var(--border2);}
+.stil-paket-karte.aktiv{border-color:var(--accent);}
+.stil-zeile{display:grid;grid-template-columns:70px 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);}
+.stil-zeile.ohne{border-style:dashed;border-color:var(--border2);}
+.stil-warnung{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.30);margin-bottom:6px;}
 </style>
 </head>
 <body>
@@ -659,6 +674,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
   <div class="page-header">
     <div class="page-title">STÄDTE & <span>WIKI</span></div>
     <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="stilUebersichtOeffnen()" title="Palette, Schriften und Anmutung aller Städte auf einen Blick">Design der Städte</button>
       <button class="btn btn-ghost btn-sm" onclick="openBulkCityImport()">Bulk Import</button>
       <button class="btn btn-primary btn-sm" onclick="openCityModal()">+ Stadt</button>
     </div>
@@ -701,6 +717,140 @@ tr:hover td{background:rgba(255,255,255,.02);}
             <button class="btn btn-ghost btn-xs" onclick="editCity()">Bearbeiten</button>
             <button class="btn btn-ghost btn-xs" onclick="openKnowledgeModal()">+ Eintrag</button>
             <button class="btn btn-primary btn-xs" onclick="generateCityWiki()" id="wiki-ai-btn">✨ KI-Wiki</button>
+          </div>
+        </div>
+
+        <!-- Design der Stadt: Palette, Schriften, Anmutung -->
+        <div id="stil-block" style="margin-bottom:18px;border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" onclick="stilEditorUmschalten()" title="Palette, Schriften und Anmutung dieser Stadt">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;">Design der Stadt</div>
+            <div id="stil-swatches" style="display:flex;gap:3px;flex-shrink:0;"></div>
+            <div id="stil-paket-name" style="font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">wird geladen …</div>
+            <button class="btn btn-ghost btn-xs" id="stil-toggle" type="button">Bearbeiten ▾</button>
+          </div>
+
+          <div id="stil-editor" style="display:none;border-top:1px solid var(--border);padding:14px 12px;">
+            <div style="display:grid;grid-template-columns:168px 1fr;gap:16px;align-items:start;">
+
+              <!-- Vorschaukachel -->
+              <div>
+                <div id="stil-vorschau" style="position:relative;width:100%;aspect-ratio:4/5;border-radius:8px;overflow:hidden;background:#161616;">
+                  <div id="stil-vorschau-grund" style="position:absolute;inset:0;"></div>
+                  <div id="stil-vorschau-ueberschrift" style="position:absolute;left:7%;right:7%;top:8%;font-size:13px;line-height:1.16;"></div>
+                  <div id="stil-vorschau-pointe" style="position:absolute;left:7%;right:7%;top:42%;font-size:19px;line-height:1.08;"></div>
+                  <div id="stil-vorschau-wz" style="position:absolute;font-size:9px;line-height:1;"></div>
+                </div>
+                <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:6px;">
+                  Annäherung im Browser: so setzt der Renderer die Rollen ueberschrift, pointe und wasserzeichen in dieser Handschrift.
+                </div>
+              </div>
+
+              <!-- Regler -->
+              <div>
+                <div class="stil-gruppe">Palette</div>
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px;">
+                  <div>
+                    <div class="stil-lab">Primär</div>
+                    <input type="color" class="stil-farbe" id="stil-primary" value="#3b82f6" oninput="stilFarbeGewaehlt('primary')">
+                    <input type="text" class="stil-hex" id="stil-primary-hex" value="#3b82f6" spellcheck="false" oninput="stilHexGetippt('primary')">
+                  </div>
+                  <div>
+                    <div class="stil-lab">Zweitfarbe</div>
+                    <input type="color" class="stil-farbe" id="stil-secondary" value="#1e40af" oninput="stilFarbeGewaehlt('secondary')">
+                    <input type="text" class="stil-hex" id="stil-secondary-hex" value="#1e40af" spellcheck="false" oninput="stilHexGetippt('secondary')">
+                  </div>
+                  <div>
+                    <div class="stil-lab">Akzent</div>
+                    <input type="color" class="stil-farbe" id="stil-accent" value="#f59e0b" oninput="stilFarbeGewaehlt('accent')">
+                    <input type="text" class="stil-hex" id="stil-accent-hex" value="#f59e0b" spellcheck="false" oninput="stilHexGetippt('accent')">
+                  </div>
+                  <div>
+                    <div class="stil-lab">Dunkel</div>
+                    <input type="color" class="stil-farbe" id="stil-dark" value="#0f172a" oninput="stilFarbeGewaehlt('dark')">
+                    <input type="text" class="stil-hex" id="stil-dark-hex" value="#0f172a" spellcheck="false" oninput="stilHexGetippt('dark')">
+                  </div>
+                  <div>
+                    <div class="stil-lab">Hell</div>
+                    <input type="color" class="stil-farbe" id="stil-light" value="#ffffff" oninput="stilFarbeGewaehlt('light')">
+                    <input type="text" class="stil-hex" id="stil-light-hex" value="#ffffff" spellcheck="false" oninput="stilHexGetippt('light')">
+                  </div>
+                </div>
+
+                <div class="stil-gruppe">Schriftpaar</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+                  <div>
+                    <div class="stil-lab">Auszeichnung — Überschrift, Pointe, Ort</div>
+                    <select class="stil-sel" id="stil-font-headline" onchange="stilGeaendert()"></select>
+                  </div>
+                  <div>
+                    <div class="stil-lab">Grundschrift — Unterzeile, klein, Wasserzeichen</div>
+                    <select class="stil-sel" id="stil-font-body" onchange="stilGeaendert()"></select>
+                  </div>
+                </div>
+
+                <div class="stil-gruppe">Anmutung</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+                  <div>
+                    <div class="stil-lab">Schreibweise</div>
+                    <select class="stil-sel" id="stil-schreibweise" onchange="stilGeaendert()">
+                      <option value="gross">alles groß</option>
+                      <option value="normal">normal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="stil-lab">Textkasten</div>
+                    <select class="stil-sel" id="stil-kasten" onchange="stilGeaendert()">
+                      <option value="keiner">kein Kasten</option>
+                      <option value="voll">volle Fläche</option>
+                      <option value="weich">weiche Fläche</option>
+                      <option value="umriss">nur Umriss</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="stil-lab">Eckenrundung <span id="stil-radius-wert">16</span></div>
+                    <input type="range" id="stil-radius" min="0" max="40" step="1" value="16" style="width:100%;accent-color:var(--accent);" oninput="stilGeaendert()">
+                  </div>
+                  <div>
+                    <div class="stil-lab">Kontur</div>
+                    <select class="stil-sel" id="stil-kontur" onchange="stilGeaendert()">
+                      <option value="keine">keine</option>
+                      <option value="dunkel">dunkel</option>
+                      <option value="palette">aus der Palette</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="stil-lab">Ecke des Wasserzeichens</div>
+                    <select class="stil-sel" id="stil-wz-ecke" onchange="stilGeaendert()">
+                      <option value="unten_links">unten links</option>
+                      <option value="unten_rechts">unten rechts</option>
+                      <option value="oben_rechts">oben rechts</option>
+                      <option value="keins">keins</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="stil-lab">Schatten</div>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 0;">
+                      <input type="checkbox" id="stil-schatten" style="accent-color:var(--accent);" onchange="stilGeaendert()"> weicher Schatten
+                    </label>
+                  </div>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <button class="btn btn-primary btn-xs" id="stil-speichern-btn" onclick="stilSpeichern()">Design speichern</button>
+                  <button class="btn btn-ghost btn-xs" onclick="stilVerwerfen()" title="Die zuletzt gespeicherten Werte wieder herstellen">Verwerfen</button>
+                  <div id="stil-status" style="font-size:11px;color:var(--muted);flex:1;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stil-Pakete -->
+            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+              <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                <div style="font-size:12px;font-weight:600;">Stil-Pakete</div>
+                <div style="font-size:11px;color:var(--muted);">Ein Klick setzt alle Werte oben. Danach bleibt jeder Einzelwert änderbar.</div>
+              </div>
+              <div id="stil-pakete" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:8px;"></div>
+            </div>
           </div>
         </div>
 
@@ -3483,6 +3633,36 @@ tr:hover td{background:rgba(255,255,255,.02);}
   </div>
 </div>
 
+<!-- Design der Städte: Übersicht, Verteilen, Warnungen -->
+<div class="modal-overlay" id="modal-stil-uebersicht">
+  <div class="modal" style="width:920px;">
+    <div class="modal-header">
+      <div class="modal-title">DESIGN DER STÄDTE</div>
+      <button class="modal-close" onclick="closeModal('modal-stil-uebersicht')">×</button>
+    </div>
+
+    <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px;">
+      Jede Stadt hat ihre eigene Handschrift: Palette, Schriftpaar und Anmutung. Vorlagen, die
+      <code>stil:</code>-Farben oder Rollen benutzen, sehen damit in jeder Stadt anders aus.
+      Hier siehst du auf einen Blick, wo sich Stile wiederholen.
+    </div>
+
+    <div id="stil-warnungen" style="margin-bottom:14px;"></div>
+
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;background:var(--surface2);border-radius:8px;margin-bottom:14px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+        <input type="checkbox" id="stil-verteilen-nur-ohne" checked style="accent-color:var(--accent);"> Nur Städte ohne eigenen Stil
+      </label>
+      <button class="btn btn-primary btn-sm" id="stil-verteilen-btn" onclick="stilVerteilen()">Stile verteilen</button>
+      <div id="stil-verteilen-bericht" style="font-size:11px;color:var(--muted);flex:1;min-width:160px;"></div>
+      <button class="btn btn-ghost btn-xs" onclick="stilUebersichtNeuLaden()">↻ Aktualisieren</button>
+    </div>
+
+    <div id="stil-uebersicht-summe" style="font-size:11px;color:var(--muted2);margin-bottom:8px;"></div>
+    <div id="stil-uebersicht-grid" style="display:flex;flex-direction:column;gap:6px;"></div>
+  </div>
+</div>
+
 <!-- Toast container -->
 <div id="toast-container"></div>
 
@@ -3613,6 +3793,7 @@ async function selectCity(id, name) {
   document.getElementById('kw-city-id').value = id;
   await loadWiki(id);
   loadStadtbilder(id);
+  stilStadtLaden(id, name);
 }
 
 async function loadWiki(cityId) {
@@ -3773,6 +3954,736 @@ async function doBulkCityImport() {
   toast(`${r.created} Städte importiert!`,'success');
   closeModal('modal-bulk-city');
   location.reload();
+}
+
+// ══ DESIGN DER STÄDTE (Stadt-Stile) ═══════════════════════════════════════════
+// Backend: GET /api/stil/pakete · GET /api/stil/staedte · GET|PUT /api/stil/stadt/<id>
+//          POST /api/stil/stadt/<id>/paket · POST /api/stil/verteilen · GET /api/stil/aehnlich
+// Schreibende Aufrufe laufen über api() – der X-CSRF-Token steckt schon in CSRF_JSON_H.
+
+const STIL_VORGABE = {
+  primary:'#3b82f6', secondary:'#1e40af', accent:'#f59e0b', dark:'#0f172a', light:'#ffffff',
+  font_headline:'anton', font_body:'bold', schreibweise:'gross', kasten:'keiner',
+  radius:16, kontur:'dunkel', schatten:true, wasserzeichen_ecke:'unten_rechts', paket:''
+};
+const STIL_FARBFELDER  = ['primary','secondary','accent','dark','light'];
+const STIL_FARB_LABEL  = {primary:'Primär', secondary:'Zweitfarbe', accent:'Akzent', dark:'Dunkel', light:'Hell'};
+const STIL_KASTEN_LBL  = {keiner:'kein Kasten', voll:'volle Fläche', weich:'weiche Fläche', umriss:'nur Umriss'};
+const STIL_SCHREIB     = ['gross','normal'];
+const STIL_KASTEN      = ['keiner','voll','weich','umriss'];
+const STIL_KONTUR      = ['keine','dunkel','palette'];
+const STIL_ECKEN       = ['unten_links','unten_rechts','oben_rechts','keins'];
+
+let _stilFonts        = null;   // [{key,label,source}] aus /api/studio/fonts
+let _stilPakete       = null;   // [{key,name,beschreibung,…}] aus /api/stil/pakete
+let _stilCityId       = null;
+let _stilCityName     = '';
+let _stilCityHandle   = '';
+let _stilGespeichert  = null;   // zuletzt vom Server bestätigter Stand
+let _stilHatEigenen   = false;
+let _stilAbweichend   = false;   // Werte weichen vom gewählten Paket ab
+const _stilSchriftenGeladen = new Set();
+
+function _stilEl(id) { return document.getElementById(id); }
+
+// Wie api(), aber mit der Fehlerform des Stil-Teils: dort steht bei 400 eine Liste
+// 'errors' im Rumpf. api() würde daraus nur „HTTP 400“ machen – der Satz ginge verloren.
+async function _stilRuf(method, url, body) {
+  const opts = {method: method, headers: Object.assign({}, CSRF_JSON_H)};
+  if (body) opts.body = JSON.stringify(body);
+  let r;
+  try { r = await fetch(url, opts); }
+  catch (e) { return {error: 'Netzwerkfehler – Server nicht erreichbar'}; }
+  if (r.status === 401 || (r.redirected && /\/login(\?|$)/.test(r.url))) {
+    location.href = '/login';
+    return {error: 'Nicht angemeldet'};
+  }
+  let data = null;
+  if ((r.headers.get('Content-Type') || '').includes('json')) {
+    try { data = await r.json(); } catch (e) { data = null; }
+  }
+  if (data === null || typeof data !== 'object') {
+    return {error: r.ok ? 'Unerwartete Antwort vom Server' : ('HTTP ' + r.status)};
+  }
+  if (Array.isArray(data.errors) && data.errors.length) {
+    return Object.assign({}, data, {error: data.errors.join(' · ')});
+  }
+  if (!r.ok && !data.error) return Object.assign({}, data, {error: 'HTTP ' + r.status});
+  return data;
+}
+
+// ── Antworten des Servers vertragen mehrere Formen ───────────────────────────
+function _stilArr(r, schluessel) {
+  if (Array.isArray(r)) return r;
+  if (r && typeof r === 'object') {
+    for (const k of (schluessel || [])) if (Array.isArray(r[k])) return r[k];
+    for (const k of Object.keys(r)) if (Array.isArray(r[k])) return r[k];
+  }
+  return [];
+}
+function _stilObj(r) {
+  if (!r || typeof r !== 'object') return {};
+  for (const k of ['stil','style','design']) {
+    if (r[k] && typeof r[k] === 'object' && !Array.isArray(r[k])) return r[k];
+  }
+  return r;
+}
+function _stilEigen(quellen) {
+  for (const q of quellen) {
+    if (!q || typeof q !== 'object') continue;
+    // 'abgeleitet' ist die Sprache des Servers: kein eigener Eintrag, Stil kommt aus den
+    // alten Marken-Feldern – die Stadt sieht also aus wie jede andere Stadt ohne Stil.
+    if (typeof q.abgeleitet === 'boolean') return !q.abgeleitet;
+    for (const k of ['hat_stil','eigener_stil','hat_eigenen_stil','eigen','vorhanden']) {
+      if (typeof q[k] === 'boolean') return q[k];
+    }
+  }
+  for (const q of quellen) if (q && typeof q === 'object' && q.paket) return true;
+  return false;
+}
+
+// ── Farben ───────────────────────────────────────────────────────────────────
+function _stilHexLang(w) {
+  const s = String(w == null ? '' : w).trim();
+  if (/^#[0-9a-f]{3}$/i.test(s)) return '#' + s.slice(1).split('').map(c => c + c).join('');
+  return s;
+}
+function _stilFarbeOk(w, ersatz) {
+  const s = _stilHexLang(w);
+  return /^#[0-9a-f]{6}$/i.test(s) ? s.toLowerCase() : ersatz;
+}
+function _stilRgb(farbe) {
+  const s = _stilFarbeOk(farbe, '#000000').slice(1);
+  return [parseInt(s.slice(0,2),16), parseInt(s.slice(2,4),16), parseInt(s.slice(4,6),16)];
+}
+function _stilLeucht(farbe) {
+  const t = _stilRgb(farbe).map(v => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+}
+function _stilKontrast(a, b) {
+  const la = _stilLeucht(a), lb = _stilLeucht(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+// entspricht dem Token stil:auto – schwarz oder weiß, je nachdem was besser liest
+function _stilAuto(untergrund) {
+  return _stilKontrast('#ffffff', untergrund) >= _stilKontrast('#000000', untergrund) ? '#ffffff' : '#000000';
+}
+
+// ── Werte vereinheitlichen ───────────────────────────────────────────────────
+function _stilWahl(wert, erlaubt, vorgabe) {
+  const w = String(wert == null ? '' : wert).trim().toLowerCase();
+  return erlaubt.indexOf(w) >= 0 ? w : vorgabe;
+}
+function _stilNorm(roh) {
+  const s = (roh && typeof roh === 'object') ? roh : {};
+  const nimm = (ks) => {
+    for (const k of ks) { const v = s[k]; if (v !== undefined && v !== null && v !== '') return v; }
+    return undefined;
+  };
+  const rad = Number(nimm(['radius']));
+  return {
+    primary:   _stilFarbeOk(nimm(['primary']),   STIL_VORGABE.primary),
+    secondary: _stilFarbeOk(nimm(['secondary']), STIL_VORGABE.secondary),
+    accent:    _stilFarbeOk(nimm(['accent']),    STIL_VORGABE.accent),
+    dark:      _stilFarbeOk(nimm(['dark']),      STIL_VORGABE.dark),
+    light:     _stilFarbeOk(nimm(['light']),     STIL_VORGABE.light),
+    font_headline: String(nimm(['font_headline','headline']) || STIL_VORGABE.font_headline),
+    font_body:     String(nimm(['font_body','body'])         || STIL_VORGABE.font_body),
+    schreibweise:  _stilWahl(nimm(['schreibweise']), STIL_SCHREIB, STIL_VORGABE.schreibweise),
+    kasten:        _stilWahl(nimm(['kasten']),       STIL_KASTEN,  STIL_VORGABE.kasten),
+    radius:        Number.isFinite(rad) ? Math.max(0, Math.min(40, Math.round(rad))) : STIL_VORGABE.radius,
+    kontur:        _stilWahl(nimm(['kontur']),       STIL_KONTUR,  STIL_VORGABE.kontur),
+    schatten:      (s.schatten === undefined || s.schatten === null) ? STIL_VORGABE.schatten : !!s.schatten,
+    wasserzeichen_ecke: _stilWahl(nimm(['wasserzeichen_ecke','wz_ecke']), STIL_ECKEN, STIL_VORGABE.wasserzeichen_ecke),
+    paket: String(nimm(['paket']) || '')
+  };
+}
+
+// ── Schriften ────────────────────────────────────────────────────────────────
+async function stilSchriftenListe() {
+  if (_stilFonts) return _stilFonts;
+  const r = await api('GET', '/api/studio/fonts');
+  _stilFonts = (r && r.error) ? [] : _stilArr(r, ['fonts','schriften']);
+  return _stilFonts;
+}
+// Die Stil-Antworten tragen die Schriftbibliothek schon bei sich – dann spart das den Aufruf.
+function _stilFontsUebernehmen(r) {
+  if (_stilFonts && _stilFonts.length) return;
+  if (r && Array.isArray(r.fonts) && r.fonts.length) _stilFonts = r.fonts;
+}
+function _stilSchriftLabel(key) {
+  const f = (_stilFonts || []).find(x => String(x.key) === String(key));
+  return f ? String(f.label || f.key) : String(key || '');
+}
+function _stilSchriftFamilie(key) {
+  const k = String(key || '').replace(/[^A-Za-z0-9_-]/g, '');
+  return k ? "'stilschrift_" + k + "', 'Impact', 'Arial Black', sans-serif" : "'Impact', sans-serif";
+}
+async function stilSchriftLaden(key) {
+  const k = String(key || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (!k || _stilSchriftenGeladen.has(k) || typeof FontFace === 'undefined') return;
+  _stilSchriftenGeladen.add(k);
+  try {
+    const ff = new FontFace('stilschrift_' + k, 'url(/api/studio/fonts/' + encodeURIComponent(k) + '/file)');
+    await ff.load();
+    document.fonts.add(ff);
+    stilVorschau();
+  } catch (e) { /* Vorschau nutzt dann die Ersatzschrift */ }
+}
+function stilSchriftenOptionen() {
+  const html = (_stilFonts || []).map(f =>
+    `<option value="${_esc(f.key)}">${_esc(f.label || f.key)}</option>`).join('');
+  for (const id of ['stil-font-headline','stil-font-body']) {
+    const el = _stilEl(id);
+    if (el) el.innerHTML = html || '<option value="">keine Schrift gefunden</option>';
+  }
+}
+
+// ── Pakete ───────────────────────────────────────────────────────────────────
+async function stilPaketeListe() {
+  if (_stilPakete) return _stilPakete;
+  const r = await _stilRuf('GET', '/api/stil/pakete');
+  if (r && r.error) { _stilPakete = []; return _stilPakete; }
+  _stilFontsUebernehmen(r);
+  _stilPakete = _stilArr(r, ['pakete','packages','items']).map(p => {
+    const o = Object.assign({}, p);
+    o.key = String(p.key || p.schluessel || p.name || '').toLowerCase();
+    return o;
+  }).filter(p => p.key);
+  return _stilPakete;
+}
+function _stilPaketFinden(key) {
+  const k = String(key || '').toLowerCase();
+  return (_stilPakete || []).find(p => String(p.key || '').toLowerCase() === k) || null;
+}
+function _stilPaketName(key) {
+  const p = _stilPaketFinden(key);
+  if (p) return String(p.name || p.key);
+  return String(key || '');
+}
+function _stilAnderesPaket(aktuell) {
+  const alle = (_stilPakete || []).map(p => String(p.key || '')).filter(Boolean);
+  if (!alle.length) return '';
+  const andere = alle.filter(k => k.toLowerCase() !== String(aktuell || '').toLowerCase());
+  const quelle = andere.length ? andere : alle;
+  // Das im Bestand seltenste Paket vorschlagen – so laufen die Städte auseinander
+  // statt sich auf zwei Handschriften zu drängen.
+  return quelle.slice().sort((a, b) =>
+    ((_stilPaketZaehler[a] || 0) - (_stilPaketZaehler[b] || 0)) || a.localeCompare(b))[0];
+}
+function _stilKastenLabel(k) { return STIL_KASTEN_LBL[k] || String(k || ''); }
+
+// ── Formular ─────────────────────────────────────────────────────────────────
+function stilFelderFuellen(s) {
+  for (const f of STIL_FARBFELDER) {
+    const c = _stilEl('stil-' + f), h = _stilEl('stil-' + f + '-hex');
+    if (c) c.value = s[f];
+    if (h) h.value = s[f];
+  }
+  for (const paar of [['stil-font-headline','font_headline'], ['stil-font-body','font_body']]) {
+    const el = _stilEl(paar[0]); if (!el) continue;
+    el.value = s[paar[1]];
+    // Schrift, die es in der Bibliothek nicht (mehr) gibt, trotzdem sichtbar lassen
+    if (el.value !== s[paar[1]]) {
+      el.insertAdjacentHTML('beforeend',
+        `<option value="${_esc(s[paar[1]])}">${_esc(s[paar[1]])} (fehlt)</option>`);
+      el.value = s[paar[1]];
+    }
+  }
+  const setz = (id, wert) => { const el = _stilEl(id); if (el) el.value = wert; };
+  setz('stil-schreibweise', s.schreibweise);
+  setz('stil-kasten', s.kasten);
+  setz('stil-radius', s.radius);
+  setz('stil-kontur', s.kontur);
+  setz('stil-wz-ecke', s.wasserzeichen_ecke);
+  const sch = _stilEl('stil-schatten'); if (sch) sch.checked = !!s.schatten;
+}
+function stilFelderLesen() {
+  const roh = {};
+  for (const f of STIL_FARBFELDER) {
+    const c = _stilEl('stil-' + f);
+    roh[f] = c ? c.value : STIL_VORGABE[f];
+  }
+  const lies = (id, vorgabe) => { const el = _stilEl(id); return el ? el.value : vorgabe; };
+  roh.font_headline = lies('stil-font-headline', STIL_VORGABE.font_headline);
+  roh.font_body     = lies('stil-font-body', STIL_VORGABE.font_body);
+  roh.schreibweise  = lies('stil-schreibweise', STIL_VORGABE.schreibweise);
+  roh.kasten        = lies('stil-kasten', STIL_VORGABE.kasten);
+  roh.radius        = Number(lies('stil-radius', STIL_VORGABE.radius));
+  roh.kontur        = lies('stil-kontur', STIL_VORGABE.kontur);
+  roh.wasserzeichen_ecke = lies('stil-wz-ecke', STIL_VORGABE.wasserzeichen_ecke);
+  const sch = _stilEl('stil-schatten');
+  roh.schatten = sch ? sch.checked : STIL_VORGABE.schatten;
+  roh.paket = _stilGespeichert ? _stilGespeichert.paket : '';
+  return _stilNorm(roh);
+}
+function stilFarbeGewaehlt(feld) {
+  const c = _stilEl('stil-' + feld), h = _stilEl('stil-' + feld + '-hex');
+  if (c && h) h.value = c.value;
+  stilGeaendert();
+}
+function stilHexGetippt(feld) {
+  const c = _stilEl('stil-' + feld), h = _stilEl('stil-' + feld + '-hex');
+  if (!c || !h) return;
+  const lang = _stilHexLang(h.value);
+  if (/^#[0-9a-f]{6}$/i.test(lang)) c.value = lang.toLowerCase();
+  stilGeaendert();
+}
+function stilVeraendert() {
+  if (!_stilGespeichert) return false;
+  const a = stilFelderLesen(), b = _stilGespeichert;
+  return Object.keys(STIL_VORGABE).some(k => k !== 'paket' && String(a[k]) !== String(b[k]));
+}
+function stilGeaendert() {
+  const rw = _stilEl('stil-radius-wert'), r = _stilEl('stil-radius');
+  if (rw && r) rw.textContent = r.value;
+  stilVorschau();
+  stilKopfzeile();
+  const st = _stilEl('stil-status');
+  if (st) st.textContent = (_stilGespeichert && stilVeraendert()) ? 'nicht gespeichert' : '';
+}
+
+// ── Vorschaukachel (CSS-Näherung der Rollen) ─────────────────────────────────
+function stilVorschau() {
+  const kachel = _stilEl('stil-vorschau'); if (!kachel) return;
+  const s = stilFelderLesen();
+  const grund = _stilEl('stil-vorschau-grund');
+  if (grund) grund.style.background = `linear-gradient(155deg, ${s.secondary} 0%, ${s.dark} 72%)`;
+
+  const rad       = Math.round(s.radius * 0.22);   // 1080er Leinwand → ~168 px Kachel
+  const flaeche   = (s.kasten === 'voll' || s.kasten === 'weich');
+  const untergrund = flaeche ? s.light : s.secondary;
+  const schatten  = s.schatten ? ['0 2px 5px rgba(0,0,0,.55)'] : [];
+  const kontur = (art) => {
+    if (art === 'keine') return [];
+    const f = (art === 'palette') ? s.secondary : s.dark;
+    return [`-1px 0 0 ${f}`, `1px 0 0 ${f}`, `0 -1px 0 ${f}`, `0 1px 0 ${f}`];
+  };
+  const gross = (s.schreibweise === 'gross') ? 'uppercase' : 'none';
+
+  const h = _stilEl('stil-vorschau-ueberschrift');
+  if (h) {
+    h.textContent = 'Neuer Radweg am Ring';
+    h.style.fontFamily    = _stilSchriftFamilie(s.font_headline);
+    h.style.fontWeight    = '700';
+    h.style.textTransform = gross;
+    h.style.color         = _stilAuto(untergrund);
+    h.style.padding       = (s.kasten === 'keiner') ? '0' : '4px 6px';
+    h.style.background    = flaeche ? s.light : 'none';
+    h.style.border        = (s.kasten === 'umriss') ? ('1px solid ' + s.light) : 'none';
+    h.style.borderRadius  = (s.kasten === 'voll') ? '0' : (rad + 'px');
+    h.style.textShadow    = kontur(s.kontur).concat(schatten).join(', ');
+  }
+  const p = _stilEl('stil-vorschau-pointe');
+  if (p) {
+    p.textContent = 'War ja klar';
+    p.style.fontFamily    = _stilSchriftFamilie(s.font_headline);
+    p.style.fontWeight    = '800';
+    p.style.textTransform = gross;
+    p.style.color         = s.accent;
+    p.style.textShadow    = kontur('dunkel').concat(schatten).join(', ');
+  }
+  const w = _stilEl('stil-vorschau-wz');
+  if (w) {
+    const ecke = s.wasserzeichen_ecke;
+    w.style.display = (ecke === 'keins') ? 'none' : '';
+    w.textContent   = _stilHandle();
+    w.style.fontFamily = _stilSchriftFamilie(s.font_body);
+    w.style.color      = s.light;
+    w.style.opacity    = '0.7';
+    w.style.left   = (ecke === 'unten_links') ? '7%' : 'auto';
+    w.style.right  = (ecke === 'unten_links') ? 'auto' : '7%';
+    w.style.top    = (ecke === 'oben_rechts') ? '4%' : 'auto';
+    w.style.bottom = (ecke === 'oben_rechts') ? 'auto' : '5%';
+    w.style.textShadow = s.schatten ? '0 1px 3px rgba(0,0,0,.6)' : '';
+  }
+}
+function _stilHandle() {
+  const roh = String(_stilCityHandle || _stilCityName || 'stadtschau');
+  const ohne = roh.replace(/^@+/, '').trim();
+  return '@' + (ohne || 'stadtschau').toLowerCase().replace(/\s+/g, '');
+}
+
+// ── Kopfzeile des Blocks ─────────────────────────────────────────────────────
+function stilKopfzeile() {
+  const sw = _stilEl('stil-swatches'), nm = _stilEl('stil-paket-name');
+  if (!_stilCityId || !_stilGespeichert) {
+    if (sw) sw.innerHTML = '';
+    return;
+  }
+  const s = stilFelderLesen();
+  if (sw) sw.innerHTML = STIL_FARBFELDER.map(f =>
+    `<span class="stil-punkt" title="${_esc(STIL_FARB_LABEL[f])} ${_esc(s[f])}" style="background:${_esc(s[f])};"></span>`).join('');
+  if (nm) {
+    const teile = [];
+    if (_stilGespeichert.paket) {
+      teile.push('Paket ' + _stilPaketName(_stilGespeichert.paket) + (_stilAbweichend ? ' (angepasst)' : ''));
+    } else {
+      teile.push(_stilHatEigenen ? 'eigene Werte' : 'kein eigener Stil — läuft mit der Vorgabe');
+    }
+    teile.push(_stilSchriftLabel(s.font_headline) + ' / ' + _stilSchriftLabel(s.font_body));
+    teile.push(_stilKastenLabel(s.kasten));
+    teile.push(s.schreibweise === 'gross' ? 'alles groß' : 'normale Schreibweise');
+    nm.textContent = teile.join(' · ');
+  }
+}
+function stilEditorUmschalten() {
+  const ed = _stilEl('stil-editor'), btn = _stilEl('stil-toggle');
+  if (!ed) return;
+  const auf = (ed.style.display === 'none' || !ed.style.display);
+  ed.style.display = auf ? 'block' : 'none';
+  if (btn) btn.textContent = auf ? 'Schließen ▴' : 'Bearbeiten ▾';
+  if (auf) stilVorschau();
+}
+
+// ── Stil einer Stadt laden / speichern ───────────────────────────────────────
+async function stilStadtLaden(cityId, name) {
+  const block = _stilEl('stil-block'); if (!block) return;
+  _stilCityId = cityId;
+  if (name) _stilCityName = String(name);
+  _stilCityHandle = '';
+  const nm = _stilEl('stil-paket-name');
+  if (nm) nm.textContent = 'wird geladen …';
+  if (!_stilPakete) { await stilPaketeListe(); }   // bringt die Schriftbibliothek gleich mit
+  if (!_stilFonts)  { await stilSchriftenListe(); }
+  stilSchriftenOptionen();
+  const r = await _stilRuf('GET', '/api/stil/stadt/' + encodeURIComponent(cityId));
+  if (r && r.error) {
+    _stilGespeichert = _stilNorm(null);
+    _stilHatEigenen  = false;
+    stilFelderFuellen(_stilGespeichert);
+    stilPaketeZeichnen();
+    stilGeaendert();
+    if (nm) nm.textContent = 'Design nicht geladen: ' + r.error;
+    return;
+  }
+  _stilFontsUebernehmen(r);
+  stilSchriftenOptionen();
+  const roh = _stilObj(r);
+  _stilGespeichert = _stilNorm(roh);
+  _stilHatEigenen  = _stilEigen([r, roh]);
+  _stilAbweichend  = !!(r && r.abweichend);
+  _stilCityHandle  = String(roh.instagram_handle || roh.handle ||
+                            (r && (r.instagram_handle || r.handle)) || '');
+  stilFelderFuellen(_stilGespeichert);
+  stilPaketeZeichnen();
+  stilGeaendert();
+  stilSchriftLaden(_stilGespeichert.font_headline);
+  stilSchriftLaden(_stilGespeichert.font_body);
+}
+async function stilSpeichern() {
+  if (!_stilCityId) { toast('Erst eine Stadt auswählen', 'error'); return; }
+  const btn = _stilEl('stil-speichern-btn');
+  const daten = stilFelderLesen();
+  delete daten.paket;   // das Paket wechselt nur über die Paketkarten
+  if (btn) { btn.disabled = true; btn.textContent = 'speichert …'; }
+  const r = await _stilRuf('PUT', '/api/stil/stadt/' + encodeURIComponent(_stilCityId), daten);
+  if (btn) { btn.disabled = false; btn.textContent = 'Design speichern'; }
+  if (r && r.error) { toast(r.error, 'error'); return; }
+  _stilGespeichert = _stilNorm(Object.assign({}, daten, _stilObj(r)));
+  _stilHatEigenen  = true;
+  _stilAbweichend  = !!(r && r.abweichend);
+  stilFelderFuellen(_stilGespeichert);
+  stilPaketeZeichnen();
+  stilGeaendert();
+  const st = _stilEl('stil-status'); if (st) st.textContent = 'gespeichert';
+  toast('Design gespeichert', 'success');
+  stilSchriftLaden(_stilGespeichert.font_headline);
+  stilSchriftLaden(_stilGespeichert.font_body);
+  if (_stilModalOffen()) stilUebersichtNeuLaden();
+}
+function stilVerwerfen() {
+  if (!_stilGespeichert) return;
+  stilFelderFuellen(_stilGespeichert);
+  stilGeaendert();
+}
+
+// ── Paketkarten ──────────────────────────────────────────────────────────────
+function stilPaketeZeichnen() {
+  const box = _stilEl('stil-pakete'); if (!box) return;
+  const liste = _stilPakete || [];
+  if (!liste.length) {
+    box.innerHTML = '<div style="font-size:11px;color:var(--muted);">Keine Stil-Pakete geladen.</div>';
+    return;
+  }
+  const aktiv = String((_stilGespeichert && _stilGespeichert.paket) || '').toLowerCase();
+  box.innerHTML = liste.map(p => {
+    const key = String(p.key || '');
+    const streifen = STIL_FARBFELDER.map(f =>
+      `<span style="background:${_esc(_stilFarbeOk(p[f], '#666666'))};"></span>`).join('');
+    return `<div class="stil-paket-karte${key.toLowerCase() === aktiv ? ' aktiv' : ''}"
+         data-paket="${_esc(key)}" onclick="stilPaketAnwenden(this.dataset.paket)"
+         title="${_esc(p.beschreibung || '')}">
+      <div class="stil-streifen" style="margin-bottom:6px;">${streifen}</div>
+      <div style="font-size:12px;font-weight:600;">${_esc(p.name || key)}</div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px;">${_esc(p.beschreibung || '')}</div>
+    </div>`;
+  }).join('');
+}
+async function stilPaketAnwenden(key) {
+  if (!_stilCityId) { toast('Erst eine Stadt auswählen', 'error'); return; }
+  const r = await _stilRuf('POST', '/api/stil/stadt/' + encodeURIComponent(_stilCityId) + '/paket', {paket: key});
+  if (r && r.error) { toast(r.error, 'error'); return; }
+  const vomServer = _stilObj(r);
+  const lokal = _stilPaketFinden(key);
+  const basis = (vomServer && vomServer.primary) ? vomServer : Object.assign({}, lokal || {}, {paket: key});
+  _stilGespeichert = _stilNorm(basis);
+  if (!_stilGespeichert.paket) _stilGespeichert.paket = String(key || '');
+  _stilHatEigenen = true;
+  _stilAbweichend = false;
+  stilFelderFuellen(_stilGespeichert);
+  stilPaketeZeichnen();
+  stilGeaendert();
+  stilSchriftLaden(_stilGespeichert.font_headline);
+  stilSchriftLaden(_stilGespeichert.font_body);
+  toast('Paket ' + _stilPaketName(key) + ' übernommen', 'success');
+  if (_stilModalOffen()) stilUebersichtNeuLaden();
+}
+
+// ── Übersicht über alle Städte ───────────────────────────────────────────────
+function _stilModalOffen() {
+  const m = _stilEl('modal-stil-uebersicht');
+  return !!(m && m.classList.contains('open'));
+}
+async function stilUebersichtOeffnen() {
+  openModal('modal-stil-uebersicht');
+  if (!_stilPakete) { await stilPaketeListe(); }   // bringt die Schriftbibliothek gleich mit
+  if (!_stilFonts)  { await stilSchriftenListe(); }
+  stilSchriftenOptionen();
+  await stilUebersichtNeuLaden();
+}
+async function stilUebersichtNeuLaden() {
+  // erst die Übersicht: sie füllt _stilPaketZaehler, den die Warnzeilen für ihren
+  // Vorschlag brauchen
+  await stilUebersichtLaden();
+  await stilAehnlichLaden();
+}
+async function stilUebersichtLaden() {
+  const grid = _stilEl('stil-uebersicht-grid'), summe = _stilEl('stil-uebersicht-summe');
+  if (!grid) return;
+  grid.innerHTML = '<div style="font-size:12px;color:var(--muted);">wird geladen …</div>';
+  const r = await _stilRuf('GET', '/api/stil/staedte');
+  if (r && r.error) {
+    grid.innerHTML = `<div style="font-size:12px;color:#f87171;">${_esc(r.error)}</div>`;
+    if (summe) summe.textContent = '';
+    return;
+  }
+  const eintraege = _stilArr(r, ['staedte','cities','items']).map(c => {
+    const roh = _stilObj(c);
+    return {
+      id:    (c && c.id != null) ? c.id : ((c && c.city_id != null) ? c.city_id : ''),
+      name:  String((c && (c.name || c.stadt)) || ''),
+      state: String((c && (c.state || c.bundesland)) || ''),
+      eigen: _stilEigen([c, roh]),
+      abweichend: !!(c && c.abweichend),
+      s:     _stilNorm(roh)
+    };
+  });
+  if (!eintraege.length) {
+    grid.innerHTML = '<div style="font-size:12px;color:var(--muted);">Keine Städte gefunden.</div>';
+    if (summe) summe.textContent = '';
+    return;
+  }
+  // nach Paket gruppiert: gleiche Handschriften stehen untereinander
+  eintraege.sort((a, b) =>
+    (a.s.paket || 'zzz').localeCompare(b.s.paket || 'zzz') || a.name.localeCompare(b.name, 'de'));
+  const zaehler = {}; let ohne = 0;
+  eintraege.forEach(e => {
+    if (!e.eigen) ohne++;
+    const k = e.s.paket || '';
+    zaehler[k] = (zaehler[k] || 0) + 1;
+  });
+  _stilPaketZaehler = zaehler;   // Grundlage für den Vorschlag in den Warnzeilen
+  if (summe) {
+    const teile = Object.keys(zaehler)
+      .sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b))   // 'ohne Paket' zuletzt
+      .map(k => (k ? _stilPaketName(k) : 'ohne Paket') + ' ' + zaehler[k] + '×');
+    summe.textContent = eintraege.length + ' Städte · ' + teile.join(' · ') +
+                        (ohne ? ' · ' + ohne + ' ohne eigenen Stil' : '');
+  }
+  grid.innerHTML = eintraege.map(e => {
+    const streifen = STIL_FARBFELDER.map(f =>
+      `<span style="background:${_esc(e.s[f])};"></span>`).join('');
+    const zweit = [
+      e.state,
+      _stilSchriftLabel(e.s.font_headline) + ' / ' + _stilSchriftLabel(e.s.font_body),
+      _stilKastenLabel(e.s.kasten),
+      e.s.schreibweise === 'gross' ? 'alles groß' : 'normal'
+    ].filter(Boolean).join(' · ');
+    return `<div class="stil-zeile${e.eigen ? '' : ' ohne'}">
+      <div class="stil-streifen">${streifen}</div>
+      <div style="min-width:0;">
+        <div style="font-size:13px;font-weight:600;">${_esc(e.name)}</div>
+        <div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_esc(zweit)}</div>
+      </div>
+      <div style="text-align:right;">
+        <span class="badge badge-gray">${_esc(e.s.paket ? _stilPaketName(e.s.paket) : 'ohne Paket')}</span>
+        ${e.eigen ? (e.abweichend ? '<div style="font-size:10px;color:var(--muted);margin-top:3px;">angepasst</div>' : '')
+                  : '<div style="font-size:10px;color:var(--warning);margin-top:3px;">kein eigener Stil</div>'}
+      </div>
+      <button class="btn btn-ghost btn-xs" data-id="${_esc(e.id)}" data-name="${_esc(e.name)}"
+              onclick="stilStadtWaehlen(this.dataset.id, this.dataset.name)">Bearbeiten</button>
+    </div>`;
+  }).join('');
+}
+async function stilStadtWaehlen(id, name) {
+  closeModal('modal-stil-uebersicht');
+  showPage('cities');
+  await selectCity(id, name);
+  const ed = _stilEl('stil-editor');
+  if (ed && (ed.style.display === 'none' || !ed.style.display)) stilEditorUmschalten();
+  const block = _stilEl('stil-block');
+  if (block) block.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
+// ── Stile verteilen ──────────────────────────────────────────────────────────
+function _stilVerteilBericht(r) {
+  let zaehler = null;
+  for (const k of ['zusammenfassung','pakete','verteilung','zaehler','counts','je_paket']) {
+    const v = r && r[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) { zaehler = v; break; }
+  }
+  let gesamt = null;
+  for (const k of ['geaendert','verteilt','anzahl','gesetzt','count','total']) {
+    if (r && typeof r[k] === 'number') { gesamt = r[k]; break; }
+  }
+  const von = (r && typeof r.staedte === 'number') ? (' von ' + r.staedte) : '';
+  const konflikte = (r && Array.isArray(r.konflikte) && r.konflikte.length)
+    ? (' · ' + r.konflikte.length + ' Städte konnten keinen freien Nachbarstil bekommen') : '';
+  if (zaehler) {
+    const schluessel = Object.keys(zaehler).sort();
+    if (gesamt === null) gesamt = schluessel.reduce((n, k) => n + (Number(zaehler[k]) || 0), 0);
+    return gesamt + von + ' Städten neu belegt · jetzt verteilt: ' +
+           schluessel.map(k => _stilPaketName(k) + ' ' + zaehler[k] + '×').join(', ') + konflikte;
+  }
+  if (gesamt !== null) return gesamt + von + ' Städten neu belegt.' + konflikte;
+  return 'Verteilung abgeschlossen.';
+}
+async function stilVerteilen() {
+  const cb = _stilEl('stil-verteilen-nur-ohne');
+  const nurOhne = cb ? cb.checked : true;
+  const frage = nurOhne
+    ? 'Allen Städten ohne eigenen Stil automatisch ein Paket zuweisen?'
+    : 'Alle Städte einbeziehen?\n\nBereits gesetzte Pakete bleiben, solange kein Nachbar dasselbe hat; geändert wird nur, wo es sich stößt.';
+  if (!confirm(frage)) return;
+  const btn = _stilEl('stil-verteilen-btn'), bericht = _stilEl('stil-verteilen-bericht');
+  if (btn) { btn.disabled = true; btn.textContent = 'verteilt …'; }
+  const r = await _stilRuf('POST', '/api/stil/verteilen', {nur_ohne_stil: nurOhne});
+  if (btn) { btn.disabled = false; btn.textContent = 'Stile verteilen'; }
+  if (r && r.error) {
+    toast(r.error, 'error');
+    if (bericht) bericht.textContent = r.error;
+    return;
+  }
+  if (bericht) bericht.textContent = _stilVerteilBericht(r);
+  toast('Stile verteilt', 'success');
+  await stilUebersichtNeuLaden();
+  if (_stilCityId) await stilStadtLaden(_stilCityId, _stilCityName);
+}
+
+// ── Nachbarn mit demselben Stil ──────────────────────────────────────────────
+function _stilSeite(p, schluessel, idSchluessel) {
+  let v;
+  for (const k of schluessel) {
+    const w = p[k];
+    if (w !== undefined && w !== null && w !== '') { v = w; break; }
+  }
+  if (v && typeof v === 'object') {
+    return {
+      id:   (v.id != null) ? v.id : ((v.city_id != null) ? v.city_id : ''),
+      name: String(v.name || v.stadt || '')
+    };
+  }
+  let id = '';
+  for (const k of idSchluessel) {
+    const w = p[k];
+    if (w !== undefined && w !== null && w !== '') { id = w; break; }
+  }
+  return {id: id, name: (typeof v === 'string' ? v : '')};
+}
+function _stilPaar(p) {
+  const q = p || {};
+  const a = _stilSeite(q, ['a','stadt_a','city_a','eine','stadt1','name_a'],
+                          ['a_id','stadt_a_id','city_a_id','id_a']);
+  const b = _stilSeite(q, ['b','stadt_b','city_b','andere','stadt2','name_b'],
+                          ['b_id','stadt_b_id','city_b_id','id_b']);
+  let km = null;
+  for (const k of ['km','distanz_km','distanz','abstand_km','entfernung_km','entfernung']) {
+    if (typeof q[k] === 'number') { km = q[k]; break; }
+  }
+  return {a: a, b: b, km: km, grund: String(q.grund || ''),
+          paket: String(q.paket || q.paket_key || '')};
+}
+let _stilPaare     = [];        // zuletzt geladene Nachbarpaare
+let _stilPaareInfo = {satz: '', gekuerzt: false};
+let _stilPaareAlle = false;     // false = nur die ersten paar Zeilen zeigen
+let _stilPaketZaehler = {};     // wie oft jedes Paket gerade vergeben ist
+const STIL_WARN_KURZ = 6;
+
+async function stilAehnlichLaden() {
+  const box = _stilEl('stil-warnungen'); if (!box) return;
+  const r = await _stilRuf('GET', '/api/stil/aehnlich');
+  if (r && r.error) {
+    box.innerHTML = `<div style="font-size:11px;color:var(--muted);">Nachbarprüfung nicht verfügbar: ${_esc(r.error)}</div>`;
+    _stilPaare = [];
+    return;
+  }
+  _stilPaare = _stilArr(r, ['paare','treffer','aehnlich','items','nachbarn'])
+    .map(_stilPaar).filter(p => p.a.name || p.b.name);
+  _stilPaareInfo = {satz: String((r && r.zusammenfassung) || ''), gekuerzt: !!(r && r.gekuerzt)};
+  _stilPaareAlle = false;
+  stilWarnungenZeichnen();
+}
+function stilWarnungenAlle() { _stilPaareAlle = !_stilPaareAlle; stilWarnungenZeichnen(); }
+function stilWarnungenZeichnen() {
+  const box = _stilEl('stil-warnungen'); if (!box) return;
+  const satz = _stilPaareInfo.satz;
+  if (!_stilPaare.length) {
+    box.innerHTML = `<div style="font-size:11px;color:var(--muted);">${_esc(satz || 'Keine benachbarten Städte mit demselben Stil.')}</div>`;
+    return;
+  }
+  const zeigen = _stilPaareAlle ? _stilPaare : _stilPaare.slice(0, STIL_WARN_KURZ);
+  const kopf = satz
+    ? `<div style="font-size:11px;color:var(--muted2);margin-bottom:6px;">${_esc(satz)}</div>` : '';
+  const rest = _stilPaare.length - zeigen.length;
+  const mehr = (rest > 0 || _stilPaareAlle)
+    ? `<button class="btn btn-ghost btn-xs" style="margin-top:4px;" onclick="stilWarnungenAlle()">${
+        _stilPaareAlle ? 'weniger zeigen' : ('alle ' + _stilPaare.length + ' Paare zeigen')}</button>`
+    : '';
+  const fuss = _stilPaareInfo.gekuerzt
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;">Der Server liefert nur die ersten ${_stilPaare.length} Paare.</div>` : '';
+  box.innerHTML = kopf + zeigen.map((p, i) => {
+    const selId = 'stil-warn-paket-' + i;
+    const vorschlag = _stilAnderesPaket(p.paket);
+    const opts = (_stilPakete || []).map(q =>
+      `<option value="${_esc(q.key)}"${String(q.key) === vorschlag ? ' selected' : ''}>${_esc(q.name || q.key)}</option>`).join('');
+    const ziel = (p.b.id !== '' && p.b.id != null) ? p.b : p.a;
+    const km = (p.km != null) ? ' (' + Math.round(p.km) + ' km)' : '';
+    const warum = p.paket ? _stilPaketName(p.paket) : (p.grund || '');
+    const klammer = warum ? ' (' + warum + ')' : '';
+    return `<div class="stil-warnung">
+      <span style="flex:1;min-width:200px;">${_esc(p.a.name)} und ${_esc(p.b.name)}${_esc(km)} benutzen denselben Stil${_esc(klammer)}.</span>
+      <select class="stil-sel" id="${selId}" style="width:auto;">${opts}</select>
+      <button class="btn btn-ghost btn-xs" data-id="${_esc(ziel.id)}" data-name="${_esc(ziel.name)}"
+              data-sel="${selId}" onclick="stilPaarUmstellen(this.dataset.id, this.dataset.name, this.dataset.sel)">
+        ${_esc(ziel.name || 'Stadt')} umstellen</button>
+    </div>`;
+  }).join('') + mehr + fuss;
+}
+
+async function stilPaarUmstellen(id, name, selId) {
+  const sel = document.getElementById(selId);
+  const paket = sel ? sel.value : '';
+  if (!id || !paket) { toast('Für diese Zeile fehlt die Stadt-Kennung', 'error'); return; }
+  if (!confirm(name + ' auf das Paket ' + _stilPaketName(paket) + ' umstellen?')) return;
+  const r = await _stilRuf('POST', '/api/stil/stadt/' + encodeURIComponent(id) + '/paket', {paket: paket});
+  if (r && r.error) { toast(r.error, 'error'); return; }
+  toast(name + ': Paket ' + _stilPaketName(paket), 'success');
+  if (String(_stilCityId) === String(id)) await stilStadtLaden(id, name);
+  await stilUebersichtNeuLaden();
 }
 
 // ── TEMPLATES / BIBLIOTHEK ──

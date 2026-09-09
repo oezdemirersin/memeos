@@ -150,6 +150,294 @@ class City(db.Model):
         return snap.count if snap else None
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# STADT-STIL – jede Stadt bekommt eine eigene Handschrift
+# ═══════════════════════════════════════════════════════════════════════════════
+# Die vier alten Felder der Stadt (accent_color, brand_bg, brand_text_color, brand_font)
+# reichen nicht, damit 100 Seiten unterschiedlich aussehen: sie ändern nur die Farbe,
+# nicht die Anmutung. CityStyle trägt deshalb eine ganze Palette, ein Schriftpaar und
+# die Entscheidungen, die den Charakter ausmachen (Schreibweise, Kastenart, Radius,
+# Kontur, Schatten, Ecke des Wasserzeichens).
+#
+# Gelesen wird der Stil von memeos_render: das Dict aus to_dict() bzw. fuer() geht
+# unverändert als `brand` in render() und löst dort 'stil:*' und die Rollen auf.
+# Die alten Schlüssel bg/text/accent/font stehen weiterhin darin, 'brand:*' bleibt gültig.
+
+STIL_SCHREIBWEISEN       = ('gross', 'normal')
+STIL_KASTEN_ARTEN        = ('keiner', 'voll', 'weich', 'umriss')
+STIL_KONTUR_ARTEN        = ('keine', 'dunkel', 'palette')
+STIL_WASSERZEICHEN_ECKEN = ('unten_links', 'unten_rechts', 'oben_rechts', 'keins')
+
+# Vorgabe-Handschrift für Städte ohne eigenen Stil.
+# ACHTUNG: identisch mit memeos_render.STIL_STANDARD – tests/test_i1_stil.py prüft das.
+CITY_STYLE_DEFAULTS = {
+    'primary':   '#3b82f6',
+    'secondary': '#1e40af',
+    'accent':    '#f59e0b',
+    'dark':      '#0f172a',
+    'light':     '#ffffff',
+    'headline':  'anton',
+    'body':      'bold',
+    'schreibweise': 'gross',
+    'kasten':    'keiner',
+    'radius':    16,
+    'kontur':    'dunkel',
+    'schatten':  True,
+    'wasserzeichen_ecke': 'unten_rechts',
+    'paket':     '',
+}
+
+
+def _stil_abdunkeln(farbe, faktor=0.62):
+    """'#rrggbb' auf faktor seiner Helligkeit ziehen. Unbrauchbar -> Vorgabe."""
+    s = str(farbe or '').strip().lstrip('#')
+    if len(s) == 3:
+        s = ''.join(c * 2 for c in s)
+    if len(s) < 6:
+        return CITY_STYLE_DEFAULTS['secondary']
+    try:
+        r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+    except ValueError:
+        return CITY_STYLE_DEFAULTS['secondary']
+    f = max(0.0, min(1.0, float(faktor)))
+    return '#%02x%02x%02x' % (int(round(r * f)), int(round(g * f)), int(round(b * f)))
+
+
+# Acht Handschriften, keine acht Farbschemata: sie unterscheiden sich in der Anmutung,
+# nicht nur im Farbton. Wer eine Stadt anlegt, wählt eine davon – und ändert danach
+# jeden Einzelwert, wenn er will.
+STIL_PAKETE = {
+    'boulevard': {
+        'name': 'Boulevard',
+        'beschreibung': 'Laut und plakativ: Signalgelb, volle Balken hinter jeder Zeile, alles in Großbuchstaben.',
+        'primary': '#ffd400', 'secondary': '#a88b00', 'accent': '#e11d48',
+        'dark': '#111111', 'light': '#ffffff',
+        'font_headline': 'anton', 'font_body': 'bold',
+        'schreibweise': 'gross', 'kasten': 'voll', 'radius': 0,
+        # Kontur 'keine', weil der volle Balken die Lesbarkeit schon traegt –
+        # Balken UND dicke Kontur zusammen wirken schmutzig.
+        'kontur': 'keine', 'schatten': True, 'wasserzeichen_ecke': 'unten_rechts',
+    },
+    'klar': {
+        'name': 'Klar',
+        'beschreibung': 'Ruhig und aufgeräumt: viel Weiß, weiche Kästen mit runden Ecken, normale Schreibweise.',
+        'primary': '#2563eb', 'secondary': '#1e3a8a', 'accent': '#f97316',
+        'dark': '#0f172a', 'light': '#f8fafc',
+        'font_headline': 'bold', 'font_body': 'bold',
+        'schreibweise': 'normal', 'kasten': 'weich', 'radius': 24,
+        'kontur': 'keine', 'schatten': False, 'wasserzeichen_ecke': 'unten_rechts',
+    },
+    'wucht': {
+        'name': 'Wucht',
+        'beschreibung': 'Kräftig mit dicker dunkler Kontur: der Text steht auch auf dem unruhigsten Foto.',
+        'primary': '#ff3b30', 'secondary': '#9e241c', 'accent': '#ffcc00',
+        'dark': '#000000', 'light': '#ffffff',
+        'font_headline': 'anton', 'font_body': 'anton',
+        'schreibweise': 'gross', 'kasten': 'keiner', 'radius': 0,
+        'kontur': 'dunkel', 'schatten': True, 'wasserzeichen_ecke': 'unten_links',
+    },
+    'freundlich': {
+        'name': 'Freundlich',
+        'beschreibung': 'Hell und warm: runde Schrift, stark gerundete Kästen, gemischte Schreibweise.',
+        'primary': '#fb7185', 'secondary': '#9b4653', 'accent': '#22c55e',
+        'dark': '#3f3f46', 'light': '#fff7ed',
+        'font_headline': 'arial_rounded_bold', 'font_body': 'arial_rounded_bold',
+        'schreibweise': 'normal', 'kasten': 'weich', 'radius': 32,
+        'kontur': 'keine', 'schatten': False, 'wasserzeichen_ecke': 'unten_rechts',
+    },
+    'nacht': {
+        'name': 'Nacht',
+        'beschreibung': 'Dunkler Grund mit Neon-Akzent: Umrisskästen statt Flächen, kühle Farben.',
+        'primary': '#22d3ee', 'secondary': '#0e7490', 'accent': '#a3e635',
+        'dark': '#0b1020', 'light': '#e2e8f0',
+        'font_headline': 'anton', 'font_body': 'bold',
+        'schreibweise': 'gross', 'kasten': 'umriss', 'radius': 8,
+        'kontur': 'palette', 'schatten': True, 'wasserzeichen_ecke': 'oben_rechts',
+    },
+    'sachlich': {
+        'name': 'Sachlich',
+        'beschreibung': 'Nachrichtlich ohne Kästen: strenge Farben, feine dunkle Kontur, normale Schreibweise.',
+        'primary': '#0f766e', 'secondary': '#0a4a45', 'accent': '#eab308',
+        'dark': '#111827', 'light': '#f1f5f9',
+        'font_headline': 'bold', 'font_body': 'bold',
+        'schreibweise': 'normal', 'kasten': 'keiner', 'radius': 0,
+        'kontur': 'dunkel', 'schatten': False, 'wasserzeichen_ecke': 'unten_rechts',
+    },
+    'sonne': {
+        'name': 'Sonne',
+        'beschreibung': 'Sommerlich warm: orange Balken, große Schrift, weicher Schatten.',
+        'primary': '#f59e0b', 'secondary': '#94620a', 'accent': '#0ea5e9',
+        'dark': '#1c1917', 'light': '#fffbeb',
+        'font_headline': 'anton', 'font_body': 'bold',
+        'schreibweise': 'gross', 'kasten': 'voll', 'radius': 12,
+        'kontur': 'keine', 'schatten': True, 'wasserzeichen_ecke': 'unten_links',
+    },
+    'beton': {
+        'name': 'Beton',
+        'beschreibung': 'Nüchtern grau mit einem Farbschlag: Umriss statt Fläche, kaum Rundung.',
+        'primary': '#64748b', 'secondary': '#3e4856', 'accent': '#ef4444',
+        'dark': '#020617', 'light': '#e5e7eb',
+        'font_headline': 'bold', 'font_body': 'bold',
+        'schreibweise': 'normal', 'kasten': 'umriss', 'radius': 4,
+        'kontur': 'dunkel', 'schatten': False, 'wasserzeichen_ecke': 'unten_rechts',
+    },
+}
+
+STIL_PAKET_NAMEN = tuple(STIL_PAKETE.keys())
+
+
+def stil_paket_liste():
+    """Für die Oberfläche: [{'key','name','beschreibung', …vollständige Werte…}, …]."""
+    out = []
+    for key, p in STIL_PAKETE.items():
+        eintrag = {'key': key}
+        eintrag.update(p)
+        out.append(eintrag)
+    return out
+
+
+class CityStyle(db.Model):
+    """Genau eine Zeile je Stadt: ihre Handschrift.
+
+    Alle Felder haben Vorgaben – eine Stadt ohne Zeile läuft mit fuer() trotzdem,
+    dann wird der Stil aus den alten brand-Feldern abgeleitet."""
+    __tablename__ = 'city_style'
+
+    id      = db.Column(db.Integer, primary_key=True)
+    city_id = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False,
+                        unique=True, index=True)
+
+    # Palette
+    primary   = db.Column(db.String(20), default=CITY_STYLE_DEFAULTS['primary'])
+    secondary = db.Column(db.String(20), default=CITY_STYLE_DEFAULTS['secondary'])
+    accent    = db.Column(db.String(20), default=CITY_STYLE_DEFAULTS['accent'])
+    dark      = db.Column(db.String(20), default=CITY_STYLE_DEFAULTS['dark'])
+    light     = db.Column(db.String(20), default=CITY_STYLE_DEFAULTS['light'])
+
+    # Schriftpaar (Schlüssel aus der Schriftbibliothek, memeos_render.list_fonts)
+    font_headline = db.Column(db.String(100), default=CITY_STYLE_DEFAULTS['headline'])
+    font_body     = db.Column(db.String(100), default=CITY_STYLE_DEFAULTS['body'])
+
+    # Anmutung
+    schreibweise = db.Column(db.String(10), default=CITY_STYLE_DEFAULTS['schreibweise'])
+    kasten       = db.Column(db.String(10), default=CITY_STYLE_DEFAULTS['kasten'])
+    radius       = db.Column(db.Integer,    default=CITY_STYLE_DEFAULTS['radius'])
+    kontur       = db.Column(db.String(10), default=CITY_STYLE_DEFAULTS['kontur'])
+    schatten     = db.Column(db.Boolean,    default=CITY_STYLE_DEFAULTS['schatten'])
+
+    paket              = db.Column(db.String(50),  default='')
+    wasserzeichen_ecke = db.Column(db.String(20),
+                                   default=CITY_STYLE_DEFAULTS['wasserzeichen_ecke'])
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    city = db.relationship('City', backref=db.backref('style', uselist=False,
+                                                      cascade='all,delete-orphan'))
+
+    # ── Werte lesen ──────────────────────────────────────────────────────────────
+    def _wahl(self, wert, erlaubt, schluessel):
+        w = str(wert or '').strip().lower()
+        return w if w in erlaubt else CITY_STYLE_DEFAULTS[schluessel]
+
+    def to_dict(self):
+        """Vollständiges Stil-Dict – so, wie memeos_render es als `brand` erwartet.
+
+        Enthält absichtlich beides: die Renderer-Schlüssel (headline/body) und die
+        Modellnamen (font_headline/font_body), dazu die alten brand-Schlüssel
+        bg/text/font, damit 'brand:*' in Bestandsvorlagen weiterläuft."""
+        headline = str(self.font_headline or CITY_STYLE_DEFAULTS['headline'])
+        body     = str(self.font_body or headline)
+        primary  = self.primary or CITY_STYLE_DEFAULTS['primary']
+        dark     = self.dark or CITY_STYLE_DEFAULTS['dark']
+        light    = self.light or CITY_STYLE_DEFAULTS['light']
+        return {
+            'city_id':   self.city_id,
+            'primary':   primary,
+            'secondary': self.secondary or _stil_abdunkeln(primary),
+            'accent':    self.accent or primary,
+            'dark':      dark,
+            'light':     light,
+            'headline':  headline,
+            'body':      body,
+            'font_headline': headline,
+            'font_body':     body,
+            'schreibweise': self._wahl(self.schreibweise, STIL_SCHREIBWEISEN, 'schreibweise'),
+            'kasten':       self._wahl(self.kasten, STIL_KASTEN_ARTEN, 'kasten'),
+            'radius':       max(0, min(40, int(self.radius if self.radius is not None
+                                               else CITY_STYLE_DEFAULTS['radius']))),
+            'kontur':       self._wahl(self.kontur, STIL_KONTUR_ARTEN, 'kontur'),
+            'schatten':     bool(self.schatten) if self.schatten is not None
+                            else CITY_STYLE_DEFAULTS['schatten'],
+            'wasserzeichen_ecke': self._wahl(self.wasserzeichen_ecke,
+                                             STIL_WASSERZEICHEN_ECKEN, 'wasserzeichen_ecke'),
+            'paket': self.paket or '',
+            # Altbestand
+            'bg':   light,
+            'text': dark,
+            'font': headline,
+        }
+
+    # ── Stil einer Stadt besorgen ────────────────────────────────────────────────
+    @classmethod
+    def fuer(cls, city):
+        """Der Stil einer Stadt als vollständiges Dict (nie None).
+
+        Hat die Stadt eine Zeile, gilt die. Sonst wird ein Standardstil aus den alten
+        brand-Feldern abgeleitet: primary = accent_color, dark = brand_text_color,
+        light = brand_bg, secondary = abgedunkeltes primary, accent = primary,
+        Schriftpaar = brand_font. Ohne Stadt: reine Vorgaben."""
+        zeile = getattr(city, 'style', None) if city is not None else None
+        if zeile is not None:
+            return zeile.to_dict()
+
+        primary = (getattr(city, 'accent_color', None) or CITY_STYLE_DEFAULTS['primary'])
+        dark    = (getattr(city, 'brand_text_color', None) or CITY_STYLE_DEFAULTS['dark'])
+        light   = (getattr(city, 'brand_bg', None) or CITY_STYLE_DEFAULTS['light'])
+        font    = (getattr(city, 'brand_font', None) or CITY_STYLE_DEFAULTS['headline'])
+        return {
+            'city_id':   getattr(city, 'id', None),
+            'primary':   primary,
+            'secondary': _stil_abdunkeln(primary),
+            'accent':    primary,
+            'dark':      dark,
+            'light':     light,
+            'headline':  font,
+            'body':      font,
+            'font_headline': font,
+            'font_body':     font,
+            'schreibweise': CITY_STYLE_DEFAULTS['schreibweise'],
+            'kasten':       CITY_STYLE_DEFAULTS['kasten'],
+            'radius':       CITY_STYLE_DEFAULTS['radius'],
+            'kontur':       CITY_STYLE_DEFAULTS['kontur'],
+            'schatten':     CITY_STYLE_DEFAULTS['schatten'],
+            'wasserzeichen_ecke': CITY_STYLE_DEFAULTS['wasserzeichen_ecke'],
+            'paket':     '',
+            'bg':   light,
+            'text': dark,
+            'font': font,
+        }
+
+    def paket_setzen(self, key):
+        """Alle Werte aus einem Stil-Paket übernehmen. Unbekannter Schlüssel -> False."""
+        p = STIL_PAKETE.get(str(key or '').strip().lower())
+        if not p:
+            return False
+        for feld in ('primary', 'secondary', 'accent', 'dark', 'light',
+                     'font_headline', 'font_body', 'schreibweise', 'kasten',
+                     'radius', 'kontur', 'schatten', 'wasserzeichen_ecke'):
+            if feld in p:
+                setattr(self, feld, p[feld])
+        self.paket = str(key).strip().lower()
+        return True
+
+    @classmethod
+    def aus_paket(cls, city_id, key):
+        """Neue (noch nicht gespeicherte) Stil-Zeile aus einem Paket. Unbekannt -> None."""
+        zeile = cls(city_id=city_id)
+        return zeile if zeile.paket_setzen(key) else None
+
+
 class CityFollowerSnapshot(db.Model):
     __tablename__ = 'city_follower_snapshot'
     id          = db.Column(db.Integer, primary_key=True)
