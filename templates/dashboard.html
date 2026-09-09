@@ -3561,8 +3561,16 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
       <button class="modal-close" onclick="closeModal('modal-neue-vorlage')">×</button>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;">
-      Legt eine leere Leinwand an – ohne Hintergrundbild, nur Größe und Grundfarbe.
-      Alles Weitere entsteht im Studio.
+      Leer heißt: nur Größe und Grundfarbe, alles Weitere im Studio. Ein Muster bringt
+      Elemente, Rollen und Variablen gleich mit – Farben und Schriften holt es sich aus
+      dem Stil der jeweiligen Stadt.
+    </div>
+    <div class="form-group">
+      <label>Muster</label>
+      <select id="nv-muster" onchange="nvMusterWechsel()">
+        <option value="" selected>Leere Leinwand</option>
+      </select>
+      <div id="nv-muster-info" style="font-size:11px;color:var(--muted2);margin-top:5px;line-height:1.5;"></div>
     </div>
     <div class="form-row-3">
       <div class="form-group"><label>Name</label><input type="text" id="nv-name" placeholder="leer = Neue Vorlage"></div>
@@ -10861,11 +10869,14 @@ async function _apiForm(method, url, formData) {
 function openNeueVorlage() {
   document.getElementById('nv-name').value = '';
   document.getElementById('nv-preset').value = 'feed';
+  document.getElementById('nv-muster').value = '';
   document.getElementById('nv-error').textContent = '';
   document.getElementById('nv-hinweis').textContent = '';
   document.getElementById('nv-bg-art').value = 'farbe';
   nvGroesseWechsel();
   nvHintergrundWechsel();
+  // Der Katalog wird einmal geholt und bleibt dann stehen.
+  nvMusterLaden().then(nvMusterWechsel);
   openModal('modal-neue-vorlage');
 }
 
@@ -10910,25 +10921,62 @@ function nvHintergrundWert() {
   return {type: 'linear', angle: winkel, stops: [{at: 0, color: c1}, {at: 1, color: c2}]};
 }
 
+// Der Musterkatalog kommt vom Server (meme_muster.py) – dieselbe Liste wie im Studio.
+let _nvMuster = [];
+async function nvMusterLaden() {
+  const feld = document.getElementById('nv-muster');
+  if (!feld || _nvMuster.length) return;
+  let d;
+  try { d = await api('GET', '/api/studio/muster'); } catch (e) { return; }
+  _nvMuster = Array.isArray(d && d.muster) ? d.muster : [];
+  for (const m of _nvMuster) {
+    const o = document.createElement('option');
+    o.value = m.key;
+    o.textContent = m.name;
+    feld.appendChild(o);
+  }
+}
+function nvMusterWechsel() {
+  const key = document.getElementById('nv-muster').value;
+  const info = document.getElementById('nv-muster-info');
+  const m = _nvMuster.find(x => x.key === key);
+  // Ein Muster bringt sein Format mit – die Größenwahl wäre dann irreführend.
+  const groesse = document.getElementById('nv-preset');
+  const freiZeile = document.getElementById('nv-frei-row');
+  if (groesse) groesse.disabled = !!m;
+  if (m && freiZeile) freiZeile.style.display = 'none';
+  if (!m) { info.textContent = ''; nvGroesseWechsel(); return; }
+  info.textContent = m.info + ' · ' + (m.braucht_bild ? 'braucht ein Hintergrundfoto'
+    : 'kommt ohne Foto aus') + ' · ' + m.masse.width + ' × ' + m.masse.height
+    + ' · Felder: ' + m.variablen.map(v => v.label).join(', ');
+}
+
 async function nvAnlegen() {
   const btn = document.getElementById('nv-btn');
   const fehler = document.getElementById('nv-error');
   const hinweis = document.getElementById('nv-hinweis');
   fehler.textContent = ''; hinweis.textContent = '';
   const wahl = document.getElementById('nv-preset').value;
+  const muster = document.getElementById('nv-muster').value;
   const body = {
     name: document.getElementById('nv-name').value.trim(),
     category: document.getElementById('nv-category').value,
-    background: nvHintergrundWert(),
   };
-  if (wahl === 'frei') {
-    body.width = parseInt(document.getElementById('nv-width').value, 10);
-    body.height = parseInt(document.getElementById('nv-height').value, 10);
-    if (!Number.isFinite(body.width) || !Number.isFinite(body.height)) {
-      fehler.textContent = 'Breite und Höhe müssen Zahlen sein'; return;
-    }
+  // Ein Muster bringt Format UND Grundfarbe mit. Eine eigene Angabe würde beides
+  // überschreiben – auch dann, wenn hier nur die Vorgabe stehen geblieben ist.
+  if (muster) {
+    body.muster = muster;
   } else {
-    body.preset = wahl;
+    body.background = nvHintergrundWert();
+    if (wahl === 'frei') {
+      body.width = parseInt(document.getElementById('nv-width').value, 10);
+      body.height = parseInt(document.getElementById('nv-height').value, 10);
+      if (!Number.isFinite(body.width) || !Number.isFinite(body.height)) {
+        fehler.textContent = 'Breite und Höhe müssen Zahlen sein'; return;
+      }
+    } else {
+      body.preset = wahl;
+    }
   }
   btn.disabled = true;
   const alterText = btn.textContent;
