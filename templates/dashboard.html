@@ -5988,6 +5988,9 @@ let _nbZeilen = [], _nbBildBereiche = [], _nbVars = [], _nbGeaendert = false;
 let _nbKatalogOffline = false;
 // Sitzung und ihre Stammdaten (nur gesetzt, wenn der Server Sitzungen kann)
 let _nbSitzung = null, _nbSitzungBis = '', _nbStilModus = 'stadt';
+// true, sobald der Server die Sitzung nicht mehr kennt (404): Uebernehmen darf dann nicht auf
+// den Rueckfall ohne Sitzung ausweichen, der die KI ein zweites Mal bezahlen wuerde
+let _nbSitzungAbgelaufen = false;
 let _nbRollen = [], _nbStadtbildKeys = [], _nbSchriften = [], _nbRollenZuweisung = {};
 // Vorschau in echten Staedten: entprellt, mit Laufzaehler gegen veraltete Antworten
 let _nbVorschauTimer = null, _nbVorschauLauf = 0, _nbKonfigLauf = 0;
@@ -6230,18 +6233,20 @@ async function _nbMultipart(url, fd) {
 async function nbAnalysieren() {
   nbFehler('');
   if (!_nbDatei) { nbFehler('Bitte zuerst ein Meme auswählen'); return; }
-  if (_nbSitzung) {
-    // Eine alte Sitzung nicht liegen lassen – der Server raeumt zwar nach 24 h auf, aber
-    // die Dateien muessen nicht so lange herumliegen.
-    const alt = _nbSitzung;
-    _nbSitzung = null;
-    api('DELETE', '/api/templates/nachbau/sitzung/' + encodeURIComponent(alt)).catch(() => {});
-  }
+  // Die alte Sitzung bleibt stehen, bis der neue Probelauf da ist: schlaegt er fehl, ist das
+  // alte Ergebnis samt Sitzung weiter benutzbar. Danach wird sie geloescht – der Server
+  // raeumt zwar nach 24 h auf, aber die Dateien muessen nicht so lange herumliegen.
+  const alt = _nbSitzung;
   _nbVorschauAbbrechen();
   nbBusy(true, 'Meme wird gelesen und nachgebaut – das dauert einen Moment');
   try {
     const j = await _nbPost(true);
-    if (j && !j._sitzung_weg) nbUebernehmeErgebnis(j);
+    if (j && !j._sitzung_weg) {
+      nbUebernehmeErgebnis(j);
+      if (alt && alt !== _nbSitzung) {
+        api('DELETE', '/api/templates/nachbau/sitzung/' + encodeURIComponent(alt)).catch(() => {});
+      }
+    }
   } finally { nbBusy(false); }
 }
 
@@ -6258,6 +6263,7 @@ function nbUebernehmeErgebnis(j) {
   _nbRollenZuweisung = {};
   _nbStaedteIds = [];
   _nbAngelegt = null;
+  _nbSitzungAbgelaufen = false;
 
   document.getElementById('nb-result').style.display = '';
   document.getElementById('nb-verwerfen-btn').style.display = '';
@@ -6280,7 +6286,7 @@ function nbUebernehmeErgebnis(j) {
   nbRenderHintergrund();
   nbRenderWarnungen();
   nbRenderVorschlag(j);
-  nbRenderZeilen();
+  nbRenderZeilen(true);
   nbRenderBilder();
   nbRenderBildvorschlaege();
   nbRenderOverlay();
@@ -6391,6 +6397,47 @@ function _nbTextEl(z) {
 function _nbTextVar(te) {
   const m = te && !te.var && typeof te.text === 'string' ? te.text.match(/\{([a-z][a-z0-9_]*)\}/) : null;
   return m ? m[1] : null;
+}
+// Der Stadtname aus dem Dialog: der Server gibt ihn im Probelauf als analyse.city_hint zurueck;
+// fehlt das Feld (alter Server), gilt der Wert aus dem Eingabefeld.
+function _nbStadtHinweis() {
+  const a = _nbErgebnis && _nbErgebnis.analyse;
+  let h = (a && !Array.isArray(a) && typeof a === 'object') ? String(a.city_hint || '').trim() : '';
+  if (!h) {
+    const inp = document.getElementById('nb-city');
+    h = inp ? String(inp.value || '').trim() : '';
+  }
+  return h;
+}
+// Ganzwort-Muster fuer den Stadtnamen, Gross-/Kleinschreibung egal – wie satz_mit_stadt im
+// Server. Gruppe 1 ist das Zeichen davor (bleibt beim Ersetzen stehen), Gruppe 2 der Name.
+function _nbStadtMuster() {
+  const h = _nbStadtHinweis();
+  if (!h) return null;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^\\p{L}\\p{N}_])(' + esc + ')(?![\\p{L}\\p{N}_])', 'giu');
+}
+// Korrigierten Text ins Element schreiben. Traegt es eine Variable, ist der Text der Rueckfall.
+// Bei einem Satz mit Platzhalter ('Wenn du in {city_name} wohnst') darf der getippte Stadtname
+// nicht fest in jede Stadt: er wird wieder zum Platzhalter, der volle Satz zum Rueckfall.
+// Kommt der Stadtname im neuen Text nicht mehr vor, wird die Zeile fester Text.
+// 'leise' unterdrueckt den Hinweis, wenn eine gemerkte Korrektur nach einem Neubau erneut gilt.
+function _nbTextSetzen(z, te, t, leise) {
+  if (!te) return;
+  if (te.var) { te.fallback = t; return; }
+  const tv = _nbTextVar(te);
+  if (!tv) { te.text = t; return; }
+  const muster = _nbStadtMuster();
+  const neu = muster ? t.replace(muster, (m, vor) => vor + '{' + tv + '}') : t;
+  if (muster && neu !== t) {
+    te.fallback = t;
+    te.text = neu;
+    return;
+  }
+  te.text = t;
+  delete te.fallback;
+  z.city_specific = false;
+  if (!leise) toast('Zeile enthält den Stadtnamen nicht mehr und ist jetzt fester Text', 'info');
 }
 // Rueckfall (alter Server): Fotoflaechen als Vorschlag, die der Nutzer von Hand anlegt
 function _nbLeseBildbereiche(j) {
@@ -6532,10 +6579,12 @@ function _nbUebernehmeKonfig(r) {
   nbVorschauPlanen();
 }
 // Die Sitzung ist auf dem Server weg (24 h um oder Neustart): ehrlich sagen, Vorschau abschalten.
-// Uebernehmen faellt dann auf den alten Weg zurueck (Bild noch einmal lesen lassen).
+// Uebernehmen ist dann gesperrt, bis neu analysiert wurde – der Rueckfall ohne Sitzung wuerde
+// die KI ein zweites Mal bezahlen und eine Konfiguration mit geloeschten Ausschnitten anlegen.
 function _nbSitzungWeg() {
   _nbSitzung = null;
   _nbSitzungBis = '';
+  _nbSitzungAbgelaufen = true;
   _nbVorschauAbbrechen();
   nbFehler('Die Sitzung des Probelaufs ist abgelaufen – bitte noch einmal „Analysieren“ drücken.');
   nbRenderSitzungInfo();
@@ -6559,7 +6608,7 @@ function _nbKorrekturenAnwenden() {
     }
     if (typeof k.text === 'string') {
       z.text = k.text;
-      if (te.var) te.fallback = k.text; else te.text = k.text;
+      _nbTextSetzen(z, te, k.text, true);
     }
     if (k.font && _nbStilModus === 'original') te.font = k.font;
   });
@@ -6664,8 +6713,14 @@ function _nbMerkmale(z) {
   }
   return badges.join(' ');
 }
-function nbRenderZeilen() {
+// 'frisch': die Liste gehoert zu einem neuen Ergebnis – ein noch fokussiertes Textfeld der
+// alten Liste darf dann nicht ins neue Modell geschrieben werden.
+function nbRenderZeilen(frisch) {
   const box = document.getElementById('nb-zeilen');
+  // Tippt jemand gerade in einem Zeilen-Textfeld, ginge der Text beim Neubau per innerHTML
+  // verloren: erst ins Modell uebernehmen, nach dem Neubau Fokus und Cursor wiederherstellen.
+  const fokus = frisch ? null : _nbFokusMerken(box);
+  if (fokus) nbSetzeText(fokus.i, fokus.wert, true);
   if (!_nbZeilen.length) {
     box.innerHTML = '<div style="font-size:12px;color:var(--muted);">Keine Textzeilen erkannt. Im Studio lassen sich Boxen von Hand setzen.</div>';
     return;
@@ -6677,21 +6732,46 @@ function nbRenderZeilen() {
       <span style="color:var(--muted);font-weight:400;">· ${n} von ${_nbZeilen.length} stadtspezifisch</span></div>`;
   box.innerHTML = kopf + _nbZeilen.map((z, i) => {
     const te = _nbTextEl(z) || {};
+    // Der Seitenname wird immer zum Wasserzeichen – eine Rollenwahl ignoriert der Server dort
+    const seitenname = te.var === 'city_handle';
+    const rolleTitel = seitenname ? 'Der Seitenname wird immer zum Wasserzeichen'
+      : 'Rolle: bestimmt Schrift, Farbe, Kontur und Kasten je Stadt-Stil';
     return `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:9px 11px;margin-bottom:6px;">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <input type="text" value="${_esc(z.text)}" placeholder="erkannter Text" title="Erkannten Text korrigieren – steht so in der Vorlage (bei Variablen als Rückfallwert)"
+        <input type="text" data-i="${i}" value="${_esc(z.text)}" placeholder="erkannter Text" title="Erkannten Text korrigieren – steht so in der Vorlage (bei Variablen als Rückfallwert)"
                onchange="nbSetzeText(${i}, this.value)" style="flex:1;min-width:180px;padding:6px 9px;font-size:13px;">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted2);margin:0;cursor:pointer;white-space:nowrap;">
           <input type="checkbox"${z.city_specific ? ' checked' : ''} onchange="nbSetzeStadtspezifisch(${i}, this.checked)" style="width:auto;margin:0;">
           stadtspezifisch
         </label>
         <select onchange="nbSetzeVariable(${i}, this.value)"${z.city_specific ? '' : ' disabled'} style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Variable, die pro Stadt gefüllt wird">${_nbVarOptionen(z.suggested_var)}</select>
-        ${rollenDa && te.id ? `<select onchange="nbSetzeRolle(${i}, this.value)" style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Rolle: bestimmt Schrift, Farbe, Kontur und Kasten je Stadt-Stil">${_nbRollenOptionen(String(te.role || ''))}</select>` : ''}
+        ${rollenDa && te.id ? `<select onchange="nbSetzeRolle(${i}, this.value)"${seitenname ? ' disabled' : ''} style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="${rolleTitel}">${_nbRollenOptionen(String(te.role || ''))}</select>` : ''}
         ${schriftDa && te.id ? `<select onchange="nbSetzeSchrift(${i}, this.value)" style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Schrift dieser Zeile (nur im Original-Look)">${_nbSchriftOptionen(String(te.font || ''))}</select>` : ''}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:5px;">${_nbMerkmale(z)}</div>
     </div>`;
   }).join('');
+  _nbFokusZurueck(box, fokus);
+}
+// Fokussiertes Zeilen-Textfeld in der Liste: Index (data-i), Wert und Cursor merken
+function _nbFokusMerken(box) {
+  const el = document.activeElement;
+  if (!el || !box || !box.contains(el) || String(el.tagName || '').toUpperCase() !== 'INPUT') return null;
+  if (el.type !== 'text' || !el.dataset || el.dataset.i === undefined) return null;
+  const i = Number(el.dataset.i);
+  if (!Number.isInteger(i)) return null;
+  return {i: i, wert: String(el.value || ''), start: el.selectionStart, end: el.selectionEnd};
+}
+function _nbFokusZurueck(box, fokus) {
+  if (!fokus) return;
+  const inp = box.querySelector('input[type="text"][data-i="' + fokus.i + '"]');
+  if (!inp) return;
+  // ungekuerzt, wie getippt – das Modell traegt den getrimmten Text
+  inp.value = fokus.wert;
+  try {
+    inp.focus({preventScroll: true});
+    if (fokus.start !== null && fokus.start !== undefined) inp.setSelectionRange(fokus.start, fokus.end);
+  } catch (e) { /* egal */ }
 }
 // Rueckfall (alter Server): Fotoflaechen als Vorschlag mit Knopf "Als Stadtbild anlegen"
 function nbRenderBildvorschlaege() {
@@ -6730,9 +6810,9 @@ function _nbKeyOptionen(b) {
 function _nbKeyAbdeckung(b) {
   const k = _nbStadtbildKeys.find(x => x.key === b.key);
   const n = k ? (Number(k.cities) || 0) : 0, g = k ? (Number(k.total_cities) || 0) : 0;
-  if (!k || !g) return 'Noch keine Stadt hat ein Bild unter diesem Schlüssel' + (b.fallback_original ? ' – überall erscheint der Original-Ausschnitt.' : ' – die Fläche bleibt leer.');
+  if (!k || !g) return 'Noch keine Stadt hat ein Bild unter diesem Schlüssel' + (b.fallback_original ? ' – überall erscheint der Ausschnitt aus dem Hintergrund.' : ' – die Fläche bleibt leer.');
   if (n >= g) return `Alle ${g} Städte haben ein Bild dazu.`;
-  return `${n} von ${g} Städten haben ein Bild – die anderen ${b.fallback_original ? 'zeigen den Original-Ausschnitt' : 'lassen die Fläche leer'}.`;
+  return `${n} von ${g} Städten haben ein Bild – die anderen ${b.fallback_original ? 'zeigen den Ausschnitt aus dem Hintergrund' : 'lassen die Fläche leer'}.`;
 }
 function nbRenderBilder() {
   const box = document.getElementById('nb-bilder');
@@ -6746,6 +6826,8 @@ function nbRenderBilder() {
   }
   let stadtDa = false;
   const karten = _nbBildBereiche.map((b, i) => {
+    // Das Vorschaubild zeigt den Ausschnitt aus dem Original (zum Wiedererkennen); Ersatz- und
+    // feste Bilder nimmt der Server aus dem freigeraeumten Hintergrund ohne fremde Schrift.
     const thumb = (b.modus === 'fest' && b.quelle === 'upload' && b.upload_url)
       ? `<img src="${_esc(b.upload_url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
       : (_nbBildSrc(b.ausschnitt_b64, mime)
@@ -6765,13 +6847,13 @@ function nbRenderBilder() {
         </div>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted2);margin:7px 0 0;cursor:pointer;">
           <input type="checkbox"${b.fallback_original ? ' checked' : ''} onchange="nbBildFallback(${i}, this.checked)" style="width:auto;margin:0;">
-          Original als Ersatz, wenn die Stadt kein Bild hat
+          Ausschnitt (ohne Schrift) als Ersatz, wenn die Stadt kein Bild hat
         </label>
         <div style="font-size:11px;color:var(--muted);margin-top:4px;">{bild_${_esc(b.key || 'foto')}} · ${_esc(_nbKeyAbdeckung(b))}</div>`;
     } else if (b.modus === 'fest') {
       const upl = b.upload ? `<span style="color:var(--text);">${_esc(b.upload.name)}</span> · ${(b.upload.size / 1024 / 1024).toFixed(1)} MB` : '<span style="color:var(--warning);">noch keine Datei gewählt</span>';
       details = `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:12px;color:var(--muted2);">
-          <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;"><input type="radio" name="nb-bild-quelle-${i}" value="original"${b.quelle !== 'upload' ? ' checked' : ''} onchange="nbBildQuelle(${i}, 'original')" style="width:auto;margin:0;">Ausschnitt aus dem Original</label>
+          <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;"><input type="radio" name="nb-bild-quelle-${i}" value="original"${b.quelle !== 'upload' ? ' checked' : ''} onchange="nbBildQuelle(${i}, 'original')" style="width:auto;margin:0;">Ausschnitt aus dem Hintergrund (ohne Schrift)</label>
           <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;"><input type="radio" name="nb-bild-quelle-${i}" value="upload"${b.quelle === 'upload' ? ' checked' : ''} onchange="nbBildQuelle(${i}, 'upload')" style="width:auto;margin:0;">Eigenes Bild hochladen</label>
         </div>
         ${b.quelle === 'upload' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px;color:var(--muted);">
@@ -6797,7 +6879,7 @@ function nbRenderBilder() {
     </div>`;
   }).join('');
   const fuss = stadtDa
-    ? '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Bilder je Stadt hinterlegst du unter Städte &amp; Wiki → Bilder der Stadt. Ohne Bild greift der Original-Ausschnitt, wenn der Haken gesetzt ist.</div>'
+    ? '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Bilder je Stadt hinterlegst du unter Städte &amp; Wiki → Bilder der Stadt. Ohne Bild greift der Ausschnitt aus dem Hintergrund, wenn der Haken gesetzt ist.</div>'
     : '';
   box.innerHTML = kopf + karten + fuss;
 }
@@ -6840,6 +6922,8 @@ function nbRenderSitzungInfo() {
   if (_nbSitzung) {
     el.textContent = 'Probelauf auf dem Server gespeichert' + (_nbSitzungBis ? ' bis ' + _nbZeitpunkt(_nbSitzungBis) : ' (24 Stunden)')
       + ' – bis dahin lässt sich die Vorlage ohne neue KI-Analyse übernehmen.';
+  } else if (_nbErgebnis && (_nbSitzungAbgelaufen || _nbErgebnis.sitzung)) {
+    el.textContent = 'Die Sitzung des Probelaufs ist abgelaufen – zum Übernehmen bitte noch einmal „Analysieren“ drücken.';
   } else if (_nbErgebnis) {
     el.textContent = 'Dieser Server merkt sich den Probelauf nicht – beim Übernehmen liest die KI das Bild deshalb noch einmal (kostet wie die Analyse).';
   } else {
@@ -6852,6 +6936,13 @@ function _nbVorschauAbbrechen() {
   if (_nbVorschauTimer) { clearTimeout(_nbVorschauTimer); _nbVorschauTimer = null; }
   _nbVorschauLauf++;
   _nbKonfigLauf++;
+  // Ein verworfener Lauf darf den Streifen nicht abgedunkelt, den Status nicht auf
+  // "wird gerendert" und den Knopf "Andere Städte" nicht gesperrt zuruecklassen
+  const streifen = document.getElementById('nb-staedte-streifen');
+  if (streifen) streifen.style.opacity = '';
+  _nbKonfigStatus('');
+  const btn = document.getElementById('nb-staedte-andere-btn');
+  if (btn) btn.disabled = false;
 }
 // Entprellt: viele Aenderungen hintereinander loesen nur ein Rendern aus
 function nbVorschauPlanen() {
@@ -6943,7 +7034,9 @@ function _nbZeileFest(z) {
     te.text = String(te.fallback || z.text || '').trim();
     delete te.var; delete te.fallback;
   } else if (_nbTextVar(te)) {
-    // Vorlagentext mit Platzhalter: der Originalsatz steht im Rueckfall
+    // Vorlagentext mit Platzhalter: den Satz merken (der Haken holt ihn zurueck), dann steht
+    // der Originalsatz aus dem Rueckfall
+    z.satz = te.text;
     te.text = String(te.fallback || z.text || '').trim();
     delete te.fallback;
   }
@@ -6953,6 +7046,16 @@ function _nbZeileVariabel(z) {
   z.city_specific = true;
   if (!te) { _nbZeileAnlegen(z); return; }
   if (!te.var && !_nbTextVar(te)) {
+    if (z.satz) {
+      // Vorher ein Satz mit Platzhalter, per Haken fest gemacht: den Satz zurueckholen,
+      // der feste Text (ohne Platzhalter) wird wieder der Rueckfall
+      const fest = String(te.text || z.text || '').trim();
+      te.text = z.satz;
+      te.fallback = fest;
+      delete z.satz;
+      z.suggested_var = _nbVarName(_nbTextVar(te), z.suggested_var);
+      return;
+    }
     te.var = z.korr.var || z.suggested_var || z.text_id;
     te.fallback = String(te.text || z.text || '').trim();
     delete te.text;
@@ -7014,7 +7117,8 @@ function nbSetzeVariable(i, wert) {
   nbRenderOverlay(); nbZeigeGeaendert();
   nbVorschauPlanen();
 }
-function nbSetzeText(i, wert) {
+// 'imNeubau': Aufruf aus nbRenderZeilen selbst (Fokus retten) – die Liste wird gleich ohnehin gebaut
+function nbSetzeText(i, wert, imNeubau) {
   const z = _nbZeilen[i];
   if (!z) return;
   const t = String(wert || '').trim();
@@ -7022,9 +7126,15 @@ function nbSetzeText(i, wert) {
   z.text = t;
   z.korr.text = t;
   const te = _nbTextEl(z);
-  if (te) { if (te.var) te.fallback = t; else te.text = t; }
+  const spezVorher = z.city_specific;
+  if (te) _nbTextSetzen(z, te, t);
   _nbGeaendert = true;
   nbZeigeGeaendert();
+  if (z.city_specific !== spezVorher) {
+    // Der Satz hat seinen Stadtnamen verloren: Haken, Zaehler und Rahmen nachziehen
+    if (!imNeubau) nbRenderZeilen();
+    nbRenderOverlay();
+  }
   nbVorschauPlanen();
 }
 // Rolle einer Zeile (nur Stadt-Stil): der Server baut die Config mit der Zuweisung neu
@@ -7135,7 +7245,7 @@ function nbBildUpload(i, files) {
   nbZeigeGeaendert();
   nbRenderBilder();
   nbRenderOverlay();
-  toast(`Bild für Bereich ${b.i + 1} gemerkt – in der Stadt-Vorschau erscheint bis zum Übernehmen der Original-Ausschnitt`, 'info');
+  toast(`Bild für Bereich ${b.i + 1} gemerkt – in der Stadt-Vorschau erscheint bis zum Übernehmen der Ausschnitt aus dem Hintergrund`, 'info');
 }
 // Rueckfall (alter Server): Bildelement von Hand anlegen
 function nbBildAnlegen(i) {
@@ -7164,6 +7274,13 @@ async function nbUebernehmen() {
   if (_nbAngelegt) { window.open(_nbStudioUrl(_nbAngelegt.studio, _nbAngelegt.id), '_blank', 'noopener'); return; }
   nbFehler('');
   if (_nbSitzung) { await _nbAnlegenSitzung(); return; }
+  // Der Rueckfall unten gilt nur fuer Antworten ohne 'sitzung' (alter Server). Eine
+  // abgelaufene Sitzung darf nicht dorthin: das bezahlt die KI ein zweites Mal und legt eine
+  // Konfiguration an, deren Ausschnitte der Server schon geloescht hat.
+  if (_nbSitzungAbgelaufen || (_nbErgebnis && _nbErgebnis.sitzung)) {
+    nbFehler('Die Sitzung des Probelaufs ist abgelaufen – bitte noch einmal „Analysieren“ drücken.');
+    return;
+  }
   nbBusy(true, 'Vorlage wird angelegt …');
   try {
     let id = _nbErgebnis.template_id;
@@ -7198,7 +7315,7 @@ async function _nbAnlegenSitzung() {
   }
   const offen = _nbBildBereiche.filter(b => b.modus === 'fest' && b.quelle === 'upload' && !b.upload);
   if (offen.length) {
-    nbFehler(`Bereich ${offen.map(b => b.i + 1).join(', ')}: bitte ein eigenes Bild wählen oder „Ausschnitt aus dem Original“ nehmen.`);
+    nbFehler(`Bereich ${offen.map(b => b.i + 1).join(', ')}: bitte ein eigenes Bild wählen oder „Ausschnitt aus dem Hintergrund (ohne Schrift)“ nehmen.`);
     return;
   }
   const fd = new FormData();
@@ -7272,7 +7389,7 @@ function nbRenderPruefung(j) {
 function nbVerwerfen() {
   if (_nbErgebnis && _nbGeaendert && !_nbAngelegt && !confirm('Nachbau samt deiner Korrekturen verwerfen?')) return;
   const token = _nbSitzung;
-  _nbSitzung = null; _nbSitzungBis = '';
+  _nbSitzung = null; _nbSitzungBis = ''; _nbSitzungAbgelaufen = false;
   _nbVorschauAbbrechen();
   if (token) api('DELETE', '/api/templates/nachbau/sitzung/' + encodeURIComponent(token)).catch(() => {});
   _nbBildBereicheFreigeben();
