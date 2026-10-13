@@ -1142,8 +1142,23 @@ const CSRF = '{{ csrf_token }}';
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 // Canva-Schriftnamen -> eingebaute Keys (Spiegel von CANVA_FONT_MAP im Renderer, nur für die Bühne)
-const FONT_ALIAS = {'bebasneue': 'anton', 'impact': 'anton', 'leaguegothic': 'anton', 'oswald': 'bold', 'oswaldbold': 'bold',
-  'arialblack': 'bold', 'montserrat': 'bold', 'arialroundedmtbold': 'arial_rounded_bold', 'arialroundedbold': 'arial_rounded_bold'};
+// Spiegel von memeos_render.CANVA_FONT_MAP (Auszug): ein NAME, der kein Schluessel ist, landet
+// bei der passenden eingebauten Schrift. Fehlt der Zielschluessel in S.fonts, greift unten der
+// Rueckfall auf Anton.
+const FONT_ALIAS = {'bebasneue': 'bebas_neue', 'bebas': 'bebas_neue', 'teko': 'bebas_neue',
+  'impact': 'anton', 'leaguegothic': 'anton',
+  'oswald': 'bold', 'oswaldbold': 'oswald_bold', 'fjallaone': 'oswald_bold',
+  'arialblack': 'archivo_black', 'archivoblack': 'archivo_black', 'montserratblack': 'archivo_black',
+  'montserrat': 'poppins_semibold', 'poppins': 'poppins_semibold', 'poppinsblack': 'poppins_black',
+  'montserratbold': 'poppins_black',
+  'titanone': 'titan_one', 'lilitaone': 'lilita_one', 'fredoka': 'lilita_one', 'fredokaone': 'lilita_one',
+  'bangers': 'bangers', 'luckiestguy': 'luckiest_guy', 'comicsans': 'bangers', 'comicsansms': 'bangers',
+  'permanentmarker': 'permanent_marker', 'markerfelt': 'permanent_marker',
+  'kalam': 'kalam_bold', 'kalambold': 'kalam_bold', 'caveat': 'kalam_bold',
+  'alfaslabone': 'alfa_slab_one', 'rockwell': 'alfa_slab_one',
+  'passionone': 'passion_one_black', 'passiononeblack': 'passion_one_black',
+  'rubikmonoone': 'rubik_mono_one',
+  'arialroundedmtbold': 'arial_rounded_bold', 'arialroundedbold': 'arial_rounded_bold'};
 const FALLBACK_CANVAS_PRESETS = [
   {key: 'ig_portrait', label: 'Instagram Hochformat 1080 × 1350', width: 1080, height: 1350},
   {key: 'ig_square', label: 'Instagram Quadrat 1080 × 1080', width: 1080, height: 1080},

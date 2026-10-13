@@ -171,6 +171,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .toast.success{border-left:3px solid var(--success);}
 .toast.error{border-left:3px solid var(--danger);}
 .toast.info{border-left:3px solid var(--accent);}
+.toast.warning{border-left:3px solid var(--warning);}
 @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 
 /* ── Knowledge tags ── */
@@ -6343,9 +6344,12 @@ function _nbVerknuepfe() {
     if (te) {
       if (!te.id) te.id = z.text_id;
       z.text_id = te.id;
-      // Der Nachbau legt fuer JEDE Zeile ein Element an – stadtspezifisch ist, was eine Variable traegt
-      z.city_specific = !!te.var;
+      // Der Nachbau legt fuer JEDE Zeile ein Element an – stadtspezifisch ist, was eine Variable
+      // traegt: als 'var' oder als {platzhalter} im Vorlagentext
+      const tv = _nbTextVar(te);
+      z.city_specific = !!te.var || !!tv;
       if (te.var) z.suggested_var = _nbVarName(te.var, z.suggested_var);
+      else if (tv) z.suggested_var = _nbVarName(tv, z.suggested_var);
     }
     const b = _nbBoxPx(z);
     let ce = els.find(x => x && x.type === 'cover' && x.id === z.cover_id);
@@ -6381,6 +6385,12 @@ function _nbSucheTextEl(z, els) {
 function _nbTextEl(z) {
   const els = (_nbConfig && _nbConfig.elements) || [];
   return els.find(x => x && x.type === 'text' && x.id === z.text_id) || null;
+}
+// Vorlagentext mit Platzhalter ('Wenn du in {city_name} wohnst'): die erste Variable im Text,
+// sonst null. Solche Zeilen zaehlen als stadtspezifisch, obwohl sie kein 'var' tragen.
+function _nbTextVar(te) {
+  const m = te && !te.var && typeof te.text === 'string' ? te.text.match(/\{([a-z][a-z0-9_]*)\}/) : null;
+  return m ? m[1] : null;
 }
 // Rueckfall (alter Server): Fotoflaechen als Vorschlag, die der Nutzer von Hand anlegt
 function _nbLeseBildbereiche(j) {
@@ -6543,6 +6553,10 @@ function _nbKorrekturenAnwenden() {
     const te = _nbTextEl(z);
     if (!te) return;
     if (k.var && te.var) { te.var = k.var; z.suggested_var = k.var; }
+    else if (k.var && _nbTextVar(te)) {
+      te.text = te.text.split('{' + _nbTextVar(te) + '}').join('{' + k.var + '}');
+      z.suggested_var = k.var;
+    }
     if (typeof k.text === 'string') {
       z.text = k.text;
       if (te.var) te.fallback = k.text; else te.text = k.text;
@@ -6928,13 +6942,17 @@ function _nbZeileFest(z) {
   if (te.var) {
     te.text = String(te.fallback || z.text || '').trim();
     delete te.var; delete te.fallback;
+  } else if (_nbTextVar(te)) {
+    // Vorlagentext mit Platzhalter: der Originalsatz steht im Rueckfall
+    te.text = String(te.fallback || z.text || '').trim();
+    delete te.fallback;
   }
 }
 function _nbZeileVariabel(z) {
   const te = _nbTextEl(z);
   z.city_specific = true;
   if (!te) { _nbZeileAnlegen(z); return; }
-  if (!te.var) {
+  if (!te.var && !_nbTextVar(te)) {
     te.var = z.korr.var || z.suggested_var || z.text_id;
     te.fallback = String(te.text || z.text || '').trim();
     delete te.text;
@@ -6987,7 +7005,11 @@ function nbSetzeVariable(i, wert) {
   z.suggested_var = v;
   z.korr.var = v;
   const te = _nbTextEl(z);
-  if (te) te.var = v;
+  if (te) {
+    const tv = _nbTextVar(te);
+    if (te.var) te.var = v;
+    else if (tv) te.text = te.text.split('{' + tv + '}').join('{' + v + '}');
+  }
   _nbGeaendert = true;
   nbRenderOverlay(); nbZeigeGeaendert();
   nbVorschauPlanen();

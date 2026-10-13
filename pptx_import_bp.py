@@ -60,8 +60,20 @@ CANVA_LINK_HOSTS = ('canva.com', 'www.canva.com', 'canva.link', 'www.canva.link'
 PLACEHOLDER_RE = re.compile(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}')
 CITY_ALIASES = {'stadt': 'city_name', 'city': 'city_name', 'stadtname': 'city_name'}
 
-FONT_LABELS = {'anton': 'Anton', 'bold': 'Oswald Bold', 'arial_rounded_bold': 'Arial Rounded Bold'}
 FALLBACK_FONT = 'anton'
+
+
+def _font_labels():
+    """Schluessel -> Anzeigename aller eingebauten Schriften, direkt aus dem Renderer, damit die
+    Ersatzmeldung 'durch Archivo Black ersetzt' heisst und nicht 'durch archivo_black'."""
+    try:
+        import memeos_render as mr
+        return {key: label for key, (label, _datei) in getattr(mr, '_BUILTIN_FONTS', {}).items()}
+    except Exception:          # pragma: no cover - Renderer fehlt
+        return {'anton': 'Anton', 'bold': 'Oswald', 'arial_rounded_bold': 'Arial Rounded Bold'}
+
+
+FONT_LABELS = _font_labels()
 
 HELP_TEXT = ('In Canva: Für jede Textstelle, die pro Stadt anders sein soll, schreibst du den '
              'Variablennamen in geschweiften Klammern in die Textbox, zum Beispiel {problem_place} '

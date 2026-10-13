@@ -734,7 +734,15 @@ def normalize_analysis(data, city_hint=None, kategorien=None):
         'palette': _normalize_palette(data.get('palette')),
         'titel_vorschlag': _normalize_titel(data.get('titel_vorschlag')),
         'kategorie_vorschlag': _normalize_kategorie(data.get('kategorie_vorschlag'), kategorien),
+        # Der Stadtname aus dem Dialog: der Nachbau braucht ihn, um in einem Satz wie
+        # "Wenn du in Darmstadt wohnst" nur den Namen zum Platzhalter zu machen.
+        'city_hint': (str(city_hint or '').strip() or None),
     }
+
+
+def _vision_fake_aktiv():
+    """True, wenn MEMEOS_VISION_FAKE gesetzt ist: dann laeuft jede Analyse ohne Key und ohne Netz."""
+    return bool((os.getenv('MEMEOS_VISION_FAKE') or '').strip())
 
 
 def _fake_analyse(path, city_hint):
@@ -1355,6 +1363,30 @@ def _ist_handle_zeile(blk):
     return text.startswith('@') or str(blk.get('suggested_var') or '') == 'city_handle'
 
 
+_SATZ_RAND = ' ,.:;!?-–—"\'„“”()'
+
+
+def satz_mit_stadt(text, hint):
+    """Satz mit Stadtname -> Vorlagentext mit Platzhalter, oder None.
+
+    'Wenn du in Darmstadt wohnst' + 'Darmstadt' -> 'Wenn du in {city_name} wohnst'.
+    None, wenn kein Hinweis da ist, der Name nicht als ganzes Wort vorkommt (gebeugte Formen
+    wie 'Darmstädter' bleiben eine Variable mit Rückfall) oder die Zeile NUR aus dem Namen
+    besteht (dann ist die ganze Zeile die Variable, wie bisher). Groß-/Kleinschreibung des
+    Satzes bleibt, wie sie im Bild steht; der Platzhalter wird beim Rendern eingesetzt."""
+    t = str(text or '').strip()
+    h = str(hint or '').strip()
+    if not t or not h:
+        return None
+    muster = re.compile(r'(?<!\w)' + re.escape(h) + r'(?!\w)', re.IGNORECASE)
+    if not muster.search(t):
+        return None
+    rest = muster.sub('', t).strip(_SATZ_RAND)
+    if not rest:
+        return None
+    return muster.sub('{city_name}', t)
+
+
 def rolle_fuer_zeile(blk, blocks, h, bg_art='flat'):
     """Welche ROLLE (memeos_render.ROLLEN) bekommt diese Textzeile im Stil-Modus 'stadt'?
 
@@ -1556,7 +1588,9 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
     kommen beim Rendern aus dem Stil der Stadt. Explizite rollen {element_id: rolle} schlagen
     die Heuristik; 'frei' lässt die Zeile wie im Modus 'original'.
     stil_modus 'original': hex-Farben, erkannte Schrift, Kontur/Schatten/Kasten wie erkannt,
-    role 'frei' an jedem Text-Element. Eine Handle-Zeile (@seite) wird in beiden Modi zum
+    role 'frei' an jedem Text-Element.
+    Eine Zeile, in der der Stadtname (city_hint) nur ein Wort ist, wird zum Vorlagentext mit
+    {city_name} (satz_mit_stadt) statt zur reinen Variable. Eine Handle-Zeile (@seite) wird in beiden Modi zum
     Wasserzeichen mit Variable city_handle – ein fremder Seitenname darf nie fest im Bild
     stehen bleiben.
 
@@ -1568,6 +1602,7 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
     warn = warnungen if isinstance(warnungen, list) else []
     analyse = analyse or {}
     stil_modus = stil_modus if stil_modus in STIL_MODI else 'stadt'
+    city_hint = analyse.get('city_hint')
     rollen = _rollen_bereinigen(rollen)
     weg = (hintergrund or {}).get('weg') or 'freigeraeumt'
     freigeraeumt = (weg == 'freigeraeumt')
@@ -1632,7 +1667,14 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
             })
 
         el_id = f'text_{idx}'
-        heuristik = rolle_fuer_zeile(blk, blocks, h, bg_art)
+        # Ein ganzer Satz, in dem der Stadtname nur ein Wort ist, bleibt als Satz stehen:
+        # 'Wenn du in {city_name} wohnst'. Nur eine Zeile, die aus dem Namen besteht,
+        # wird komplett zur Variable (und bekommt die Rolle 'ort').
+        satz = None
+        if blk.get('city_specific') and str(blk.get('suggested_var') or '') == 'city_name':
+            satz = satz_mit_stadt(text, city_hint)
+        heuristik = rolle_fuer_zeile(dict(blk, suggested_var=None, city_specific=False)
+                                     if satz else blk, blocks, h, bg_art)
         if stil_modus == 'stadt':
             rolle = rollen.get(el_id) or heuristik
         else:
@@ -1653,6 +1695,11 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
             text_el['var'] = 'city_handle'
             text_el['name'] = 'Wasserzeichen'
             hat_wasserzeichen = True
+        elif satz:
+            # Satz mit Platzhalter: der Renderer setzt {city_name} ein, der Rest bleibt.
+            text_el['text'] = satz
+            text_el['fallback'] = text
+            text_el['name'] = f'Zeile {nummer} (mit Stadtname)'
         elif blk.get('city_specific'):
             text_el['var'] = blk.get('suggested_var') or f'text_{idx}'
             # fallback = die Originalzeile: liefert die Variable nichts, steht wieder etwas da
@@ -1749,17 +1796,28 @@ def vorschlaege_fuer(analyse):
     return {'name': name, 'kategorie': str(analyse.get('kategorie_vorschlag') or '').strip()}
 
 
+_TEXT_VAR_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*)\}')   # wie memeos_render._VAR_RE
+
+
 def nachbau_variablen(config):
-    """Alle Variablennamen einer Config in Reihenfolge (für required_vars) – OHNE die
+    """Alle Variablennamen einer Config in Reihenfolge (für required_vars): 'var' am Element
+    und {platzhalter} im Vorlagentext ('Wenn du in {city_name} wohnst'). OHNE die
     Stadtbild-Variablen bild_*: die füllt der Massenlauf aus den Bildern der Stadt, nicht die
     KI (Angleichung an studio_bp._required_vars)."""
     namen = []
+
+    def merken(name):
+        name = str(name or '').strip()
+        if name and not name.startswith('bild_') and name not in namen:
+            namen.append(name)
+
     for el in (config or {}).get('elements') or []:
         if not isinstance(el, dict):
             continue
-        var = str(el.get('var') or '').strip()
-        if var and not var.startswith('bild_') and var not in namen:
-            namen.append(var)
+        merken(el.get('var'))
+        if not el.get('var') and el.get('type') == 'text':
+            for m in _TEXT_VAR_RE.finditer(str(el.get('text') or '')):
+                merken(m.group(1))
     return namen
 
 
@@ -1918,7 +1976,7 @@ def api_import_image():
     analysis_payload = None
     if not analyze:
         hint = HINT_NO_ANALYSIS
-    elif not _api_key():
+    elif not (_api_key() or _vision_fake_aktiv()):
         hint = HINT_NO_KEY
     else:
         analysis = analyze_image(path, city_hint)
@@ -1949,7 +2007,7 @@ def api_template_analyze(tmpl_id):
     city_hint = (d.get('city_hint') or request.form.get('city_hint') or '').strip() or None
     force = _truthy(d.get('force', request.form.get('force')), default=False)
 
-    if not _api_key():
+    if not (_api_key() or _vision_fake_aktiv()):
         return jsonify({'error': 'Ohne Anthropic-Key keine Analyse möglich', 'hint': HINT_NO_KEY}), 400
 
     appmod = _appmod()
@@ -2669,7 +2727,7 @@ def api_template_nachbau():
     except ValueError as ex:
         return jsonify({'error': str(ex)}), 400
 
-    if not (os.getenv('MEMEOS_VISION_FAKE') or '').strip():
+    if not _vision_fake_aktiv():
         problem = _key_problem()
         if problem:
             # Kein Netzaufruf, kein Template: ohne KI gibt es keine Analyse und damit keinen Nachbau.
@@ -3225,8 +3283,8 @@ Bildrechte."""
 def api_import_image_help():
     return jsonify({
         'help': HELP_TEXT,
-        'ai_available': bool(_api_key()),
-        'ai_problem': _key_problem() or '',
+        'ai_available': bool(_api_key()) or _vision_fake_aktiv(),
+        'ai_problem': '' if _vision_fake_aktiv() else (_key_problem() or ''),
         'model': VISION_MODEL,
         'allowed_extensions': list(ALLOWED_EXT),
         'variables': known_variable_keys(),
@@ -3240,7 +3298,7 @@ def api_import_image_help():
             'stil_modi': list(STIL_MODI),
             'bild_modi': list(BILD_MODI),
             'sitzung_stunden': SITZUNG_STUNDEN,
-            'vision_fake': bool((os.getenv('MEMEOS_VISION_FAKE') or '').strip()),
+            'vision_fake': _vision_fake_aktiv(),
         },
     })
 

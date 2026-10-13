@@ -441,8 +441,16 @@ class TestNachbauConfigOriginal(unittest.TestCase):
         kasten = [el for el in texte(cfg) if el['id'] == 'text_2'][0]
         self.assertEqual(kasten['box']['fill'], '#FFFFFF')
         self.assertEqual(V._config_fehler(cfg), [])
-        # Serifenschrift fehlt in der Bibliothek: Ersatz wird gemeldet
-        self.assertTrue(any('Zeile 4' in w and 'ersetzt' in w for w in warn), warn)
+        # Serifenzeile: hat die Bibliothek die Slab-Schrift, bekommt die Zeile sie ohne
+        # Ersatzmeldung; fehlt sie (aeltere Bibliothek), wird der Ersatz gemeldet.
+        pointe = [el for el in texte(cfg) if el['id'] == 'text_3'][0]
+        ersatz_gemeldet = any('Zeile 4' in w and 'ersetzt' in w for w in warn)
+        if 'alfa_slab_one' in V._verfuegbare_schriften():
+            self.assertEqual(pointe['font'], 'alfa_slab_one')
+            self.assertFalse(ersatz_gemeldet, warn)
+        else:
+            self.assertEqual(pointe['font'], 'anton')
+            self.assertTrue(ersatz_gemeldet, warn)
 
     def test_wasserzeichen_auch_im_original(self):
         cfg = V.nachbau_config(analyse(), hintergrund(), W, H, [], stil_modus='original')
@@ -891,3 +899,47 @@ class TestBibliothek(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestSatzMitStadt(unittest.TestCase):
+    """Ein Satz, in dem der Stadtname nur ein Wort ist, bleibt als Satz stehen."""
+
+    def test_satz_wird_vorlagentext(self):
+        self.assertEqual(V.satz_mit_stadt('Wenn du in Darmstadt wohnst', 'Darmstadt'),
+                         'Wenn du in {city_name} wohnst')
+        self.assertEqual(V.satz_mit_stadt('WENN DU IN DARMSTADT WOHNST', 'darmstadt'),
+                         'WENN DU IN {city_name} WOHNST')
+
+    def test_nur_der_name_bleibt_variable(self):
+        self.assertIsNone(V.satz_mit_stadt('Darmstadt', 'Darmstadt'))
+        self.assertIsNone(V.satz_mit_stadt('DARMSTADT!', 'Darmstadt'))
+        self.assertIsNone(V.satz_mit_stadt('„Darmstadt“', 'Darmstadt'))
+
+    def test_gebeugt_oder_fremd_bleibt_variable(self):
+        self.assertIsNone(V.satz_mit_stadt('Typisch Darmstädter', 'Darmstadt'))
+        self.assertIsNone(V.satz_mit_stadt('Jeder Berliner kennt das', 'Berlin'))
+        self.assertIsNone(V.satz_mit_stadt('Wenn du in Mainz wohnst', 'Darmstadt'))
+        self.assertIsNone(V.satz_mit_stadt('Wenn du in Darmstadt wohnst', None))
+
+    def test_nachbau_setzt_satz_als_vorlagentext(self):
+        roh = json.loads(json.dumps(ROH_ANALYSE))
+        roh['text_blocks'][1]['text'] = 'WENN DU IN DARMSTADT WOHNST'
+        a = V.normalize_analysis(roh, 'Darmstadt')
+        self.assertEqual(a.get('city_hint'), 'Darmstadt')
+        for modus in ('stadt', 'original'):
+            with self.subTest(modus=modus):
+                cfg = V.nachbau_config(a, hintergrund('katalog'), W, H, [], stil_modus=modus)
+                zeile = [el for el in texte(cfg) if el['id'] == 'text_1'][0]
+                self.assertEqual(zeile.get('text'), 'WENN DU IN {city_name} WOHNST')
+                self.assertNotIn('var', zeile)
+                self.assertEqual(zeile.get('fallback'), 'WENN DU IN DARMSTADT WOHNST')
+                self.assertNotEqual(zeile.get('role'), 'ort')
+                self.assertIn('city_name', V.nachbau_variablen(cfg))
+                self.assertEqual(V._config_fehler(cfg), [])
+
+    def test_ohne_hinweis_wie_bisher(self):
+        a = V.normalize_analysis(json.loads(json.dumps(ROH_ANALYSE)), None)
+        cfg = V.nachbau_config(a, hintergrund('katalog'), W, H, [], stil_modus='stadt')
+        zeile = [el for el in texte(cfg) if el['id'] == 'text_1'][0]
+        self.assertEqual(zeile.get('var'), 'city_name')
+        self.assertEqual(zeile.get('role'), 'ort')
