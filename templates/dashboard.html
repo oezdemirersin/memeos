@@ -3421,24 +3421,34 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
            ondragover="nbDragOver(event)" ondragleave="nbDragLeave(event)" ondrop="nbDrop(event)"
            onclick="document.getElementById('nb-file').click()">
         <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Fremdes Meme hier ablegen</div>
-        <div style="font-size:12px;color:var(--muted);">oder klicken zum Auswählen &middot; PNG, JPG, WebP</div>
+        <div style="font-size:12px;color:var(--muted);">oder klicken zum Auswählen &middot; Strg+V fügt ein Bild aus der Zwischenablage ein &middot; PNG, JPG, WebP</div>
         <input type="file" id="nb-file" accept=".png,.jpg,.jpeg,.webp" style="display:none;" onchange="nbDateiGewaehlt(this.files)">
       </div>
       <div id="nb-file-info" style="font-size:12px;color:var(--muted2);margin-top:8px;"></div>
 
-      <div class="form-group" style="margin-top:12px;">
-        <label>Stadt im Bild</label>
-        <input type="text" id="nb-city" list="import-image-city-list" placeholder="z. B. Darmstadt – der Stadtname, der im Meme steht">
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Stadt im Bild</label>
+          <input type="text" id="nb-city" list="import-image-city-list" placeholder="z. B. Darmstadt – der Stadtname, der im Meme steht">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Stil der Vorlage</label>
+          <div style="display:flex;gap:0;">
+            <button type="button" class="btn btn-primary btn-sm" id="nb-stil-stadt" style="border-radius:7px 0 0 7px;flex:1;justify-content:center;" onclick="nbSetzeStil('stadt')" title="Rollen statt fester Farben: jede Stadt rendert die Vorlage in ihrem eigenen Stil-Paket">Stadt-Stil</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="nb-stil-original" style="border-radius:0 7px 7px 0;flex:1;justify-content:center;" onclick="nbSetzeStil('original')" title="Farben, Schrift, Kontur und Kasten so, wie die KI sie im Vorbild erkannt hat">Original-Look</button>
+          </div>
+          <div id="nb-stil-hinweis" style="font-size:11px;color:var(--muted);margin-top:5px;">jede Stadt in ihrer eigenen Handschrift</div>
+        </div>
       </div>
-      <div style="font-size:12px;color:var(--muted);">
-        Name und Kategorie stehen oben. Die Stadt hilft der Erkennung, welche Zeilen stadtspezifisch sind –
-        Freitext ist erlaubt, wenn die Stadt nicht in der Liste steht.
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;">
+        Name und Kategorie stehen oben – bleiben sie leer, schlägt die KI nach der Analyse etwas vor. Die Stadt hilft der
+        Erkennung, welche Zeilen stadtspezifisch sind; Freitext ist erlaubt, wenn die Stadt nicht in der Liste steht.
       </div>
 
       <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
         <button class="btn btn-primary btn-sm" id="nb-analyse-btn" onclick="nbAnalysieren()">Analysieren</button>
         <button class="btn btn-ghost btn-sm" id="nb-verwerfen-btn" style="display:none;" onclick="nbVerwerfen()">Verwerfen</button>
-        <span style="font-size:11px;color:var(--muted);">Analysieren speichert noch nichts.</span>
+        <span style="font-size:11px;color:var(--muted);">Analysieren ist ein Probelauf – angelegt wird erst beim Übernehmen.</span>
       </div>
 
       <div id="nb-grenzen" style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.55;">
@@ -3452,6 +3462,7 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
       <div id="nb-busy" style="display:none;color:var(--muted);font-size:12px;margin-top:10px;"></div>
 
       <div id="nb-result" style="display:none;margin-top:16px;">
+        <div id="nb-vorschlag" style="display:none;font-size:12px;margin-bottom:10px;padding:8px 11px;border:1px solid rgba(96,165,250,.35);background:rgba(59,130,246,.08);border-radius:8px;"></div>
         <div id="nb-hintergrund" style="font-size:12px;margin-bottom:10px;"></div>
 
         <div id="nb-vergleich" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;">
@@ -3477,21 +3488,35 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
 
         <div id="nb-warnungen" style="margin-top:12px;"></div>
         <div id="nb-zeilen" style="margin-top:12px;"></div>
+        <div id="nb-bilder" style="margin-top:12px;"></div>
         <div id="nb-bildvorschlaege" style="margin-top:12px;"></div>
 
+        <div id="nb-staedte" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:10px 12px;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div style="font-size:13px;font-weight:600;">So sieht es in deinen Städten aus</div>
+            <span id="nb-staedte-status" style="font-size:11px;color:var(--muted);flex:1;"></span>
+            <button type="button" class="btn btn-ghost btn-sm" id="nb-staedte-andere-btn" onclick="nbStaedteAndere()" title="Drei andere aktive Städte rendern – möglichst mit anderen Stil-Paketen">Andere Städte</button>
+          </div>
+          <div id="nb-staedte-streifen" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;transition:opacity .2s;"></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+            Echte Werte, echter Stil: jede Stadt rendert mit ihrem Stil-Paket, ihren Farben und ihren Stadtbildern.
+            Lädt nach jeder Änderung automatisch neu.
+          </div>
+        </div>
+
         <div id="nb-abschluss" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <div id="nb-abschluss-buttons" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <button class="btn btn-primary btn-sm" id="nb-uebernehmen-btn" onclick="nbUebernehmen()">Als Vorlage übernehmen</button>
             <button class="btn btn-ghost btn-sm" onclick="nbVerwerfen()">Verwerfen</button>
             <span id="nb-geaendert" style="font-size:11px;color:var(--accent2);display:none;">Korrekturen offen – werden mit übernommen</span>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5;">
-            Übernehmen legt die Vorlage an, speichert genau die Fassung mit deinen Korrekturen und öffnet das
-            Studio in einem neuen Reiter. Der Nachbau bleibt eine Annäherung – Boxen, Schrift und Farben
-            lassen sich dort in Ruhe nachbessern.<br>
-            Das Analysieren war ein Probelauf, bei dem nichts gespeichert wurde. Beim Übernehmen liest die KI
-            das Bild deshalb ein zweites Mal – das kostet noch einmal so viel wie die Analyse.
+            Übernehmen legt die Vorlage an – ohne das Bild noch einmal zu analysieren – und öffnet das Studio in
+            einem neuen Reiter. Der Nachbau bleibt eine Annäherung – Boxen, Schrift und Farben lassen sich dort in
+            Ruhe nachbessern. Direkt nach dem Anlegen prüft der Server die Vorlage gegen deine Städte.
           </div>
+          <div id="nb-sitzung-info" style="font-size:11px;color:var(--muted2);margin-top:6px;"></div>
+          <div id="nb-fertig" style="display:none;margin-top:12px;"></div>
         </div>
       </div>
     </div>
@@ -5948,20 +5973,46 @@ async function reanalyzeImportedTemplate(id) {
 // ── H3: MEME NACHBAUEN ────────────────────────────────────────────────
 // Fremdes Meme hochladen -> das Backend erkennt die Elemente, sucht einen sauberen Hintergrund
 // (Katalog bekannter Formate, eigene Bibliothek oder aus dem Bild freigeraeumt) und baut die
-// Vorlage nach. Hier stehen Original und Nachbau nebeneinander; Korrekturen an den erkannten
-// Zeilen aendern die Konfiguration im Browser und gehen erst beim Uebernehmen zum Server.
-// Ein Analyse-Aufruf je Korrektur waere zu teuer, deshalb rendert erst das Studio neu.
+// Vorlage nach. Hier stehen Original und Nachbau nebeneinander.
+//
+// Zwei Wege, je nachdem, was der Server kann:
+//  - SITZUNG (neu): Der Probelauf legt auf dem Server eine Sitzung an (Antwortfeld 'sitzung').
+//    Stil-Modus, Rollen und Bildbereiche gehen als Konfig-Aenderung an den Server, der die
+//    Konfiguration ohne neue KI-Analyse neu baut; die Vorschau rendert mit echten Staedten.
+//    Uebernehmen legt die Vorlage aus der Sitzung an – die KI liest das Bild kein zweites Mal.
+//  - RUECKFALL (alter Server ohne 'sitzung'): Korrekturen bleiben im Browser, Uebernehmen
+//    schickt das Bild erneut (voller Lauf) und speichert die Konfiguration ueber /uebernehmen.
 let _nbDatei = null, _nbErgebnis = null, _nbConfig = null, _nbBlobUrl = null;
 let _nbZeilen = [], _nbBildBereiche = [], _nbVars = [], _nbGeaendert = false;
 let _nbKatalogOffline = false;
+// Sitzung und ihre Stammdaten (nur gesetzt, wenn der Server Sitzungen kann)
+let _nbSitzung = null, _nbSitzungBis = '', _nbStilModus = 'stadt';
+let _nbRollen = [], _nbStadtbildKeys = [], _nbSchriften = [], _nbRollenZuweisung = {};
+// Vorschau in echten Staedten: entprellt, mit Laufzaehler gegen veraltete Antworten
+let _nbVorschauTimer = null, _nbVorschauLauf = 0, _nbKonfigLauf = 0;
+let _nbStaedteIds = [], _nbAngelegt = null, _nbSchliessHakenDa = false, _nbKonfigLaeuft = null;
+let _nbVorschlagName = '', _nbVorschlagKat = '';
 const NB_EXT = ['png', 'jpg', 'jpeg', 'webp'];
 const NB_MAX_BYTES = 16 * 1024 * 1024;   // app.config['MAX_CONTENT_LENGTH']
+const NB_VORSCHAU_VERZUG = 600;          // ms Entprellung fuer die Stadt-Vorschau
+const NB_VORSCHAU_ANZAHL = 3;
 const NB_WEGE = {
   katalog: 'Aus dem Katalog', catalog: 'Aus dem Katalog',
   bibliothek: 'Aus deiner Bibliothek', library: 'Aus deiner Bibliothek',
   freigeraeumt: 'Aus dem Bild freigeräumt', 'freigeräumt': 'Aus dem Bild freigeräumt',
   inpaint: 'Aus dem Bild freigeräumt', original: 'Aus dem Bild freigeräumt', bild: 'Aus dem Bild freigeräumt',
 };
+const NB_STIL_HINWEIS = {
+  stadt: 'jede Stadt in ihrer eigenen Handschrift',
+  original: 'Farben und Schrift wie im Vorbild',
+};
+const NB_BILD_ARTEN = {foto: 'Foto', flaeche: 'Fläche', comic: 'Comic', screenshot: 'Screenshot'};
+const NB_BILD_MODI = [
+  ['hintergrund', 'Im Hintergrund lassen'],
+  ['stadt', 'Pro Stadt wechseln (Stadtbild)'],
+  ['fest', 'Festes Bild'],
+];
+const NB_KEY_NEU = '__neu__';
 
 async function _prepareNachbauTab() {
   await _ladeImportStaedte();
@@ -5977,6 +6028,17 @@ async function _prepareNachbauTab() {
   btn.disabled = !kiDa;
   btn.title = kiDa ? '' : 'Ohne Anthropic-Key kann das Meme nicht gelesen werden';
   nbFehler(kiDa ? '' : 'Kein Anthropic-Key hinterlegt – der Nachbau braucht die Bilderkennung.');
+  _nbStilButtons();
+  // Beim Schliessen des Dialogs bleibt der Zustand erhalten; nur ein wartender Vorschau-Timer
+  // soll nicht ins Leere laufen. Den Haken einmal einhaengen, ohne einen fremden zu verdraengen.
+  if (!_nbSchliessHakenDa && typeof registerModalCloseHook === 'function') {
+    _nbSchliessHakenDa = true;
+    const vorher = (typeof _modalCloseHooks === 'object' && _modalCloseHooks) ? _modalCloseHooks['import-modal'] : null;
+    registerModalCloseHook('import-modal', () => {
+      if (_nbVorschauTimer) { clearTimeout(_nbVorschauTimer); _nbVorschauTimer = null; }
+      if (typeof vorher === 'function') vorher();
+    });
+  }
 }
 
 // ── Datei waehlen ──
@@ -5994,12 +6056,18 @@ function nbDrop(ev) {
   nbDragLeave(ev);
   nbDateiGewaehlt(ev.dataTransfer && ev.dataTransfer.files);
 }
+function _nbDateiOk(f) {
+  if (!f) return 'Keine Datei';
+  const ext = (String(f.name || '').split('.').pop() || '').toLowerCase();
+  if (!NB_EXT.includes(ext)) return 'Nur PNG, JPG oder WebP';
+  if (f.size > NB_MAX_BYTES) return 'Die Datei ist größer als 16 MB – so viel nimmt der Server nicht an';
+  return '';
+}
 function nbDateiGewaehlt(files) {
   const f = files && files[0];
   if (!f) return;
-  const ext = (String(f.name || '').split('.').pop() || '').toLowerCase();
-  if (!NB_EXT.includes(ext)) { nbFehler('Nur PNG, JPG oder WebP'); return; }
-  if (f.size > NB_MAX_BYTES) { nbFehler('Die Datei ist größer als 16 MB – so viel nimmt der Server nicht an'); return; }
+  const problem = _nbDateiOk(f);
+  if (problem) { nbFehler(problem); return; }
   nbFehler('');
   _nbDatei = f;
   document.getElementById('nb-file-info').innerHTML =
@@ -6012,6 +6080,24 @@ function nbDateiEntfernen() {
   if (inp) inp.value = '';
   document.getElementById('nb-file-info').textContent = '';
 }
+// Strg+V im Dialog: ein Bild aus der Zwischenablage landet direkt in der Ablage.
+// Greift nur, wenn der Import-Dialog offen ist, der Nachbau-Reiter aktiv ist und wirklich
+// ein Bild in der Zwischenablage liegt – Text einfuegen in Eingabefeldern bleibt unberuehrt.
+function _nbEinfuegen(ev) {
+  const modal = document.getElementById('import-modal');
+  if (!modal || !modal.classList.contains('open') || _importTab !== 'nachbau') return;
+  const dateien = (ev.clipboardData && ev.clipboardData.files) ? Array.from(ev.clipboardData.files) : [];
+  const f = dateien.find(x => /^image\//i.test(String(x.type || '')));
+  if (!f) return;
+  ev.preventDefault();
+  const ext = (String(f.name || '').split('.').pop() || '').toLowerCase();
+  // Zwischenablage-Bilder heissen oft nur "image" – dann einen passenden Namen vergeben
+  const datei = NB_EXT.includes(ext) ? f
+    : new File([f], 'zwischenablage.' + (/webp/i.test(f.type) ? 'webp' : /jpe?g/i.test(f.type) ? 'jpg' : 'png'), {type: f.type});
+  nbDateiGewaehlt([datei]);
+  toast('Bild aus der Zwischenablage übernommen', 'info');
+}
+document.addEventListener('paste', _nbEinfuegen);
 
 // ── Kleine Helfer ──
 function nbFehler(text) { document.getElementById('nb-error').textContent = text || ''; }
@@ -6051,6 +6137,10 @@ function _nbVarName(name, fallback) {
   if (!s || /^[0-9]/.test(s)) return fallback;
   return s.slice(0, 40);
 }
+// Stadtbild-Schluessel: Buchstaben, Ziffern, _ – ein vorangestelltes bild_ wird entfernt
+function _nbKeyName(wert) {
+  return _nbVarName(String(wert || '').trim().replace(/^bild_/i, ''), '');
+}
 function _nbCanvas() {
   const c = (_nbConfig && _nbConfig.canvas) || {};
   return {w: Number(c.width) || 1080, h: Number(c.height) || 1350};
@@ -6085,6 +6175,18 @@ function _nbZeitpunkt(v) {
   }
   return s;
 }
+function _nbSitzungUrl(teil) {
+  return '/api/templates/nachbau/sitzung/' + encodeURIComponent(_nbSitzung || '') + (teil ? '/' + teil : '');
+}
+// Antwort von api(): nicht mehr vorhandene Sitzung erkennen (404 als HTML oder als JSON-Fehler)
+function _nbSitzungFehlt(r) {
+  const e = String((r && r.error) || '');
+  return /HTTP 404|abgelaufen|unbekannt/i.test(e);
+}
+function _nbRolleLabel(key) {
+  const r = _nbRollen.find(x => x && x.key === key);
+  return r ? String(r.label || key) : String(key || '');
+}
 
 // ── Serveraufruf ──
 async function _nbPost(dryRun) {
@@ -6094,35 +6196,51 @@ async function _nbPost(dryRun) {
   fd.append('category', document.getElementById('import-category').value || 'allgemein');
   fd.append('city_hint', document.getElementById('nb-city').value.trim());
   fd.append('dry_run', dryRun ? '1' : '0');
-  // Beim Anlegen die schon bezahlte Analyse und die korrigierte Konfiguration mitschicken,
-  // damit der Server das Bild nicht ein zweites Mal von der KI lesen lassen muss.
+  fd.append('stil_modus', _nbStilModus === 'original' ? 'original' : 'stadt');
+  // Rueckfall ohne Sitzung: beim Anlegen die schon bezahlte Analyse und die korrigierte
+  // Konfiguration mitschicken, falls der Server sie verwerten kann.
   if (!dryRun) {
     try {
       if (_nbErgebnis && _nbErgebnis.analyse) fd.append('analyse', JSON.stringify(_nbErgebnis.analyse));
       if (_nbConfig) fd.append('config', JSON.stringify(_nbConfig));
     } catch (e) { /* zur Not ohne – der Server analysiert dann neu */ }
   }
+  const j = await _nbMultipart('/api/templates/nachbau', fd);
+  return j;
+}
+// multipart-POST mit CSRF-Kopfzeile; Fehler landen in der Fehlerzeile, Rueckgabe null.
+async function _nbMultipart(url, fd) {
   let res;
   try {
-    res = await fetch('/api/templates/nachbau', {method: 'POST', headers: CSRF_H, body: fd});
+    res = await fetch(url, {method: 'POST', headers: CSRF_H, body: fd});
   } catch (e) { nbFehler('Netzwerkfehler – Server nicht erreichbar'); return null; }
   if (res.status === 401 || (res.redirected && /\/login(\?|$)/.test(res.url))) { location.href = '/login'; return null; }
   let j = null;
   try { j = await res.json(); } catch (e) { j = null; }
   if (!j) { nbFehler(`Antwort nicht lesbar (HTTP ${res.status})`); return null; }
   if (!res.ok || j.error) {
-    nbFehler((j.error || ('HTTP ' + res.status)) + (j.hint ? ' – ' + j.hint : ''));
-    return null;
+    const details = Array.isArray(j.fehler) && j.fehler.length ? ' – ' + j.fehler.slice(0, 3).map(String).join('; ') : '';
+    nbFehler((j.error || ('HTTP ' + res.status)) + (j.hint ? ' – ' + j.hint : '') + details);
+    if (res.status === 404) j._sitzung_weg = true;
+    return (res.status === 404) ? j : null;
   }
   return j;
 }
 async function nbAnalysieren() {
   nbFehler('');
   if (!_nbDatei) { nbFehler('Bitte zuerst ein Meme auswählen'); return; }
+  if (_nbSitzung) {
+    // Eine alte Sitzung nicht liegen lassen – der Server raeumt zwar nach 24 h auf, aber
+    // die Dateien muessen nicht so lange herumliegen.
+    const alt = _nbSitzung;
+    _nbSitzung = null;
+    api('DELETE', '/api/templates/nachbau/sitzung/' + encodeURIComponent(alt)).catch(() => {});
+  }
+  _nbVorschauAbbrechen();
   nbBusy(true, 'Meme wird gelesen und nachgebaut – das dauert einen Moment');
   try {
     const j = await _nbPost(true);
-    if (j) nbUebernehmeErgebnis(j);
+    if (j && !j._sitzung_weg) nbUebernehmeErgebnis(j);
   } finally { nbBusy(false); }
 }
 
@@ -6131,12 +6249,20 @@ function nbUebernehmeErgebnis(j) {
   _nbErgebnis = j;
   _nbConfig = _nbNormalisiereConfig(j.config);
   _nbZeilen = _nbLeseZeilen(j);
-  _nbBildBereiche = _nbLeseBildbereiche(j);
+  _nbLeseSitzung(j);
+  _nbBildBereicheFreigeben();
+  _nbBildBereiche = _nbSitzung ? _nbLeseBereicheSitzung(j.bildbereiche, []) : _nbLeseBildbereiche(j);
   _nbVerknuepfe();
   _nbGeaendert = false;
+  _nbRollenZuweisung = {};
+  _nbStaedteIds = [];
+  _nbAngelegt = null;
 
   document.getElementById('nb-result').style.display = '';
   document.getElementById('nb-verwerfen-btn').style.display = '';
+  document.getElementById('nb-fertig').style.display = 'none';
+  document.getElementById('nb-fertig').innerHTML = '';
+  document.getElementById('nb-abschluss-buttons').style.display = '';
 
   const orig = document.getElementById('nb-original');
   const nach = document.getElementById('nb-nachbau');
@@ -6152,10 +6278,28 @@ function nbUebernehmeErgebnis(j) {
   nbRenderGrenzen();
   nbRenderHintergrund();
   nbRenderWarnungen();
+  nbRenderVorschlag(j);
   nbRenderZeilen();
+  nbRenderBilder();
   nbRenderBildvorschlaege();
   nbRenderOverlay();
+  nbRenderSitzungInfo();
+  _nbStilButtons();
   nbZeigeGeaendert();
+  if (_nbSitzung) nbVorschauLaden(false); else nbRenderStaedte(null);
+}
+// Sitzungsdaten aus der Probelauf-Antwort lesen. Fehlt 'sitzung', kann der Server keine
+// Sitzungen – dann bleibt alles auf dem alten Weg.
+function _nbLeseSitzung(j) {
+  const token = String(j.sitzung || '').trim();
+  _nbSitzung = /^[A-Za-z0-9_-]{8,40}$/.test(token) ? token : null;
+  _nbSitzungBis = _nbSitzung ? String(j.sitzung_bis || '') : '';
+  if (j.stil_modus === 'stadt' || j.stil_modus === 'original') _nbStilModus = j.stil_modus;
+  const liste = (q, felder) => (Array.isArray(q) ? q : []).filter(x => x && typeof x === 'object' && x.key)
+    .map(x => { const o = {}; felder.forEach(f => { o[f] = x[f]; }); o.key = String(x.key); return o; });
+  _nbRollen = liste(j.rollen, ['key', 'label', 'beschreibung']);
+  _nbStadtbildKeys = liste(j.stadtbild_keys, ['key', 'var', 'cities', 'total_cities']);
+  _nbSchriften = liste(j.schriften, ['key', 'label']);
 }
 function _nbNormalisiereConfig(cfg) {
   let c;
@@ -6183,10 +6327,13 @@ function _nbLeseZeilen(j) {
       suggested_var: _nbVarName(b.suggested_var, 'text_' + idx),
       text_id: 'text_' + idx,
       cover_id: 'cover_' + idx,
+      // Korrekturen aus der Oberflaeche, die nach jedem Neubau der Konfiguration wieder
+      // aufgesetzt werden (der Server baut aus der Analyse, nicht aus dem Browserstand)
+      korr: {spez: null, var: null, text: null, font: null},
     };
   });
 }
-// Analysezeilen an die Elemente der Konfiguration binden. Der Import benennt sie text_<i>/cover_<i>;
+// Analysezeilen an die Elemente der Konfiguration binden. Der Nachbau benennt sie text_<i>/cover_<i>;
 // falls ein anderer Weg andere Kennungen vergibt, wird ueber Variable, Text und Lage nachgesucht.
 function _nbVerknuepfe() {
   const els = (_nbConfig && _nbConfig.elements) || [];
@@ -6196,7 +6343,8 @@ function _nbVerknuepfe() {
     if (te) {
       if (!te.id) te.id = z.text_id;
       z.text_id = te.id;
-      z.city_specific = true;      // der Server legt Elemente nur fuer stadtspezifische Zeilen an
+      // Der Nachbau legt fuer JEDE Zeile ein Element an – stadtspezifisch ist, was eine Variable traegt
+      z.city_specific = !!te.var;
       if (te.var) z.suggested_var = _nbVarName(te.var, z.suggested_var);
     }
     const b = _nbBoxPx(z);
@@ -6234,6 +6382,7 @@ function _nbTextEl(z) {
   const els = (_nbConfig && _nbConfig.elements) || [];
   return els.find(x => x && x.type === 'text' && x.id === z.text_id) || null;
 }
+// Rueckfall (alter Server): Fotoflaechen als Vorschlag, die der Nutzer von Hand anlegt
 function _nbLeseBildbereiche(j) {
   const roh = [];
   const sammel = q => {
@@ -6252,9 +6401,154 @@ function _nbLeseBildbereiche(j) {
     box: v.box || null,
     box_px: v.box_px || null,
     hinweis: String(v.hinweis || v.text || v.beschreibung || ''),
-    schluessel: _nbVarName(String(v.schluessel || v.key || v.suggested_key || '').replace(/^bild_/, ''), ''),
+    schluessel: _nbKeyName(v.schluessel || v.key || v.suggested_key || ''),
     angelegt: null,
   }));
+}
+// Sitzung: Bildbereiche aus der Antwort; die gewaehlte Upload-Datei bleibt ueber 'i' erhalten.
+function _nbLeseBereicheSitzung(liste, alt) {
+  const vorher = Array.isArray(alt) ? alt : [];
+  return (Array.isArray(liste) ? liste : []).filter(b => b && typeof b === 'object').map((b, n) => {
+    const i = Number.isInteger(Number(b.i)) ? Number(b.i) : n;
+    const a = vorher.find(x => x && x.i === i) || {};
+    const modus = ['hintergrund', 'stadt', 'fest'].includes(b.modus) ? b.modus : 'hintergrund';
+    return {
+      i: i,
+      art: String(b.art || 'foto'),
+      box: b.box || null,
+      box_px: b.box_px || null,
+      anteil: Number(b.anteil) || 0,
+      beschreibung: String(b.beschreibung || ''),
+      schluessel: _nbKeyName(b.schluessel || ''),
+      stadtbezug: !!b.stadtbezug,
+      ausschnitt_b64: typeof b.ausschnitt_b64 === 'string' ? b.ausschnitt_b64 : (a.ausschnitt_b64 || ''),
+      modus: modus,
+      key: _nbKeyName(b.key || '') || _nbKeyName(b.schluessel || '') || 'foto',
+      fallback_original: (b.fallback_original === undefined || b.fallback_original === null) ? true : !!b.fallback_original,
+      quelle: (b.quelle === 'upload') ? 'upload' : 'original',
+      upload: a.upload || null,
+      upload_url: a.upload_url || null,
+    };
+  });
+}
+function _nbBildBereicheFreigeben() {
+  (_nbBildBereiche || []).forEach(b => {
+    if (b && b.upload_url) { try { URL.revokeObjectURL(b.upload_url); } catch (e) { /* egal */ } b.upload_url = null; }
+  });
+}
+// Zustand der Bildbereiche fuer /konfig und /anlegen – ohne Dateien, ohne Bilddaten
+function _nbBereicheFuerServer() {
+  if (!_nbSitzung) return [];
+  return _nbBildBereiche.map(b => ({
+    i: b.i, modus: b.modus, key: b.key || 'foto',
+    fallback_original: !!b.fallback_original, quelle: b.quelle || 'original',
+  }));
+}
+
+// ── Stil-Umschalter ──
+function _nbStilButtons() {
+  const s = document.getElementById('nb-stil-stadt'), o = document.getElementById('nb-stil-original');
+  if (!s || !o) return;
+  const aktiv = _nbStilModus === 'original' ? 'original' : 'stadt';
+  s.className = 'btn btn-sm ' + (aktiv === 'stadt' ? 'btn-primary' : 'btn-ghost');
+  o.className = 'btn btn-sm ' + (aktiv === 'original' ? 'btn-primary' : 'btn-ghost');
+  const h = document.getElementById('nb-stil-hinweis');
+  if (h) {
+    let text = NB_STIL_HINWEIS[aktiv];
+    if (_nbErgebnis && !_nbSitzung) text += ' – wirkt beim nächsten Analysieren';
+    h.textContent = text;
+  }
+}
+function nbSetzeStil(modus) {
+  const neu = modus === 'original' ? 'original' : 'stadt';
+  if (neu === _nbStilModus) return;
+  _nbStilModus = neu;
+  _nbStilButtons();
+  // Nach der Analyse wirkt der Umschalter ohne neue KI-Analyse: der Server baut nur die Config neu
+  if (_nbSitzung) _nbKonfig({stil_modus: neu});
+  else if (_nbErgebnis) nbRenderZeilen();
+}
+
+// ── Konfig-Aenderung an den Server (Sitzung) ──
+// Schickt Stil-Modus, Bildbereiche und (optional) Rollen; die Antwort ersetzt die Config.
+// Laufzaehler: kommt eine aeltere Antwort nach einer neueren an, wird sie verworfen.
+function _nbKonfig(aenderung) {
+  // Das laufende Versprechen merken: Uebernehmen wartet darauf, damit nicht eine halb
+  // umgebaute Konfiguration angelegt wird.
+  const p = _nbKonfigIntern(aenderung).finally(() => { if (_nbKonfigLaeuft === p) _nbKonfigLaeuft = null; });
+  _nbKonfigLaeuft = p;
+  return p;
+}
+async function _nbKonfigIntern(aenderung) {
+  const token = _nbSitzung;
+  if (!token) return false;
+  const body = Object.assign({stil_modus: _nbStilModus, bildbereiche: _nbBereicheFuerServer()}, aenderung || {});
+  const lauf = ++_nbKonfigLauf;
+  _nbKonfigStatus('Konfiguration wird neu gebaut …');
+  const r = await api('POST', _nbSitzungUrl('konfig'), body);
+  if (lauf !== _nbKonfigLauf || token !== _nbSitzung) return false;
+  _nbKonfigStatus('');
+  if (!r || r.error) {
+    if (_nbSitzungFehlt(r)) _nbSitzungWeg(); else nbFehler((r && r.error) || 'Konfiguration nicht gebaut');
+    return false;
+  }
+  nbFehler('');
+  _nbUebernehmeKonfig(r);
+  return true;
+}
+function _nbKonfigStatus(text) {
+  const el = document.getElementById('nb-staedte-status');
+  if (el) el.textContent = text || '';
+}
+function _nbUebernehmeKonfig(r) {
+  _nbConfig = _nbNormalisiereConfig(r.config);
+  if (Array.isArray(r.bildbereiche)) _nbBildBereiche = _nbLeseBereicheSitzung(r.bildbereiche, _nbBildBereiche);
+  if (r.stil_modus === 'stadt' || r.stil_modus === 'original') _nbStilModus = r.stil_modus;
+  if (r.rollen_zuweisung && typeof r.rollen_zuweisung === 'object') _nbRollenZuweisung = Object.assign({}, r.rollen_zuweisung);
+  if (r.sitzung_bis) _nbSitzungBis = String(r.sitzung_bis);
+  if (_nbErgebnis) {
+    if (Array.isArray(r.warnungen)) _nbErgebnis.warnungen = r.warnungen;
+    if (Array.isArray(r.variables)) _nbErgebnis.variables = r.variables;
+  }
+  _nbVerknuepfe();
+  _nbKorrekturenAnwenden();
+  nbRenderWarnungen();
+  nbRenderZeilen();
+  nbRenderBilder();
+  nbRenderOverlay();
+  nbRenderSitzungInfo();
+  _nbStilButtons();
+  nbZeigeGeaendert();
+  nbVorschauPlanen();
+}
+// Die Sitzung ist auf dem Server weg (24 h um oder Neustart): ehrlich sagen, Vorschau abschalten.
+// Uebernehmen faellt dann auf den alten Weg zurueck (Bild noch einmal lesen lassen).
+function _nbSitzungWeg() {
+  _nbSitzung = null;
+  _nbSitzungBis = '';
+  _nbVorschauAbbrechen();
+  nbFehler('Die Sitzung des Probelaufs ist abgelaufen – bitte noch einmal „Analysieren“ drücken.');
+  nbRenderSitzungInfo();
+  nbRenderStaedte(null);
+  nbRenderBilder();
+  nbRenderZeilen();
+  _nbStilButtons();
+}
+// Browser-Korrekturen an den Zeilen nach einem Neubau der Config wieder aufsetzen
+function _nbKorrekturenAnwenden() {
+  _nbZeilen.forEach(z => {
+    const k = z.korr || {};
+    if (k.spez === true) _nbZeileVariabel(z);
+    else if (k.spez === false) _nbZeileFest(z);
+    const te = _nbTextEl(z);
+    if (!te) return;
+    if (k.var && te.var) { te.var = k.var; z.suggested_var = k.var; }
+    if (typeof k.text === 'string') {
+      z.text = k.text;
+      if (te.var) te.fallback = k.text; else te.text = k.text;
+    }
+    if (k.font && _nbStilModus === 'original') te.font = k.font;
+  });
 }
 
 // ── Darstellung ──
@@ -6295,11 +6589,47 @@ function nbRenderWarnungen() {
       ${liste.map(x => `<li>${_esc(zeile(x))}</li>`).join('')}
     </ul></div>`;
 }
+// Vorschlagszeile: leerer Name wird mit dem KI-Vorschlag gefuellt, Kategorie 'allgemein'
+// mit dem Vorschlag ersetzt, wenn es die Option gibt. Beides bleibt oben aenderbar.
+function nbRenderVorschlag(j) {
+  const box = document.getElementById('nb-vorschlag');
+  const v = (j && j.vorschlaege && typeof j.vorschlaege === 'object') ? j.vorschlaege : {};
+  const teile = [];
+  // Leer oder noch der Vorschlag vom letzten Meme: dann darf der neue Vorschlag hinein
+  const nameEl = document.getElementById('import-name');
+  const name = String(v.name || '').trim().slice(0, 60);
+  if (nameEl && name && (!nameEl.value.trim() || nameEl.value.trim() === _nbVorschlagName)) {
+    nameEl.value = name;
+    _nbVorschlagName = name;
+    teile.push(`Name „${_esc(name)}“`);
+  }
+  const cat = document.getElementById('import-category');
+  const kat = String(v.kategorie || '').trim();
+  if (cat && kat && (cat.value === 'allgemein' || cat.value === _nbVorschlagKat)) {
+    const opt = Array.from(cat.options).find(o => o.value === kat);
+    if (opt) { cat.value = kat; _nbVorschlagKat = kat; teile.push(`Kategorie „${_esc(opt.textContent.trim())}“`); }
+  }
+  if (!teile.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = `<span class="badge badge-blue" style="margin-right:6px;">Vorschlag der KI</span>${teile.join(' · ')}
+    <span style="color:var(--muted);"> – oben im Formular eingetragen, dort änderbar.</span>`;
+}
 function _nbVarOptionen(aktuell) {
   const liste = _nbVars.slice();
   if (aktuell && !liste.includes(aktuell)) liste.unshift(aktuell);
   if (!liste.length) liste.push(aktuell || 'city_name');
   return liste.map(v => `<option value="${_esc(v)}"${v === aktuell ? ' selected' : ''}>{${_esc(v)}}</option>`).join('');
+}
+function _nbRollenOptionen(aktuell) {
+  const liste = _nbRollen.slice();
+  if (aktuell && !liste.some(r => r.key === aktuell)) liste.unshift({key: aktuell, label: aktuell, beschreibung: ''});
+  const kopf = aktuell ? '' : '<option value="" selected>Rolle wählen …</option>';
+  return kopf + liste.map(r => `<option value="${_esc(r.key)}"${r.key === aktuell ? ' selected' : ''} title="${_esc(r.beschreibung || '')}">${_esc(r.label || r.key)}</option>`).join('');
+}
+function _nbSchriftOptionen(aktuell) {
+  const liste = _nbSchriften.slice();
+  if (aktuell && !liste.some(s => s.key === aktuell)) liste.unshift({key: aktuell, label: aktuell});
+  return liste.map(s => `<option value="${_esc(s.key)}"${s.key === aktuell ? ' selected' : ''}>${_esc(s.label || s.key)}</option>`).join('');
 }
 function _nbMerkmale(z) {
   const te = _nbTextEl(z) || {};
@@ -6310,6 +6640,11 @@ function _nbMerkmale(z) {
   if (te.box || st.box) teile.push('Kasten');
   const badges = teile.map(t => `<span class="badge badge-gray" style="font-size:10px;">${_esc(t)} erkannt</span>`);
   if (!teile.length) badges.push('<span style="font-size:10px;color:var(--muted);">ohne Kontur, Schatten oder Kasten</span>');
+  if (te.role && te.role !== 'frei' && _nbStilModus === 'stadt') {
+    const r = _nbRollen.find(x => x.key === te.role);
+    const gewaehlt = !!(te.id && _nbRollenZuweisung[te.id]);
+    badges.push(`<span class="badge badge-purple" style="font-size:10px;" title="${_esc((r && r.beschreibung) || '')}">Rolle${gewaehlt ? ' (gewählt)' : ''}: ${_esc(_nbRolleLabel(te.role))}</span>`);
+  }
   if (z.city_specific && !_nbTextEl(z)) {
     badges.push('<span class="badge badge-yellow" style="font-size:10px;">noch kein Element – wird beim Übernehmen angelegt</span>');
   }
@@ -6322,23 +6657,32 @@ function nbRenderZeilen() {
     return;
   }
   const n = _nbZeilen.filter(z => z.city_specific).length;
-  box.innerHTML = `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Erkannte Elemente
-      <span style="color:var(--muted);font-weight:400;">· ${n} von ${_nbZeilen.length} stadtspezifisch</span></div>`
-    + _nbZeilen.map((z, i) => `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:9px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <div style="flex:1;min-width:170px;">
-        <div style="font-size:13px;word-break:break-word;">${z.text ? '„' + _esc(z.text) + '“' : '<span style="color:var(--muted);">ohne Text</span>'}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:4px;">${_nbMerkmale(z)}</div>
+  const rollenDa = !!(_nbSitzung && _nbStilModus === 'stadt' && _nbRollen.length);
+  const schriftDa = !!(_nbStilModus === 'original' && _nbSchriften.length);
+  const kopf = `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Erkannte Zeilen
+      <span style="color:var(--muted);font-weight:400;">· ${n} von ${_nbZeilen.length} stadtspezifisch</span></div>`;
+  box.innerHTML = kopf + _nbZeilen.map((z, i) => {
+    const te = _nbTextEl(z) || {};
+    return `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:9px 11px;margin-bottom:6px;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input type="text" value="${_esc(z.text)}" placeholder="erkannter Text" title="Erkannten Text korrigieren – steht so in der Vorlage (bei Variablen als Rückfallwert)"
+               onchange="nbSetzeText(${i}, this.value)" style="flex:1;min-width:180px;padding:6px 9px;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted2);margin:0;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox"${z.city_specific ? ' checked' : ''} onchange="nbSetzeStadtspezifisch(${i}, this.checked)" style="width:auto;margin:0;">
+          stadtspezifisch
+        </label>
+        <select onchange="nbSetzeVariable(${i}, this.value)"${z.city_specific ? '' : ' disabled'} style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Variable, die pro Stadt gefüllt wird">${_nbVarOptionen(z.suggested_var)}</select>
+        ${rollenDa && te.id ? `<select onchange="nbSetzeRolle(${i}, this.value)" style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Rolle: bestimmt Schrift, Farbe, Kontur und Kasten je Stadt-Stil">${_nbRollenOptionen(String(te.role || ''))}</select>` : ''}
+        ${schriftDa && te.id ? `<select onchange="nbSetzeSchrift(${i}, this.value)" style="width:auto;min-width:150px;font-size:12px;padding:6px 9px;" title="Schrift dieser Zeile (nur im Original-Look)">${_nbSchriftOptionen(String(te.font || ''))}</select>` : ''}
       </div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted2);margin:0;cursor:pointer;white-space:nowrap;">
-        <input type="checkbox"${z.city_specific ? ' checked' : ''} onchange="nbSetzeStadtspezifisch(${i}, this.checked)" style="width:auto;margin:0;">
-        stadtspezifisch
-      </label>
-      <select onchange="nbSetzeVariable(${i}, this.value)"${z.city_specific ? '' : ' disabled'} style="width:auto;min-width:160px;font-size:12px;" title="Variable, die pro Stadt gefüllt wird">${_nbVarOptionen(z.suggested_var)}</select>
-    </div>`).join('');
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:5px;">${_nbMerkmale(z)}</div>
+    </div>`;
+  }).join('');
 }
+// Rueckfall (alter Server): Fotoflaechen als Vorschlag mit Knopf "Als Stadtbild anlegen"
 function nbRenderBildvorschlaege() {
   const box = document.getElementById('nb-bildvorschlaege');
-  if (!_nbBildBereiche.length) { box.innerHTML = ''; return; }
+  if (_nbSitzung || !_nbBildBereiche.length) { box.innerHTML = ''; return; }
   box.innerHTML = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Bereiche für Stadtbilder</div>'
     + _nbBildBereiche.map((v, i) => `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:9px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
       <div style="flex:1;min-width:190px;font-size:12px;">
@@ -6348,6 +6692,100 @@ function nbRenderBildvorschlaege() {
       </div>
       <button class="btn btn-ghost btn-sm" onclick="nbBildAnlegen(${i})"${v.angelegt ? ' disabled' : ''}>Als Stadtbild anlegen</button>
     </div>`).join('');
+}
+// Sitzung: "Bilder im Meme" – je Bildbereich eine Karte mit Modus, Schluessel und Quelle
+function _nbKeyOptionen(b) {
+  const aktuell = b.key || 'foto';
+  const bekannt = new Set();
+  const zeilen = [];
+  _nbStadtbildKeys.forEach(k => {
+    bekannt.add(k.key);
+    const n = Number(k.cities) || 0, g = Number(k.total_cities) || 0;
+    zeilen.push(`<option value="${_esc(k.key)}"${k.key === aktuell ? ' selected' : ''}>${_esc(k.key)} · ${n} von ${g} Städten</option>`);
+  });
+  if (b.schluessel && !bekannt.has(b.schluessel)) {
+    bekannt.add(b.schluessel);
+    zeilen.push(`<option value="${_esc(b.schluessel)}"${b.schluessel === aktuell ? ' selected' : ''}>${_esc(b.schluessel)} · Vorschlag der KI (noch kein Bild hinterlegt)</option>`);
+  }
+  if (aktuell && !bekannt.has(aktuell)) {
+    zeilen.push(`<option value="${_esc(aktuell)}" selected>${_esc(aktuell)} · neu (noch kein Bild hinterlegt)</option>`);
+  }
+  zeilen.push(`<option value="${NB_KEY_NEU}">Neuer Schlüssel …</option>`);
+  return zeilen.join('');
+}
+function _nbKeyAbdeckung(b) {
+  const k = _nbStadtbildKeys.find(x => x.key === b.key);
+  const n = k ? (Number(k.cities) || 0) : 0, g = k ? (Number(k.total_cities) || 0) : 0;
+  if (!k || !g) return 'Noch keine Stadt hat ein Bild unter diesem Schlüssel' + (b.fallback_original ? ' – überall erscheint der Original-Ausschnitt.' : ' – die Fläche bleibt leer.');
+  if (n >= g) return `Alle ${g} Städte haben ein Bild dazu.`;
+  return `${n} von ${g} Städten haben ein Bild – die anderen ${b.fallback_original ? 'zeigen den Original-Ausschnitt' : 'lassen die Fläche leer'}.`;
+}
+function nbRenderBilder() {
+  const box = document.getElementById('nb-bilder');
+  if (!_nbSitzung) { box.innerHTML = ''; return; }
+  const mime = (_nbErgebnis && _nbErgebnis.bild_mime) || 'image/jpeg';
+  const kopf = `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Bilder im Meme
+      <span style="color:var(--muted);font-weight:400;">· ${_nbBildBereiche.length ? _nbBildBereiche.length + ' Bildfläche' + (_nbBildBereiche.length === 1 ? '' : 'n') + ' erkannt' : 'keine Bildfläche erkannt'}</span></div>`;
+  if (!_nbBildBereiche.length) {
+    box.innerHTML = kopf + '<div style="font-size:12px;color:var(--muted);">Die KI hat keine Bildfläche ab 8 % des Memes gefunden. Stadtbilder lassen sich im Studio trotzdem als Bildelement einbauen.</div>';
+    return;
+  }
+  let stadtDa = false;
+  const karten = _nbBildBereiche.map((b, i) => {
+    const thumb = (b.modus === 'fest' && b.quelle === 'upload' && b.upload_url)
+      ? `<img src="${_esc(b.upload_url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
+      : (_nbBildSrc(b.ausschnitt_b64, mime)
+        ? `<img src="${_nbBildSrc(b.ausschnitt_b64, mime)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
+        : '<div style="font-size:10px;color:var(--muted);padding:8px;text-align:center;">kein Ausschnitt</div>');
+    const art = NB_BILD_ARTEN[b.art] || b.art || 'Bild';
+    const prozent = Math.round((b.anteil || 0) * 100);
+    const modusOpt = NB_BILD_MODI.map(([k, l]) => `<option value="${k}"${b.modus === k ? ' selected' : ''}>${l}</option>`).join('');
+    let details = '';
+    if (b.modus === 'stadt') {
+      stadtDa = true;
+      details = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:7px;">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap;">Schlüssel</span>
+          <select id="nb-bild-key-${i}" onchange="nbBildKey(${i}, this.value)" style="width:auto;min-width:200px;font-size:12px;padding:6px 9px;" title="Unter diesem Schlüssel liegen die Bilder der Städte (Variable bild_&lt;schlüssel&gt;)">${_nbKeyOptionen(b)}</select>
+          <input type="text" id="nb-bild-key-neu-${i}" placeholder="neuer_schluessel" style="display:none;width:auto;min-width:160px;font-size:12px;padding:6px 9px;"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" onchange="nbBildKeyNeu(${i}, this.value)" title="Buchstaben, Ziffern, Unterstrich – ein vorangestelltes bild_ wird entfernt">
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted2);margin:7px 0 0;cursor:pointer;">
+          <input type="checkbox"${b.fallback_original ? ' checked' : ''} onchange="nbBildFallback(${i}, this.checked)" style="width:auto;margin:0;">
+          Original als Ersatz, wenn die Stadt kein Bild hat
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">{bild_${_esc(b.key || 'foto')}} · ${_esc(_nbKeyAbdeckung(b))}</div>`;
+    } else if (b.modus === 'fest') {
+      const upl = b.upload ? `<span style="color:var(--text);">${_esc(b.upload.name)}</span> · ${(b.upload.size / 1024 / 1024).toFixed(1)} MB` : '<span style="color:var(--warning);">noch keine Datei gewählt</span>';
+      details = `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:12px;color:var(--muted2);">
+          <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;"><input type="radio" name="nb-bild-quelle-${i}" value="original"${b.quelle !== 'upload' ? ' checked' : ''} onchange="nbBildQuelle(${i}, 'original')" style="width:auto;margin:0;">Ausschnitt aus dem Original</label>
+          <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;"><input type="radio" name="nb-bild-quelle-${i}" value="upload"${b.quelle === 'upload' ? ' checked' : ''} onchange="nbBildQuelle(${i}, 'upload')" style="width:auto;margin:0;">Eigenes Bild hochladen</label>
+        </div>
+        ${b.quelle === 'upload' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px;color:var(--muted);">
+          <input type="file" id="nb-bild-upload-${i}" accept=".png,.jpg,.jpeg,.webp" onchange="nbBildUpload(${i}, this.files)" style="font-size:11px;">
+          <span>${upl}</span>
+          <span>PNG, JPG oder WebP, max. 16 MB – wird beim Übernehmen mitgeschickt.</span>
+        </div>` : ''}`;
+    } else {
+      details = '<div style="font-size:11px;color:var(--muted);margin-top:7px;">Bleibt so im Hintergrund, wie es die Hintergrund-Besorgung geliefert hat.</div>';
+    }
+    return `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:9px 11px;margin-bottom:6px;display:flex;gap:12px;align-items:flex-start;">
+      <div style="width:96px;height:72px;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--surface3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">${thumb}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:12px;font-weight:600;white-space:nowrap;">Bild ${b.i + 1}</span>
+          <select onchange="nbBildModus(${i}, this.value)" style="width:auto;min-width:220px;font-size:12px;padding:6px 9px;">${modusOpt}</select>
+          <span class="badge badge-gray" style="font-size:10px;">${_esc(art)} · ${prozent} % der Fläche</span>
+          ${b.stadtbezug ? '<span class="badge badge-blue" style="font-size:10px;" title="Die KI meint: dieser Bereich sollte pro Stadt wechseln">Stadtbezug erkannt</span>' : ''}
+        </div>
+        ${b.beschreibung ? `<div style="font-size:12px;color:var(--muted2);margin-top:5px;">${_esc(b.beschreibung)}</div>` : ''}
+        ${details}
+      </div>
+    </div>`;
+  }).join('');
+  const fuss = stadtDa
+    ? '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Bilder je Stadt hinterlegst du unter Städte &amp; Wiki → Bilder der Stadt. Ohne Bild greift der Original-Ausschnitt, wenn der Haken gesetzt ist.</div>'
+    : '';
+  box.innerHTML = kopf + karten + fuss;
 }
 // Rahmen ueber dem Nachbau: zeigt sofort, was als stadtspezifisch gilt, ohne neu zu rendern.
 function nbRenderOverlay() {
@@ -6361,31 +6799,154 @@ function nbRenderOverlay() {
       <span style="position:absolute;left:0;top:-3px;transform:translateY(-100%);font-size:9px;line-height:1.4;padding:1px 4px;border-radius:3px;background:${farbe};color:#fff;white-space:nowrap;">${beschriftung}</span></div>`;
   };
   let html = '';
+  _nbBildBereiche.forEach(v => {
+    if (_nbSitzung) {
+      if (v.modus === 'stadt') html += rahmen(_nbBoxPx(v), 'var(--purple)', 'dashed', '{bild_' + _esc(v.key || 'foto') + '}');
+      else if (v.modus === 'fest') html += rahmen(_nbBoxPx(v), 'var(--warning)', 'dashed', 'fest' + (v.quelle === 'upload' ? ' (Upload)' : ''));
+    } else if (v.angelegt) {
+      html += rahmen(_nbBoxPx(v), 'var(--purple)', 'dashed', '{' + _esc(v.angelegt) + '}');
+    }
+  });
   _nbZeilen.forEach(z => {
     if (!z.city_specific) return;
     html += rahmen(_nbBoxPx(z), 'var(--accent)', 'solid', '{' + _esc(z.suggested_var) + '}');
   });
-  _nbBildBereiche.forEach(v => {
-    if (!v.angelegt) return;
-    html += rahmen(_nbBoxPx(v), 'var(--purple)', 'dashed', '{' + _esc(v.angelegt) + '}');
-  });
   ov.innerHTML = html;
 }
+function nbRenderSitzungInfo() {
+  const oh = document.getElementById('nb-overlay-hinweis');
+  if (oh) {
+    oh.textContent = _nbSitzung
+      ? 'Rahmen zeigen Variablen und Bildbereiche. Wie die Vorlage wirklich aussieht, rendert der Streifen „So sieht es in deinen Städten aus“ nach jeder Änderung neu.'
+      : 'Der Nachbau zeigt den Stand der Analyse. Deine Korrekturen unten sind als Rahmen eingezeichnet und werden beim Übernehmen eingerechnet – neu gerendert wird erst im Studio.';
+  }
+  const el = document.getElementById('nb-sitzung-info');
+  if (!el) return;
+  if (_nbAngelegt) { el.textContent = ''; return; }
+  if (_nbSitzung) {
+    el.textContent = 'Probelauf auf dem Server gespeichert' + (_nbSitzungBis ? ' bis ' + _nbZeitpunkt(_nbSitzungBis) : ' (24 Stunden)')
+      + ' – bis dahin lässt sich die Vorlage ohne neue KI-Analyse übernehmen.';
+  } else if (_nbErgebnis) {
+    el.textContent = 'Dieser Server merkt sich den Probelauf nicht – beim Übernehmen liest die KI das Bild deshalb noch einmal (kostet wie die Analyse).';
+  } else {
+    el.textContent = '';
+  }
+}
 
-// ── Korrekturen ──
+// ── Vorschau in echten Staedten ──
+function _nbVorschauAbbrechen() {
+  if (_nbVorschauTimer) { clearTimeout(_nbVorschauTimer); _nbVorschauTimer = null; }
+  _nbVorschauLauf++;
+  _nbKonfigLauf++;
+}
+// Entprellt: viele Aenderungen hintereinander loesen nur ein Rendern aus
+function nbVorschauPlanen() {
+  if (!_nbSitzung) return;
+  if (_nbVorschauTimer) clearTimeout(_nbVorschauTimer);
+  _nbVorschauTimer = setTimeout(() => { _nbVorschauTimer = null; nbVorschauLaden(false); }, NB_VORSCHAU_VERZUG);
+}
+function nbStaedteAndere() {
+  if (_nbVorschauTimer) { clearTimeout(_nbVorschauTimer); _nbVorschauTimer = null; }
+  _nbStaedteIds = [];
+  nbVorschauLaden(true);
+}
+async function nbVorschauLaden(anders) {
+  const token = _nbSitzung;
+  if (!token || !_nbConfig) return;
+  const lauf = ++_nbVorschauLauf;
+  const sek = document.getElementById('nb-staedte');
+  const status = document.getElementById('nb-staedte-status');
+  const streifen = document.getElementById('nb-staedte-streifen');
+  const btn = document.getElementById('nb-staedte-andere-btn');
+  sek.style.display = '';
+  status.textContent = anders ? 'Andere Städte werden gerendert …' : 'Städte werden gerendert …';
+  streifen.style.opacity = '.45';
+  if (btn) btn.disabled = true;
+  const body = {config: _nbConfig, anzahl: NB_VORSCHAU_ANZAHL, anders: !!anders};
+  // Nach einer Aenderung dieselben Staedte wie zuvor zeigen – so sieht man, was sich geaendert hat
+  if (!anders && _nbStaedteIds.length) body.city_ids = _nbStaedteIds.slice();
+  const r = await api('POST', _nbSitzungUrl('vorschau'), body);
+  if (lauf !== _nbVorschauLauf || token !== _nbSitzung) return;
+  streifen.style.opacity = '';
+  if (btn) btn.disabled = false;
+  if (!r || r.error) {
+    if (_nbSitzungFehlt(r)) { _nbSitzungWeg(); return; }
+    status.textContent = 'Vorschau nicht geladen: ' + ((r && r.error) || 'unbekannter Fehler');
+    return;
+  }
+  nbRenderStaedte(r);
+}
+function nbRenderStaedte(r) {
+  const sek = document.getElementById('nb-staedte');
+  const status = document.getElementById('nb-staedte-status');
+  const streifen = document.getElementById('nb-staedte-streifen');
+  if (!r) { sek.style.display = 'none'; streifen.innerHTML = ''; status.textContent = ''; _nbStaedteIds = []; return; }
+  sek.style.display = '';
+  const bilder = Array.isArray(r.bilder) ? r.bilder.filter(b => b && typeof b === 'object') : [];
+  const mime = r.bild_mime || 'image/jpeg';
+  _nbStaedteIds = bilder.map(b => Number(b.city_id)).filter(n => Number.isInteger(n) && n > 0);
+  if (!bilder.length) {
+    streifen.innerHTML = '';
+    status.textContent = String(r.hinweis || 'Keine Stadt zum Rendern gefunden.');
+    return;
+  }
+  const fehlerN = bilder.filter(b => b.fehler).length;
+  status.textContent = fehlerN ? `${bilder.length - fehlerN} von ${bilder.length} gerendert` : `${bilder.length} Städte gerendert`;
+  streifen.style.gridTemplateColumns = `repeat(${Math.min(3, Math.max(1, bilder.length))},1fr)`;
+  streifen.innerHTML = bilder.map(b => {
+    const src = b.fehler ? '' : _nbBildSrc(b.b64, mime);
+    const fehlend = Array.isArray(b.fehlend) ? b.fehlend.filter(x => typeof x === 'string' && x) : [];
+    const bild = src
+      ? `<img src="${src}" alt="${_esc(b.city_name || '')}" style="width:100%;height:auto;display:block;">`
+      : `<div style="padding:18px 10px;font-size:11px;color:var(--danger);text-align:center;">${_esc(b.fehler || 'Kein Bild geliefert')}</div>`;
+    return `<div style="min-width:0;">
+      <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;overflow:hidden;">${bild}</div>
+      <div style="font-size:11px;margin-top:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_esc(b.city_name || '')}">${_esc(b.city_name || 'Stadt')}
+        <span style="color:var(--muted);">· ${_esc(b.paket || 'Standard-Stil')}</span></div>
+      ${fehlend.length ? `<div style="font-size:10px;color:var(--warning);margin-top:2px;" title="Diese Stadtbilder hat die Stadt nicht hinterlegt">fehlt: ${fehlend.map(x => _esc(x)).join(', ')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Korrekturen an Zeilen ──
 function nbSetzeStadtspezifisch(i, an) {
   const z = _nbZeilen[i];
   if (!z || !_nbConfig) return;
   z.city_specific = !!an;
-  if (an) _nbZeileAnlegen(z); else _nbZeileEntfernen(z);
+  z.korr.spez = !!an;
+  if (an) _nbZeileVariabel(z); else _nbZeileFest(z);
   _nbGeaendert = true;
   nbRenderZeilen(); nbRenderOverlay(); nbZeigeGeaendert();
+  nbVorschauPlanen();
+}
+// Zeile wird fest: das Element bleibt stehen, nur die Variable faellt weg (der Text steht
+// dann wie im Original). Loeschen waere falsch – der Hintergrund ist schriftfrei.
+function _nbZeileFest(z) {
+  const te = _nbTextEl(z);
+  z.city_specific = false;
+  if (!te) return;
+  if (te.var) {
+    te.text = String(te.fallback || z.text || '').trim();
+    delete te.var; delete te.fallback;
+  }
+}
+function _nbZeileVariabel(z) {
+  const te = _nbTextEl(z);
+  z.city_specific = true;
+  if (!te) { _nbZeileAnlegen(z); return; }
+  if (!te.var) {
+    te.var = z.korr.var || z.suggested_var || z.text_id;
+    te.fallback = String(te.text || z.text || '').trim();
+    delete te.text;
+    z.suggested_var = te.var;
+  }
 }
 function _nbZeileEntfernen(z) {
   _nbConfig.elements = _nbConfig.elements.filter(e => !(e && (e.id === z.text_id || e.id === z.cover_id)));
 }
 // Baut Abdeckung und Textbox nach demselben Muster wie der Import: Box um 4 % plus 6 px vergroessert,
-// bei Fotohintergrund freigeraeumt statt einfarbig, Kontur nur dort.
+// bei Fotohintergrund freigeraeumt statt einfarbig, Kontur nur dort. Nur noetig, wenn eine
+// Zeile gar kein Element hat (alter Server, der feste Zeilen weglaesst).
 function _nbZeileAnlegen(z) {
   if (_nbTextEl(z)) return;
   const b = _nbBoxPx(z), st = z.style || {};
@@ -6398,16 +6959,24 @@ function _nbZeileAnlegen(z) {
   const el = {
     id: z.text_id, type: 'text', var: z.suggested_var,
     x: x, y: y, width: w, height: h,
-    font: (st.weight === 'regular') ? 'bold' : 'anton',
     max_size: maxSize, min_size: Math.max(14, Math.round(maxSize * 0.4)),
-    color: /^#[0-9a-fA-F]{6}$/.test(String(st.color || '')) ? String(st.color).toUpperCase() : '#FFFFFF',
     align: ['left', 'center', 'right'].includes(st.align) ? st.align : 'center',
-    valign: 'middle', uppercase: !!st.uppercase, fit: 'shrink',
+    valign: 'middle', fit: 'shrink',
     fallback: z.text.trim(),
   };
-  if (foto) { el.stroke = '#000000'; el.stroke_width = 3; }
-  _nbConfig.elements.push({id: z.cover_id, type: 'cover', x: x, y: y, width: w, height: h,
-                           fill: foto ? 'inpaint' : 'auto', feather: 6});
+  if (_nbSitzung && _nbStilModus === 'stadt') {
+    // Stadt-Stil: die Rolle bringt Schrift, Farbe und Kontur mit
+    el.role = foto ? 'memezeile' : 'ueberschrift';
+  } else {
+    el.font = (st.weight === 'regular') ? 'bold' : 'anton';
+    el.color = /^#[0-9a-fA-F]{6}$/.test(String(st.color || '')) ? String(st.color).toUpperCase() : '#FFFFFF';
+    el.uppercase = !!st.uppercase;
+    if (foto) { el.stroke = '#000000'; el.stroke_width = 3; }
+  }
+  if (!_nbConfig.elements.some(e => e && e.id === z.cover_id)) {
+    _nbConfig.elements.push({id: z.cover_id, type: 'cover', x: x, y: y, width: w, height: h,
+                             fill: foto ? 'inpaint' : 'auto', feather: 6});
+  }
   _nbConfig.elements.push(el);
 }
 function nbSetzeVariable(i, wert) {
@@ -6416,17 +6985,143 @@ function nbSetzeVariable(i, wert) {
   const v = _nbVarName(wert, z.suggested_var);
   if (v === z.suggested_var) return;
   z.suggested_var = v;
+  z.korr.var = v;
   const te = _nbTextEl(z);
   if (te) te.var = v;
   _nbGeaendert = true;
   nbRenderOverlay(); nbZeigeGeaendert();
+  nbVorschauPlanen();
 }
+function nbSetzeText(i, wert) {
+  const z = _nbZeilen[i];
+  if (!z) return;
+  const t = String(wert || '').trim();
+  if (t === z.text.trim()) return;
+  z.text = t;
+  z.korr.text = t;
+  const te = _nbTextEl(z);
+  if (te) { if (te.var) te.fallback = t; else te.text = t; }
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  nbVorschauPlanen();
+}
+// Rolle einer Zeile (nur Stadt-Stil): der Server baut die Config mit der Zuweisung neu
+function nbSetzeRolle(i, rolle) {
+  const z = _nbZeilen[i];
+  const te = z && _nbTextEl(z);
+  if (!te || !te.id || !_nbSitzung) return;
+  const r = String(rolle || '').trim();
+  if (!r) return;
+  _nbRollenZuweisung[te.id] = r;
+  te.role = r;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  const rollen = {}; rollen[te.id] = r;
+  _nbKonfig({rollen: rollen});
+}
+// Schrift einer Zeile (nur Original-Look): bleibt im Browser, die Vorschau rendert damit
+function nbSetzeSchrift(i, key) {
+  const z = _nbZeilen[i];
+  const te = z && _nbTextEl(z);
+  if (!te) return;
+  const k = String(key || '').trim();
+  if (!k || k === te.font) return;
+  te.font = k;
+  z.korr.font = k;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  nbVorschauPlanen();
+}
+
+// ── Korrekturen an Bildbereichen (Sitzung) ──
+function _nbBereich(i) {
+  return _nbBildBereiche.find(b => b && b.i === Number(i)) || _nbBildBereiche[i] || null;
+}
+function nbBildModus(i, modus) {
+  const b = _nbBereich(i);
+  if (!b || !['hintergrund', 'stadt', 'fest'].includes(modus)) return;
+  if (b.modus === modus) return;
+  b.modus = modus;
+  if (modus === 'stadt' && !b.key) b.key = b.schluessel || 'foto';
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  _nbKonfig();
+}
+function nbBildKey(i, wert) {
+  const b = _nbBereich(i);
+  if (!b) return;
+  if (wert === NB_KEY_NEU) {
+    const inp = document.getElementById('nb-bild-key-neu-' + i);
+    if (inp) { inp.style.display = ''; inp.value = ''; inp.focus(); }
+    return;
+  }
+  const key = _nbKeyName(wert);
+  if (!key || key === b.key) return;
+  b.key = key;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  _nbKonfig();
+}
+function nbBildKeyNeu(i, wert) {
+  const b = _nbBereich(i);
+  if (!b) return;
+  const key = _nbKeyName(wert);
+  if (!key) {
+    if (String(wert || '').trim()) toast('Schlüssel: nur Buchstaben, Ziffern und _ – nicht mit einer Ziffer beginnen', 'error');
+    const sel = document.getElementById('nb-bild-key-' + i);
+    if (sel) sel.value = b.key || 'foto';
+    const inp = document.getElementById('nb-bild-key-neu-' + i);
+    if (inp) inp.style.display = 'none';
+    return;
+  }
+  if (key === b.key) { nbRenderBilder(); return; }
+  b.key = key;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  _nbKonfig();
+}
+function nbBildFallback(i, an) {
+  const b = _nbBereich(i);
+  if (!b) return;
+  b.fallback_original = !!an;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  _nbKonfig();
+}
+function nbBildQuelle(i, quelle) {
+  const b = _nbBereich(i);
+  if (!b) return;
+  const q = quelle === 'upload' ? 'upload' : 'original';
+  if (b.quelle === q) return;
+  b.quelle = q;
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  _nbKonfig();
+}
+// Eigenes Bild fuer einen festen Bereich: nur im Browser merken, geht erst beim Anlegen mit
+function nbBildUpload(i, files) {
+  const b = _nbBereich(i);
+  const f = files && files[0];
+  if (!b || !f) return;
+  const problem = _nbDateiOk(f);
+  if (problem) { toast(problem, 'error'); nbRenderBilder(); return; }
+  if (b.upload_url) { try { URL.revokeObjectURL(b.upload_url); } catch (e) { /* egal */ } }
+  b.upload = f;
+  try { b.upload_url = URL.createObjectURL(f); } catch (e) { b.upload_url = null; }
+  b.quelle = 'upload';
+  _nbGeaendert = true;
+  nbZeigeGeaendert();
+  nbRenderBilder();
+  nbRenderOverlay();
+  toast(`Bild für Bereich ${b.i + 1} gemerkt – in der Stadt-Vorschau erscheint bis zum Übernehmen der Original-Ausschnitt`, 'info');
+}
+// Rueckfall (alter Server): Bildelement von Hand anlegen
 function nbBildAnlegen(i) {
   const v = _nbBildBereiche[i];
   if (!v || !_nbConfig || v.angelegt) return;
   const eingabe = prompt('Schlüssel für das Stadtbild (z. B. wappen, skyline, rathaus):', v.schluessel || '');
   if (eingabe === null) return;
-  const key = _nbVarName(String(eingabe).replace(/^bild_/, ''), '');
+  const key = _nbKeyName(eingabe);
   if (!key) { toast('Bitte einen Schlüssel aus Buchstaben, Ziffern oder _ angeben', 'error'); return; }
   const b = _nbBoxPx(v);
   v.angelegt = 'bild_' + key;
@@ -6444,15 +7139,17 @@ function nbBildAnlegen(i) {
 // ── Abschluss ──
 async function nbUebernehmen() {
   if (!_nbConfig || !_nbErgebnis) return;
+  if (_nbAngelegt) { window.open(_nbStudioUrl(_nbAngelegt.studio, _nbAngelegt.id), '_blank', 'noopener'); return; }
   nbFehler('');
+  if (_nbSitzung) { await _nbAnlegenSitzung(); return; }
   nbBusy(true, 'Vorlage wird angelegt …');
   try {
     let id = _nbErgebnis.template_id;
     let studio = _nbErgebnis.studio_url || '';
     if (!id) {
-      // Die Analyse war ein Trockenlauf – jetzt wirklich anlegen
+      // Die Analyse war ein Trockenlauf ohne Sitzung – jetzt wirklich anlegen (voller Lauf)
       const j = await _nbPost(false);
-      if (!j) return;
+      if (!j || j._sitzung_weg) return;
       id = j.template_id;
       studio = j.studio_url || studio;
       _nbErgebnis = Object.assign({}, _nbErgebnis, j);
@@ -6468,16 +7165,112 @@ async function nbUebernehmen() {
     window.open(_nbStudioUrl(studio, id), '_blank', 'noopener');
   } finally { nbBusy(false); }
 }
+// Sitzung: Vorlage aus dem Probelauf anlegen – ohne zweite KI-Analyse, mit Pruefung
+async function _nbAnlegenSitzung() {
+  if (_nbKonfigLaeuft) {
+    // Eine Konfig-Aenderung ist noch unterwegs – erst ihre Antwort abwarten
+    nbBusy(true, 'Konfiguration wird fertig gebaut …');
+    try { await _nbKonfigLaeuft; } catch (e) { /* Fehler steht schon in der Fehlerzeile */ }
+    nbBusy(false);
+    if (!_nbSitzung) return;
+  }
+  const offen = _nbBildBereiche.filter(b => b.modus === 'fest' && b.quelle === 'upload' && !b.upload);
+  if (offen.length) {
+    nbFehler(`Bereich ${offen.map(b => b.i + 1).join(', ')}: bitte ein eigenes Bild wählen oder „Ausschnitt aus dem Original“ nehmen.`);
+    return;
+  }
+  const fd = new FormData();
+  try { fd.append('config', JSON.stringify(_nbConfig)); }
+  catch (e) { nbFehler('Konfiguration nicht serialisierbar'); return; }
+  fd.append('name', document.getElementById('import-name').value.trim());
+  fd.append('category', document.getElementById('import-category').value || 'allgemein');
+  fd.append('bildbereiche', JSON.stringify(_nbBereicheFuerServer()));
+  _nbBildBereiche.forEach(b => {
+    if (b.modus === 'fest' && b.quelle === 'upload' && b.upload) fd.append('bild_' + b.i, b.upload, b.upload.name);
+  });
+  _nbVorschauAbbrechen();
+  nbBusy(true, 'Vorlage wird angelegt und gegen deine Städte geprüft …');
+  try {
+    const token = _nbSitzung;
+    const j = await _nbMultipart(_nbSitzungUrl('anlegen'), fd);
+    if (!j) return;
+    if (j._sitzung_weg) { _nbSitzungWeg(); return; }
+    const id = j.template_id;
+    if (!id) { nbFehler('Der Server hat keine Kennung für die neue Vorlage geliefert'); return; }
+    const studio = j.studio_url || '';
+    if (_nbSitzung === token) { _nbSitzung = null; _nbSitzungBis = ''; }
+    _nbAngelegt = {id: id, studio: studio};
+    _nbGeaendert = false;
+    nbZeigeGeaendert();
+    const p = (j.pruefung && typeof j.pruefung === 'object') ? j.pruefung : {};
+    const fehler = Number(p.fehler) || 0, hinweise = Number(p.hinweise) || 0;
+    toast(`Vorlage angelegt – Prüfung: ${fehler} Fehler, ${hinweise} Hinweise`, fehler ? 'warning' : 'success');
+    nbRenderPruefung(j);
+    nbRenderSitzungInfo();
+    if (typeof loadTemplates === 'function') loadTemplates();
+    window.open(_nbStudioUrl(studio, id), '_blank', 'noopener');
+  } finally { nbBusy(false); }
+}
+// Ergebnis der Vorlagen-Pruefung direkt im Dialog: Befunde mit Vorschlag, Link ins Studio
+function nbRenderPruefung(j) {
+  const box = document.getElementById('nb-fertig');
+  const p = (j.pruefung && typeof j.pruefung === 'object') ? j.pruefung : {};
+  const befunde = Array.isArray(p.befunde) ? p.befunde.filter(b => b && typeof b === 'object') : [];
+  const fehler = Number(p.fehler) || 0, hinweise = Number(p.hinweise) || 0;
+  const farbe = fehler ? 'var(--warning)' : 'var(--success)';
+  const url = _nbStudioUrl(j.studio_url, j.template_id);
+  const vars = Array.isArray(j.variables) ? j.variables.filter(v => typeof v === 'string') : [];
+  let html = `<div style="border:1px solid var(--border);border-radius:8px;background:var(--surface2);padding:10px 12px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span style="color:${farbe};font-weight:700;">●</span>
+      <span style="font-size:13px;font-weight:600;">Vorlage angelegt</span>
+      <span style="font-size:12px;color:var(--muted);">${_esc(p.zusammenfassung || `Prüfung: ${fehler} Fehler, ${hinweise} Hinweise`)}</span>
+      <a class="btn btn-primary btn-sm" href="${_esc(url)}" target="_blank" rel="noopener" style="text-decoration:none;margin-left:auto;">Im Studio öffnen</a>
+    </div>`;
+  if (vars.length) {
+    html += `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">${vars.map(v => `<span class="badge badge-blue">{${_esc(v)}}</span>`).join('')}</div>`;
+  }
+  if (befunde.length) {
+    html += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">' + befunde.map(b => {
+      const schwer = b.schwere === 'fehler';
+      return `<div style="font-size:12px;display:flex;gap:6px;align-items:baseline;">
+        <span class="badge ${schwer ? 'badge-red' : 'badge-yellow'}" style="font-size:10px;flex-shrink:0;">${schwer ? 'Fehler' : 'Hinweis'}</span>
+        <span>${b.element_id ? `<span style="color:var(--muted2);">${_esc(b.element_id)}${b.stadt ? ' · ' + _esc(b.stadt) : ''}:</span> ` : ''}${_esc(b.text || b.art || '')}${b.vorschlag ? ` <span style="color:var(--muted);">– ${_esc(b.vorschlag)}</span>` : ''}</span>
+      </div>`;
+    }).join('') + '</div>';
+  }
+  html += `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="nbVerwerfen()">Weiteres Meme nachbauen</button>
+      <span style="font-size:11px;color:var(--muted);">Nachbessern geht im Studio – dort kannst du die Prüfung jederzeit wiederholen.</span>
+    </div></div>`;
+  box.innerHTML = html;
+  box.style.display = '';
+  document.getElementById('nb-abschluss-buttons').style.display = 'none';
+}
 function nbVerwerfen() {
-  if (_nbErgebnis && _nbGeaendert && !confirm('Nachbau samt deiner Korrekturen verwerfen?')) return;
+  if (_nbErgebnis && _nbGeaendert && !_nbAngelegt && !confirm('Nachbau samt deiner Korrekturen verwerfen?')) return;
+  const token = _nbSitzung;
+  _nbSitzung = null; _nbSitzungBis = '';
+  _nbVorschauAbbrechen();
+  if (token) api('DELETE', '/api/templates/nachbau/sitzung/' + encodeURIComponent(token)).catch(() => {});
+  _nbBildBereicheFreigeben();
   _nbErgebnis = null; _nbConfig = null; _nbZeilen = []; _nbBildBereiche = []; _nbGeaendert = false;
+  _nbRollenZuweisung = {}; _nbStaedteIds = []; _nbAngelegt = null;
   document.getElementById('nb-result').style.display = 'none';
   document.getElementById('nb-verwerfen-btn').style.display = 'none';
   document.getElementById('nb-overlay').innerHTML = '';
   document.getElementById('nb-original').removeAttribute('src');
   document.getElementById('nb-nachbau').removeAttribute('src');
+  document.getElementById('nb-vorschlag').style.display = 'none';
+  document.getElementById('nb-bilder').innerHTML = '';
+  document.getElementById('nb-fertig').style.display = 'none';
+  document.getElementById('nb-fertig').innerHTML = '';
+  document.getElementById('nb-abschluss-buttons').style.display = '';
+  nbRenderStaedte(null);
   if (_nbBlobUrl) { try { URL.revokeObjectURL(_nbBlobUrl); } catch (e) { /* egal */ } _nbBlobUrl = null; }
   nbZeigeGeaendert();
+  nbRenderSitzungInfo();
+  _nbStilButtons();
   nbFehler('');
 }
 
