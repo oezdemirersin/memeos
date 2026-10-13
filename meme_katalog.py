@@ -29,6 +29,7 @@ wenn MEMEOS_OFFLINE nicht gesetzt ist. Alles andere arbeitet rein lokal.
     hex_zu_int(text)                                        -> int | None
     katalog_aktualisieren(datenpfad, laden=True)            -> dict
     eigene_aufnehmen(datenpfad)                             -> dict
+    hintergrund_unsauber(template)                          -> bool
     finde_format(bild, name_hinweis=None, max_abstand=14,
                  datenpfad=None, grenze=25)                 -> list[dict]
     format_bilddatei(format_zeile, datenpfad)               -> str | None
@@ -40,6 +41,7 @@ wenn MEMEOS_OFFLINE nicht gesetzt ist. Alles andere arbeitet rein lokal.
     cache_leeren()                                          -> None
 """
 import io
+import json
 import os
 import re
 import sys
@@ -488,6 +490,25 @@ def _eigene_zeile(datenpfad, extern_id, name, dateiname, url, ergebnis):
     ergebnis['neu' if neu else 'aktualisiert'] += 1
 
 
+def hintergrund_unsauber(template):
+    """True, wenn der Hintergrund dieser Vorlage noch die fremde Schrift trägt.
+
+    Der einfache Bild-Import legt das fremde Bild samt Text als Hintergrund ab und schreibt
+    pil_config.meta.hintergrund_sauber = False; der Nachbau schreibt True. Ältere Vorlagen
+    ohne meta erkennt man an der description "Importiert aus Bild ...". Solche Vorlagen
+    gehören nicht in die Bibliothek: ein Hintergrund mit Schrift ist kein Hintergrund."""
+    meta = None
+    try:
+        cfg = json.loads(template.pil_config or '{}')
+        if isinstance(cfg, dict) and isinstance(cfg.get('meta'), dict):
+            meta = cfg['meta']
+    except Exception:
+        meta = None
+    if meta is not None and 'hintergrund_sauber' in meta:
+        return meta.get('hintergrund_sauber') is False
+    return str(template.description or '').strip().startswith('Importiert aus Bild')
+
+
 def eigene_aufnehmen(datenpfad=None):
     """Eigene Hintergründe (Template-Vorschaubilder) und Aufkleber in den Katalog aufnehmen.
 
@@ -495,12 +516,20 @@ def eigene_aufnehmen(datenpfad=None):
     öffentlichen. Rein lokal, kein Netz: der Hash wird nur berechnet, wenn die Datei da ist;
     sonst bleibt die URL stehen und format_bilddatei() lädt sie später bei Bedarf nach.
 
-    → {'geholt': int, 'neu': int, 'aktualisiert': int, 'fehler': [str], 'meldung': str}
+    Vorlagen, deren Hintergrund noch Schrift trägt (hintergrund_unsauber), werden übersprungen
+    und in der Meldung gezählt.
+
+    → {'geholt': int, 'neu': int, 'aktualisiert': int, 'uebersprungen': int,
+       'fehler': [str], 'meldung': str}
     """
-    ergebnis = {'geholt': 0, 'neu': 0, 'aktualisiert': 0, 'fehler': [], 'meldung': ''}
+    ergebnis = {'geholt': 0, 'neu': 0, 'aktualisiert': 0, 'uebersprungen': 0,
+                'fehler': [], 'meldung': ''}
 
     for t in MemeTemplate.query.order_by(MemeTemplate.id).all():
         if not (t.preview_image or t.preview_url):
+            continue
+        if hintergrund_unsauber(t):
+            ergebnis['uebersprungen'] += 1
             continue
         ergebnis['geholt'] += 1
         try:
@@ -524,6 +553,9 @@ def eigene_aufnehmen(datenpfad=None):
     ergebnis['meldung'] = (f'{ergebnis["geholt"]} eigene Bilder geprüft, {ergebnis["neu"]} neu, '
                            f'{ergebnis["aktualisiert"]} aufgefrischt, '
                            f'{len(ergebnis["fehler"])} Fehler')
+    if ergebnis['uebersprungen']:
+        ergebnis['meldung'] += (f', {ergebnis["uebersprungen"]} übersprungen '
+                                f'(Hintergrund trägt noch Schrift)')
     return ergebnis
 
 
