@@ -183,6 +183,10 @@ class TestRollenHeuristik(unittest.TestCase):
         gross = zeile('GROSS', rel=0.09, index=0)
         blk = zeile('Mit Kasten', rel=0.05, kasten=True, index=1)
         self.assertEqual(V.rolle_fuer_zeile(blk, [gross, blk], H), 'ueberschrift')
+        # auch als groesste Zeile unten im Bild: ein Balken ist die Ansage, nicht die Pointe
+        balken = zeile('IM BALKEN', y=700, h=90, rel=0.09, kasten=True, index=0)
+        klein = zeile('kleiner', y=100, h=40, rel=0.04, index=1)
+        self.assertEqual(V.rolle_fuer_zeile(balken, [balken, klein], H), 'ueberschrift')
 
     def test_6_normales_gewicht_wird_unterzeile(self):
         gross = zeile('GROSS', rel=0.09, index=0)
@@ -934,6 +938,7 @@ class TestSatzMitStadt(unittest.TestCase):
                 self.assertNotIn('var', zeile)
                 self.assertEqual(zeile.get('fallback'), 'WENN DU IN DARMSTADT WOHNST')
                 self.assertNotEqual(zeile.get('role'), 'ort')
+                self.assertTrue(zeile.get('uppercase'), zeile)      # Versalien wie im Vorbild
                 self.assertIn('city_name', V.nachbau_variablen(cfg))
                 self.assertEqual(V._config_fehler(cfg), [])
 

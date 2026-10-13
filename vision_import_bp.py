@@ -1394,9 +1394,10 @@ def rolle_fuer_zeile(blk, blocks, h, bg_art='flat'):
       1. Handle (beginnt mit "@") oder suggested_var city_handle  -> 'wasserzeichen'
       2. city_specific und suggested_var city_name                 -> 'ort'
       3. Zeilenhöhe (groesse_rel, sonst Boxhöhe/h) unter KLEIN_REL -> 'klein'
-      4. die größte Zeile                                          -> 'pointe' (Mitte in der
+      4. Kasten hinter dem Text                                    -> 'ueberschrift' (eine
+         Zeile im Balken ist die Ansage, nicht die Pointe – auch wenn sie die größte ist)
+      5. die größte Zeile                                          -> 'pointe' (Mitte in der
          unteren Bildhälfte) bzw. 'ueberschrift' (obere Hälfte)
-      5. Kasten hinter dem Text                                    -> 'ueberschrift'
       6. normales Gewicht                                          -> 'unterzeile'
       7. sonst: Foto-Hintergrund -> 'memezeile', Fläche -> 'ueberschrift'
     h ist die Bildhöhe; die Boxen liegen in Promille, deshalb geht die Rechnung relativ."""
@@ -1407,6 +1408,9 @@ def rolle_fuer_zeile(blk, blocks, h, bg_art='flat'):
     hoehe = _zeilen_hoehe_rel(blk)
     if hoehe < KLEIN_REL:
         return 'klein'
+    kasten = blk.get('kasten') if isinstance(blk.get('kasten'), dict) else {}
+    if kasten.get('vorhanden'):
+        return 'ueberschrift'
     kandidaten = [b for b in (blocks or []) if isinstance(b, dict)
                   and not _ist_handle_zeile(b) and _zeilen_hoehe_rel(b) >= KLEIN_REL]
     if kandidaten:
@@ -1419,9 +1423,6 @@ def rolle_fuer_zeile(blk, blocks, h, bg_art='flat'):
             except (TypeError, ValueError):
                 mitte = 0.0
             return 'pointe' if mitte > 500 else 'ueberschrift'
-    kasten = blk.get('kasten') if isinstance(blk.get('kasten'), dict) else {}
-    if kasten.get('vorhanden'):
-        return 'ueberschrift'
     if str((blk.get('style') or {}).get('weight') or 'bold') == 'regular':
         return 'unterzeile'
     return 'memezeile' if bg_art in ('photo', 'mixed') else 'ueberschrift'
@@ -1700,6 +1701,9 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
             text_el['text'] = satz
             text_el['fallback'] = text
             text_el['name'] = f'Zeile {nummer} (mit Stadtname)'
+            if style.get('uppercase'):
+                # Versalien bleiben Versalien, sonst stünde "WENN DU IN Berlin WOHNST" da.
+                text_el['uppercase'] = True
         elif blk.get('city_specific'):
             text_el['var'] = blk.get('suggested_var') or f'text_{idx}'
             # fallback = die Originalzeile: liefert die Variable nichts, steht wieder etwas da
