@@ -61,6 +61,7 @@ import time
 import base64
 import random
 import shutil
+import tempfile
 import secrets
 import logging
 import importlib
@@ -129,7 +130,8 @@ SCHRIFT_ARTEN = ('impact', 'condensed', 'sans', 'sans_fett', 'rounded', 'comic',
                  'handschrift', 'unbekannt')
 # Abbildung der erkannten Schriftklasse auf einen Schlüssel der Bibliothek. Ob der Schlüssel
 # wirklich da ist, prüft schrift_key_fuer() über memeos_render.list_fonts(); fehlt er, fällt
-# die Zeile auf anton (fett) bzw. bold (Oswald Bold, normal) zurück und bekommt eine Warnung.
+# die Zeile auf anton (fett) bzw. bold (Oswald in normalem Gewicht: bold.ttf rendert die
+# Regular-Instanz, siehe memeos_render._BUILTIN_FONTS) zurück und bekommt eine Warnung.
 # Eine fremde Schrift wird NIE nachgebaut, nur ersetzt.
 SCHRIFT_MAP = {
     'impact':      ('anton', 'anton'),
@@ -909,6 +911,7 @@ def summarize_analysis(analysis, w=None, h=None):
         'palette': (analysis or {}).get('palette') or [],
         'titel_vorschlag': (analysis or {}).get('titel_vorschlag') or '',
         'kategorie_vorschlag': (analysis or {}).get('kategorie_vorschlag') or '',
+        'city_hint': (analysis or {}).get('city_hint') or '',
         'model': (analysis or {}).get('model'),
         'usage': (analysis or {}).get('usage'),
     }
@@ -1676,10 +1679,14 @@ def nachbau_config(analyse, hintergrund, w, h, warnungen=None, stil_modus='stadt
             satz = satz_mit_stadt(text, city_hint)
         heuristik = rolle_fuer_zeile(dict(blk, suggested_var=None, city_specific=False)
                                      if satz else blk, blocks, h, bg_art)
-        if stil_modus == 'stadt':
+        if heuristik == 'wasserzeichen':
+            # Der fremde Seitenname wird nie fest ins Bild übernommen – auch nicht, wenn
+            # eine Rollenzuweisung etwas anderes sagt.
+            rolle = 'wasserzeichen'
+        elif stil_modus == 'stadt':
             rolle = rollen.get(el_id) or heuristik
         else:
-            rolle = 'wasserzeichen' if heuristik == 'wasserzeichen' else 'frei'
+            rolle = 'frei'
 
         text_el = {
             'id': el_id, 'type': 'text',
@@ -2179,12 +2186,22 @@ def _sitzung_laden(token):
 
 
 def _sitzung_speichern(token, meta):
+    """Zustand atomar schreiben. Die Zwischendatei ist je Schreibvorgang eindeutig
+    (mkstemp): zwei gleichzeitige konfig-Aufrufe derselben Sitzung dürfen sich nicht die
+    Zwischendatei teilen, sonst gewinnt ein halb geschriebenes JSON."""
     meta['token'] = token
     pfad = _sitzung_datei(token, '.json')
-    tmp = pfad + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as fh:
-        json.dump(meta, fh, ensure_ascii=False, default=str)
-    os.replace(tmp, pfad)
+    fd, tmp = tempfile.mkstemp(dir=_cache_dir(), prefix=f'{token}.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            json.dump(meta, fh, ensure_ascii=False, default=str)
+        os.replace(tmp, pfad)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _sitzung_loeschen(token):
@@ -2197,7 +2214,7 @@ def _sitzung_loeschen(token):
     except OSError:
         return
     for name in namen:
-        if name == f'{token}.json' or name.startswith(f'{token}_') or name == f'{token}.json.tmp':
+        if name.startswith(f'{token}.') or name.startswith(f'{token}_'):
             try:
                 os.remove(os.path.join(ordner, name))
             except OSError:
@@ -2216,7 +2233,11 @@ def _sitzungen_aufraeumen(max_alter_s=SITZUNG_STUNDEN * 3600):
     for name in namen:
         pfad = os.path.join(ordner, name)
         try:
-            if os.path.isfile(pfad) and os.path.getmtime(pfad) < grenze:
+            if not os.path.isfile(pfad):
+                continue
+            alter = os.path.getmtime(pfad)
+            # liegengebliebene Zwischendateien (abgebrochener Schreibvorgang) nach 10 Minuten
+            if alter < grenze or (name.endswith('.tmp') and alter < time.time() - 600):
                 os.remove(pfad)
                 geloescht += 1
         except OSError:
@@ -2233,11 +2254,20 @@ def _sitzung_bereich(meta, i):
     return None
 
 
-def _ausschnitt_bild(meta, bereich):
-    """Der Bereich als Ausschnitt aus dem Original (PIL, RGB). Wirft bei unlesbarem Original."""
-    quelle = _sitzung_datei(meta['token'], '_quelle.' + str(meta.get('ext') or 'png'))
+def _ausschnitt_bild(meta, bereich, quelle='hintergrund'):
+    """Der Bereich als Ausschnitt (PIL, RGB). Wirft bei unlesbarer Datei.
+
+    quelle 'hintergrund' (Standard): aus dem besorgten, schriftfreien Hintergrund – das ist
+    die Datei für Ersatz- und feste Bilder, sonst käme die fremde Schrift über das
+    Bild-Element zurück ins Meme (es liegt über den Abdeckungen). 'original': aus dem
+    hochgeladenen Bild – nur für das Vorschaubild der Karte, damit der Nutzer den Bereich
+    wiedererkennt. Beide Dateien sind gleich groß (hintergrund_besorgen passt ein)."""
+    if quelle == 'original':
+        pfad = _sitzung_datei(meta['token'], '_quelle.' + str(meta.get('ext') or 'png'))
+    else:
+        pfad = _sitzung_datei(meta['token'], '_hg.png')
     px = bereich.get('box_px') or {}
-    with Image.open(quelle) as im:
+    with Image.open(pfad) as im:
         img = im.convert('RGB')
     x0 = max(0, int(px.get('x', 0)))
     y0 = max(0, int(px.get('y', 0)))
@@ -2265,8 +2295,8 @@ def _ausschnitt_sicherstellen(meta, bereich):
 def _ausschnitt_b64(meta, bereich):
     """Kleines JPEG des Bereichs für die Karte in der Oberfläche (längste Kante 320 px)."""
     try:
-        return _klein_b64(_ausschnitt_bild(meta, bereich), max_edge=AUSSCHNITT_MAX_EDGE,
-                          quality=VORSCHAU_QUALITY)
+        return _klein_b64(_ausschnitt_bild(meta, bereich, quelle='original'),
+                          max_edge=AUSSCHNITT_MAX_EDGE, quality=VORSCHAU_QUALITY)
     except Exception as ex:
         log.warning(f'vision_import: Ausschnitt-Vorschau fehlgeschlagen: {ex}')
         return None
@@ -2333,7 +2363,7 @@ def _sitzung_config_bauen(meta, warnungen=None):
     bereiche = _bereiche_mit_dateien(meta)
     for b in bereiche:
         if _braucht_ausschnitt(b) and not b.get('datei'):
-            warn.append(f'Bildbereich {int(b.get("i", 0)) + 1}: Ausschnitt aus dem Original '
+            warn.append(f'Bildbereich {int(b.get("i", 0)) + 1}: Ausschnitt aus dem Hintergrund '
                         f'nicht angelegt – der Bereich bleibt im Hintergrund')
     config = nachbau_config(meta.get('analyse'), meta.get('hintergrund'),
                             meta.get('w'), meta.get('h'), warn,
@@ -2633,6 +2663,35 @@ def _nachbau_antwort_basis(summary, hintergrund, config, warnungen, vorschau, or
     }
 
 
+NACHBAU_MAX_EDGE = 2000      # längste Kante des Originals; mehr bringt dem Nachbau nichts und
+                             # macht Freiräumen und Vorschau zum Minutenblocker (1 Worker)
+
+
+def _quelle_verkleinern(pfad, ext, max_edge=NACHBAU_MAX_EDGE):
+    """Das hochgeladene Original an Ort und Stelle auf max_edge verkleinern → (w, h).
+    Alle Boxen der Analyse sind Promille, der Nachbau rechnet relativ – die Verkleinerung
+    ist für das Ergebnis verlustfrei. Bei Fehlern bleibt die Datei, wie sie ist."""
+    try:
+        with Image.open(pfad) as im:
+            w, h = im.size
+            if max(w, h) <= max_edge:
+                return w, h
+            img = im.convert('RGBA' if str(ext).lower() == 'png' else 'RGB')
+            img.thumbnail((max_edge, max_edge), Image.LANCZOS)
+            fmt = {'png': 'PNG', 'webp': 'WEBP'}.get(str(ext).lower(), 'JPEG')
+            if fmt == 'JPEG':
+                img.save(pfad, format=fmt, quality=92, optimize=True)
+            else:
+                img.save(pfad, format=fmt)
+            return img.size
+    except Exception as ex:
+        log.warning(f'vision_import: Original nicht verkleinert: {ex}')
+        try:
+            return _image_size(pfad)
+        except Exception:
+            return None
+
+
 def _nachbau_probelauf(f, ext, w, h, name, category, city_hint, stil_modus):
     """dry_run=1: Analyse, Hintergrund, Sitzung anlegen, Antwort mit Token."""
     _sitzungen_aufraeumen()
@@ -2641,6 +2700,9 @@ def _nachbau_probelauf(f, ext, w, h, name, category, city_hint, stil_modus):
     quelle_datei = f'{token}_quelle.{ext}'
     quelle_pfad = os.path.join(cache, quelle_datei)
     f.save(quelle_pfad)
+    groesse = _quelle_verkleinern(quelle_pfad, ext)
+    if groesse:
+        w, h = groesse
 
     analyse = analyze_image(quelle_pfad, city_hint, feature='meme_nachbau')
     if analyse.get('error'):
@@ -2754,6 +2816,9 @@ def api_template_nachbau():
 
     ziel = _upload_dir()
     quelle_datei, quelle_pfad = _save_upload(f, ext, ordner=ziel, vorsilbe='nachbau_quelle')
+    groesse = _quelle_verkleinern(quelle_pfad, ext)
+    if groesse:
+        w, h = groesse
 
     analyse = analyze_image(quelle_pfad, city_hint, feature='meme_nachbau')
     if analyse.get('error'):
@@ -2942,14 +3007,16 @@ def api_nachbau_sitzung_anlegen(token):
         return jsonify({'error': 'Sitzung unbekannt oder abgelaufen'}), 404
 
     roh_config = request.form.get('config')
-    if roh_config not in (None, ''):
+    config_mitgeschickt = roh_config not in (None, '')
+    if config_mitgeschickt:
         config = _config_aus_eingabe(roh_config)
         if config is None:
             return jsonify({'error': 'config ist kein gültiges JSON-Objekt mit "elements"'}), 400
     else:
         config = meta.get('config')
     roh_bereiche = request.form.get('bildbereiche')
-    if roh_bereiche not in (None, ''):
+    bereiche_mitgeschickt = roh_bereiche not in (None, '')
+    if bereiche_mitgeschickt:
         try:
             liste = json.loads(roh_bereiche)
         except Exception:
@@ -2957,9 +3024,18 @@ def api_nachbau_sitzung_anlegen(token):
         if not isinstance(liste, list):
             return jsonify({'error': 'bildbereiche muss eine Liste sein'}), 400
         _bereiche_uebernehmen(meta, liste)
-    if not isinstance(config, dict):
+    if not isinstance(config, dict) or (not config_mitgeschickt and bereiche_mitgeschickt):
+        # Ohne eigene Config gilt der Sitzungsstand – mit den gerade mitgeschickten
+        # Bildbereichen, sonst behielte die Vorlage den alten Stand.
         config = _sitzung_config_bauen(meta)
     config = json.loads(json.dumps(config))          # eigene Kopie, nichts am Zustand ändern
+
+    # Erst prüfen, dann Dateien anlegen: eine abgelehnte Config darf keine Waisen in
+    # uploads/ hinterlassen. (validate_config prüft keine Dateiexistenz, die späteren
+    # Umbenennungen ändern das Urteil nicht.)
+    fehler = _config_fehler(config)
+    if fehler:
+        return jsonify({'error': 'Konfiguration nicht verwendbar', 'fehler': fehler}), 400
 
     name = (request.form.get('name') or meta.get('name') or '').strip()[:200] or 'Nachbau'
     category = (request.form.get('category') or meta.get('category') or 'allgemein').strip()[:50] \
@@ -2969,6 +3045,17 @@ def api_nachbau_sitzung_anlegen(token):
     updir = _upload_dir()
     ts = int(time.time())
     warnungen = []
+    angelegt = []                 # alles, was dieser Aufruf in uploads/ schreibt
+
+    def _abbruch(antwort, status):
+        """Bei jedem Fehler nach dem ersten Schreibzugriff die eigenen Dateien wieder
+        entfernen – uploads/ wird sonst nie aufgeräumt."""
+        for pfad in angelegt:
+            try:
+                os.remove(pfad)
+            except OSError:
+                pass
+        return jsonify(antwort), status
 
     # 1. Eigene Bilder (modus fest, quelle upload) entgegennehmen
     uploads = {}
@@ -2982,16 +3069,17 @@ def api_nachbau_sitzung_anlegen(token):
         try:
             _validate_upload(datei)
         except ValueError as ex:
-            return jsonify({'error': f'Bild für Bereich {i + 1}: {ex}'}), 400
+            return _abbruch({'error': f'Bild für Bereich {i + 1}: {ex}'}, 400)
         ziel_name = _eindeutiger_name(updir, f'nachbau_bild_{ts}_{i}.png')
         try:
             datei.stream.seek(0)
             with Image.open(datei.stream) as im:
                 im.convert('RGBA').save(os.path.join(updir, ziel_name), format='PNG',
                                         optimize=True)
+            angelegt.append(os.path.join(updir, ziel_name))
         except Exception as ex:
-            return jsonify({'error': f'Bild für Bereich {i + 1} nicht lesbar '
-                                     f'({type(ex).__name__})'}), 400
+            return _abbruch({'error': f'Bild für Bereich {i + 1} nicht lesbar '
+                                      f'({type(ex).__name__})'}, 400)
         uploads[i] = ziel_name
         b['modus'] = 'fest'
         b['quelle'] = 'upload'
@@ -3001,12 +3089,14 @@ def api_nachbau_sitzung_anlegen(token):
     try:
         hg_name = _eindeutiger_name(updir, f'nachbau_bg_{ts}.png')
         shutil.copyfile(_sitzung_datei(token, '_hg.png'), os.path.join(updir, hg_name))
+        angelegt.append(os.path.join(updir, hg_name))
         ext = str(meta.get('ext') or 'png')
         quelle_name = _eindeutiger_name(updir, f'nachbau_quelle_{ts}.{ext}')
         shutil.copyfile(_sitzung_datei(token, '_quelle.' + ext), os.path.join(updir, quelle_name))
+        angelegt.append(os.path.join(updir, quelle_name))
     except Exception as ex:
         log.error(f'vision_import: Sitzungsdateien nicht übernommen: {ex}')
-        return jsonify({'error': f'Sitzungsdateien nicht übernommen ({type(ex).__name__})'}), 500
+        return _abbruch({'error': f'Sitzungsdateien nicht übernommen ({type(ex).__name__})'}, 500)
     hg_pfad = os.path.join(updir, hg_name)
 
     # 3. Ausschnitte: jede Referenz <token>_bild_<i>.png in der Config nach uploads kopieren
@@ -3028,6 +3118,7 @@ def api_nachbau_sitzung_anlegen(token):
             return None
         ziel_name = _eindeutiger_name(updir, f'nachbau_bild_{ts}_{i}.png')
         shutil.copyfile(os.path.join(_cache_dir(), quelle), os.path.join(updir, ziel_name))
+        angelegt.append(os.path.join(updir, ziel_name))
         abbildung[alt] = ziel_name
         return ziel_name
 
@@ -3052,9 +3143,9 @@ def api_nachbau_sitzung_anlegen(token):
     if 'canvas' not in config and w and h:
         config['canvas'] = {'width': w, 'height': h}
 
-    fehler = _config_fehler(config)
+    fehler = _config_fehler(config)          # Sicherheitsnetz nach dem Umschreiben
     if fehler:
-        return jsonify({'error': 'Konfiguration nicht verwendbar', 'fehler': fehler}), 400
+        return _abbruch({'error': 'Konfiguration nicht verwendbar', 'fehler': fehler}, 400)
 
     # 4. Template anlegen
     analyse = meta.get('analyse') or {}
@@ -3267,7 +3358,7 @@ baut das Meme darauf neu auf.
 4. Bilder im Meme: Fotos, Comics und Screenshots werden als Bildbereiche erkannt. Je Bereich:
    "Im Hintergrund lassen", "Pro Stadt wechseln" (Stadtbild-Variable bild_<schlüssel>, mit dem
    Original-Ausschnitt als Ersatz, wenn eine Stadt kein Bild hat) oder "Festes Bild" (Ausschnitt
-   aus dem Original oder eigenes Bild). Bilder je Stadt hinterlegst du unter Städte & Wiki →
+   aus dem schriftfreien Hintergrund oder eigenes Bild). Bilder je Stadt hinterlegst du unter Städte & Wiki →
    Bilder der Stadt.
 5. Vorschau in deinen Städten: der Nachbau wird mit echten Stadtwerten und dem Stil mehrerer
    Städte gerendert, fehlende Stadtbilder werden genannt.

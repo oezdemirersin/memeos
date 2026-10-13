@@ -581,6 +581,10 @@ class TestSitzungFlask(unittest.TestCase):
                 stadt.instagram_handle = stadt.name.lower()
             if M.CityStyle.query.filter_by(city_id=stadt.id).first() is None:
                 M.db.session.add(M.CityStyle.aus_paket(stadt.id, paket))
+        # Ein echtes Stadtbild, damit stadtbild_keys die Brücke zu studio_bp wirklich ausübt
+        if M.CityAsset.query.filter_by(key='skyline').first() is None:
+            M.db.session.add(M.CityAsset(city_id=staedte[0].id, key='skyline',
+                                         name='Skyline', filename='skyline_test.png'))
         M.db.session.commit()
         cls.client = A.app.test_client()
         with cls.client.session_transaction() as s:
@@ -591,6 +595,11 @@ class TestSitzungFlask(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         os.environ['MEMEOS_VISION_FAKE'] = ''
+        try:
+            M.CityAsset.query.filter_by(key='skyline').delete()
+            M.db.session.commit()
+        except Exception:
+            M.db.session.rollback()
         M.db.session.remove()
         cls.ctx.pop()
         shutil.rmtree(_DATA_ROOT, ignore_errors=True)
@@ -626,7 +635,9 @@ class TestSitzungFlask(unittest.TestCase):
         self.assertEqual(j['vorschlaege'], {'name': 'POV Bus warten', 'kategorie': 'opnv'})
         self.assertTrue(any(r_['key'] == 'pointe' and r_['label'] == 'Pointe' for r_ in j['rollen']))
         self.assertTrue(any(s['key'] == 'anton' for s in j['schriften']))
-        self.assertIsInstance(j['stadtbild_keys'], list)
+        self.assertTrue(any(k.get('key') == 'skyline' and k.get('var') == 'bild_skyline'
+                            and int(k.get('cities') or 0) >= 1 for k in j['stadtbild_keys']),
+                        j['stadtbild_keys'])
         self.assertEqual(len(j['bildbereiche']), 2)
         b0 = j['bildbereiche'][0]
         for feld in ('i', 'art', 'box', 'box_px', 'anteil', 'beschreibung', 'schluessel',
@@ -735,6 +746,62 @@ class TestSitzungFlask(unittest.TestCase):
         r = self.client.post(f'/api/templates/nachbau/sitzung/{token}/vorschau',
                              json={'anzahl': 2, 'anders': True}, headers=self.H)
         self.assertEqual(len(r.get_json()['bilder']), 2)
+
+    def test_04b_ausschnitt_kommt_aus_dem_hintergrund(self):
+        # Der Ersatz-/Festbild-Ausschnitt darf die fremde Schrift nicht zurückbringen:
+        # er wird aus dem freigeräumten Hintergrund geschnitten, nur das Kartenbild aus dem Original.
+        token = self.__class__.token
+        meta = V._sitzung_laden(token)
+        bereich = dict(V._sitzung_bereich(meta, 0))
+        quelle = V._sitzung_datei(token, '_quelle.' + str(meta.get('ext') or 'png'))
+        hg = V._sitzung_datei(token, '_hg.png')
+        Image.new('RGB', (meta['w'], meta['h']), (255, 0, 0)).save(quelle)
+        Image.new('RGB', (meta['w'], meta['h']), (0, 255, 0)).save(hg)
+        for name in os.listdir(V._cache_dir()):
+            if name.startswith(f'{token}_bild_'):
+                os.remove(os.path.join(V._cache_dir(), name))
+        datei = V._ausschnitt_sicherstellen(meta, bereich)
+        with Image.open(os.path.join(V._cache_dir(), datei)) as im:
+            self.assertEqual(im.convert('RGB').getpixel((1, 1)), (0, 255, 0))
+        self.assertEqual(V._ausschnitt_bild(meta, bereich, quelle='original').getpixel((1, 1)),
+                         (255, 0, 0))
+        # zurück auf echte Bilder für die folgenden Tests
+        png_bytes_bild = meme_bild()
+        png_bytes_bild.save(quelle)
+        png_bytes_bild.save(hg)
+        for name in os.listdir(V._cache_dir()):
+            if name.startswith(f'{token}_bild_'):
+                os.remove(os.path.join(V._cache_dir(), name))
+
+    def test_04c_grosses_original_wird_verkleinert(self):
+        pfad = os.path.join(_DATA_ROOT, 'gross.jpg')
+        Image.new('RGB', (3000, 2400), (20, 30, 40)).save(pfad, quality=80)
+        self.assertEqual(V._quelle_verkleinern(pfad, 'jpg'), (2000, 1600))
+        with Image.open(pfad) as im:
+            self.assertEqual(im.size, (2000, 1600))
+        klein = os.path.join(_DATA_ROOT, 'klein.png')
+        Image.new('RGB', (300, 200)).save(klein)
+        self.assertEqual(V._quelle_verkleinern(klein, 'png'), (300, 200))
+        r = self.probelauf(file=(io.BytesIO(open(pfad, 'rb').read()), 'gross.jpg'))
+        self.assertEqual(r.status_code, 200, r.get_json())
+        j = r.get_json()
+        self.assertLessEqual(max(j['width'], j['height']), V.NACHBAU_MAX_EDGE)
+        self.client.delete(f"/api/templates/nachbau/sitzung/{j['sitzung']}", headers=self.H)
+
+    def test_04d_abgelehnte_config_laesst_keine_dateien(self):
+        token = self.__class__.token
+        uploads = os.path.join(_DATA_ROOT, 'uploads')
+        vorher = set(os.listdir(uploads)) if os.path.isdir(uploads) else set()
+        kaputt = json.loads(json.dumps(self.__class__.config))
+        kaputt['elements'].append({'id': 'leer', 'type': 'text', 'x': 0, 'y': 0,
+                                   'width': 100, 'height': 50})
+        r = self.client.post(f'/api/templates/nachbau/sitzung/{token}/anlegen',
+                             data={'config': json.dumps(kaputt), 'name': 'Kaputt'},
+                             headers=self.H, content_type='multipart/form-data')
+        self.assertEqual(r.status_code, 400, r.get_json())
+        nachher = set(os.listdir(uploads)) if os.path.isdir(uploads) else set()
+        self.assertEqual(nachher - vorher, set())
+        self.assertIsNotNone(V._sitzung_laden(token))     # Sitzung bleibt benutzbar
 
     def test_05_anlegen(self):
         token = self.__class__.token
@@ -891,18 +958,20 @@ class TestBibliothek(unittest.TestCase):
         self.assertTrue(K.hintergrund_unsauber(unsauber))
         self.assertTrue(K.hintergrund_unsauber(alt))
         self.assertFalse(K.hintergrund_unsauber(ohne))
+        # Altzeile aus der Zeit vor der Regel: muss beim Aufnehmen verschwinden
+        M.db.session.add(M.MemeFormat(quelle='eigen', extern_id=f'template:{unsauber.id}',
+                                      name='alte Zeile'))
+        M.db.session.commit()
         ergebnis = K.eigene_aufnehmen(_DATA_ROOT)
         self.assertGreaterEqual(ergebnis['uebersprungen'], 2)
+        self.assertGreaterEqual(ergebnis['entfernt'], 1)
         self.assertIn('übersprungen', ergebnis['meldung'])
+        self.assertIn('aus der Bibliothek entfernt', ergebnis['meldung'])
         namen = {z.extern_id for z in M.MemeFormat.query.filter_by(quelle='eigen').all()}
         self.assertIn(f'template:{sauber.id}', namen)
         self.assertIn(f'template:{ohne.id}', namen)
         self.assertNotIn(f'template:{unsauber.id}', namen)
         self.assertNotIn(f'template:{alt.id}', namen)
-
-
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
 
 
 class TestSatzMitStadt(unittest.TestCase):
@@ -948,3 +1017,7 @@ class TestSatzMitStadt(unittest.TestCase):
         zeile = [el for el in texte(cfg) if el['id'] == 'text_1'][0]
         self.assertEqual(zeile.get('var'), 'city_name')
         self.assertEqual(zeile.get('role'), 'ort')
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

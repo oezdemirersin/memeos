@@ -522,7 +522,7 @@ def eigene_aufnehmen(datenpfad=None):
     → {'geholt': int, 'neu': int, 'aktualisiert': int, 'uebersprungen': int,
        'fehler': [str], 'meldung': str}
     """
-    ergebnis = {'geholt': 0, 'neu': 0, 'aktualisiert': 0, 'uebersprungen': 0,
+    ergebnis = {'geholt': 0, 'neu': 0, 'aktualisiert': 0, 'uebersprungen': 0, 'entfernt': 0,
                 'fehler': [], 'meldung': ''}
 
     for t in MemeTemplate.query.order_by(MemeTemplate.id).all():
@@ -530,6 +530,19 @@ def eigene_aufnehmen(datenpfad=None):
             continue
         if hintergrund_unsauber(t):
             ergebnis['uebersprungen'] += 1
+            # Vor dieser Regel aufgenommene Zeilen der Vorlage wieder aus der Bibliothek nehmen,
+            # sonst holt der Nachbau weiter einen Hintergrund MIT Schrift aus der 'Bibliothek'.
+            try:
+                alt = MemeFormat.query.filter_by(quelle='eigen', extern_id=f'template:{t.id}').all()
+                for zeile in alt:
+                    db.session.delete(zeile)
+                if alt:
+                    db.session.commit()
+                    ergebnis['entfernt'] += len(alt)
+            except Exception as ex:
+                db.session.rollback()
+                ergebnis['fehler'].append(f'Template {t.id}: Altzeile nicht entfernt '
+                                          f'({type(ex).__name__}: {ex})')
             continue
         ergebnis['geholt'] += 1
         try:
@@ -556,6 +569,8 @@ def eigene_aufnehmen(datenpfad=None):
     if ergebnis['uebersprungen']:
         ergebnis['meldung'] += (f', {ergebnis["uebersprungen"]} übersprungen '
                                 f'(Hintergrund trägt noch Schrift)')
+    if ergebnis['entfernt']:
+        ergebnis['meldung'] += f', {ergebnis["entfernt"]} aus der Bibliothek entfernt'
     return ergebnis
 
 

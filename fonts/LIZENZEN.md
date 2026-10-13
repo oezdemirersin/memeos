@@ -1,6 +1,7 @@
 # Schriften in diesem Ordner – Lizenzen und Quellen
 
-Alle hier liegenden Google-Fonts sind statische TrueType-Dateien (keine variablen Fonts),
+Alle neu aufgenommenen Google-Fonts sind statische TrueType-Dateien (keine variablen Fonts;
+einzige Ausnahme aus dem Altbestand ist `bold.ttf`, siehe Hinweis unten),
 geladen aus dem Repo <https://github.com/google/fonts> (Zweig `main`). Die Lizenztexte liegen im
 jeweiligen Quellordner des Repos (`OFL.txt` bzw. `LICENSE.txt`).
 
@@ -55,4 +56,5 @@ Lizenzlage dieser einen Datei gesondert zu prüfen.
 
 Jede neue Schrift vor dem Eintragen so prüfen: `file fonts/<datei>` muss "TrueType Font data"
 melden, und `ImageFont.truetype(pfad, 40)` muss ohne Ausnahme laden. Keine variablen Fonts
-(`[wght]`-Dateien) verwenden, Pillow nimmt davon nur die dünnste Instanz.
+(`[wght]`-Dateien) verwenden: Pillow rendert davon nur die Standard-Instanz der Achse (bei
+Oswald Regular 400), eine bestimmte Stärke wie Bold ist über den Schlüssel nicht wählbar.

@@ -164,12 +164,17 @@ def font_key(name, bold=False):
             continue
         if exact:
             return key, None
-    try:
-        key, _exact = mr.font_key_for(name)
-    except Exception:
-        key = FALLBACK_FONT
+    # Kein exakter Treffer: die Ersatzschrift ueber dieselben Kandidaten suchen, damit
+    # 'Montserrat' + fett bei 'Montserrat Bold' (Poppins Black) landet und nicht beim
+    # normalen Gewicht.
     known = {_norm_font(k) for k in getattr(mr, 'CANVA_FONT_MAP', {})}
-    if _norm_font(name) in known:
+    for cand in candidates:
+        if _norm_font(cand) not in known:
+            continue
+        try:
+            key, _exact = mr.font_key_for(cand)
+        except Exception:
+            continue
         return key, f'Schrift {name} durch {FONT_LABELS.get(key, key)} ersetzt (ähnliche Schrift)'
     return FALLBACK_FONT, f'Schrift {name} nicht vorhanden, Anton verwendet'
 
