@@ -164,6 +164,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
 .el .cover.solid{background:none;border-color:rgba(255,255,255,.4);}
 .el .img{position:absolute;inset:0;overflow:hidden;}
 .el .img .ph{position:absolute;inset:0;background:rgba(139,92,246,.18);border:1px dashed rgba(139,92,246,.8);display:flex;align-items:center;justify-content:center;font-size:11px;color:#ddd6fe;text-align:center;padding:4px;text-shadow:0 1px 2px #000;}
+.el .img .ph.ph-ersatz{inset:auto 4px 4px auto;padding:2px 6px;font-size:10px;border-radius:4px;background:rgba(245,158,11,.9);border:none;color:#111;text-shadow:none;}
 .el .img img{position:absolute;display:block;}
 .el .shp{position:absolute;inset:0;}
 .el .shp svg{width:100%;height:100%;display:block;overflow:visible;}
@@ -1292,8 +1293,10 @@ function updateSaveState(state) {
 function stageValues() {
   const city = currentCity();
   const vals = {};
+  const bilder = (city && S.cityAssetUrls && S.cityAssetUrls[String(city.id)]) || {};
   for (const v of collectVars(S.config, true)) {
-    if (isCityVar(v)) vals[v] = '';
+    // Stadtbild: die Datei-URL der Vorschau-Stadt, sonst leer (dann greift das Ersatzbild)
+    if (isCityVar(v)) vals[v] = bilder[v] || '';
     else vals[v] = '[' + v + ']';
   }
   const ai = city ? (S.aiValues[city.id] || null) : null;
@@ -1397,6 +1400,7 @@ async function load() {
   S.stil = stilAus(d.stil || d.brand_example || S.brand);
   S.brand = Object.assign({}, d.brand_example || {}, S.stil);
   S.cityAssets = normCityAssets(d.city_assets);
+  S.cityAssetUrls = (d.city_asset_urls && typeof d.city_asset_urls === 'object') ? d.city_asset_urls : {};
   S.assets = Array.isArray(d.assets) ? d.assets : [];
   S.presets = Array.isArray(d.presets) ? d.presets : [];
   if (Array.isArray(d.canvas_presets) && d.canvas_presets.length) S.canvasPresets = d.canvas_presets;
@@ -1768,7 +1772,16 @@ function shapeSvg(el) {
   }
   return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><defs>${f.defs}${s.defs}</defs>${body}</svg>`;
 }
-function imageInner(el, sc) {
+// Bildquelle fuer die Buehne: URL, data:-Bild oder absoluter Pfad bleiben; ein blosser
+// Dateiname (so speichert der Nachbau Ausschnitte und Ersatzbilder) liegt unter /uploads/.
+function bildAnzeigeUrl(s) {
+  const q = String(s == null ? '' : s).trim();
+  if (!q) return null;
+  if (/^(https?:\/\/|\/|data:)/.test(q)) return q;
+  if (/^[A-Za-z0-9._\-]+$/.test(q) && /\.(png|jpe?g|webp|gif)$/i.test(q)) return '/uploads/' + encodeURIComponent(q);
+  return null;
+}
+function imageInner(el, sc, vals) {
   const cr = el.crop && typeof el.crop === 'object' ? el.crop : null;
   const cx = cr ? clamp(num(cr.x, 0), 0, 0.99) : 0, cy = cr ? clamp(num(cr.y, 0), 0, 0.99) : 0;
   const cw = cr ? clamp(num(cr.w, 1), 0.01, 1) : 1, ch = cr ? clamp(num(cr.h, 1), 0.01, 1) : 1;
@@ -1784,11 +1797,15 @@ function imageInner(el, sc) {
   if (mask === 'circle') radius = '50%';
   else if (mask === 'rounded' && !num(el.radius, 0)) radius = (Math.min(num(el.width, 10), num(el.height, 10)) * 0.14 * sc) + 'px';
   const objfit = el.fit === 'cover' ? 'cover' : (el.fit === 'stretch' ? 'fill' : 'contain');
-  const src = el.src && /^(https?:\/\/|\/|data:)/.test(el.src) ? el.src : null;
+  // Reihenfolge wie im Renderer: Wert der Variable (Stadtbild der Vorschau-Stadt), sonst feste
+  // Quelle, sonst Ersatzbild – erst dann der Platzhalter.
+  const wert = el.var && vals ? vals[el.var] : null;
+  const src = bildAnzeigeUrl(wert) || (el.var ? null : bildAnzeigeUrl(el.src)) || bildAnzeigeUrl(el.fallback);
   const style = `border-radius:${radius};${filters.length ? 'filter:' + filters.join(' ') + ';' : ''}`;
   const imgStyle = `width:${(100 / cw).toFixed(3)}%;height:${(100 / ch).toFixed(3)}%;left:${(-cx / cw * 100).toFixed(3)}%;top:${(-cy / ch * 100).toFixed(3)}%;object-fit:${objfit};`;
   const label = el.var ? (isCityVar(el.var) ? 'Stadtbild ' + esc(el.var.slice(CITY_ASSET_PREFIX.length)) : 'Bild {' + esc(el.var) + '}') : 'Bild (keine Quelle)';
-  return `<div class="img" style="${style}">${src ? `<img src="${esc(src)}" style="${imgStyle}" alt="">` : `<div class="ph">${label}</div>`}</div>`;
+  const ersatz = src && el.var && !bildAnzeigeUrl(wert) ? '<div class="ph ph-ersatz" title="Diese Stadt hat kein eigenes Bild – gezeigt wird das Ersatzbild">Ersatzbild</div>' : '';
+  return `<div class="img" style="${style}">${src ? `<img src="${esc(src)}" style="${imgStyle}" alt="">${ersatz}` : `<div class="ph">${label}</div>`}</div>`;
 }
 function textInner(el, sc, vals) {
   const value = textValue(el, vals);
@@ -1864,7 +1881,7 @@ function renderStage() {
       const p = solid ? paintCss(el.fill, S.brand) : null;
       inner = `<div class="cover ${solid ? 'solid' : ''}" style="${p ? (isGradient(el.fill) ? 'background-image:' : 'background:') + esc(p) + ';' : ''}${num(el.feather, 0) > 0 ? 'filter:blur(' + (num(el.feather, 0) * sc / 2).toFixed(2) + 'px);' : ''}">${solid ? '' : 'Abdeckung ' + esc(el.fill || 'auto')}</div>`;
     } else if (el.type === 'image') {
-      inner = imageInner(el, sc);
+      inner = imageInner(el, sc, vals);
     } else if (isShape(el)) {
       inner = `<div class="shp">${shapeSvg(el)}</div>`;
     }
@@ -2581,6 +2598,7 @@ function bildQuelleSection(el) {
       ${el.var ? (isCityVar(el.var)
           ? `<div class="kv small">Kommt aus den Bildern der Stadt, Schlüssel <b>${esc(el.var.slice(CITY_ASSET_PREFIX.length))}</b>. ${(() => { const i = cityAssetInfo(el.var.slice(CITY_ASSET_PREFIX.length)); if (!i) return '<span class="badge badge-yellow">bisher bei keiner Stadt hinterlegt</span>'; if (i.cities == null) return ''; return i.cities >= (i.total_cities || 0) ? '<span class="badge badge-green">bei allen Städten da</span>' : '<span class="badge badge-yellow">nur bei ' + i.cities + ' von ' + (i.total_cities || '?') + ' Städten</span>'; })()}</div>`
           : `<div class="kv small">Der Wert der Variable muss ein Bildpfad oder eine URL sein.</div>`)
+          + `<div class="form-group"><label>Ersatzbild, wenn die Stadt kein Bild hat (Dateiname aus uploads oder URL, leer = Element auslassen)</label><input type="text" data-prop="fallback" data-kind="str" value="${esc(el.fallback || '')}" placeholder="z. B. nachbau_bild_123_0.png"></div>`
         : `<div class="form-group"><label>URL oder Dateipfad</label><input type="url" data-prop="src" data-kind="str" value="${esc(el.src || '')}" placeholder="https://… oder /uploads/…"></div>${lib}`}
     </div>`;
 }

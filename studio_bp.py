@@ -370,6 +370,25 @@ def _stadtbild_schluessel():
     return liste, int(gesamt)
 
 
+def _stadtbild_urls():
+    """{city_id: {'bild_<key>': '/api/studio/cities/<cid>/assets/<aid>/file'}} für alle Städte.
+    Die Bühne des Editors zeigt damit das echte Stadtbild der Vorschau-Stadt statt eines
+    Platzhalters; ohne Bild greift sie auf das Ersatzbild (fallback) des Elements zurück."""
+    out = {}
+    try:
+        rows = db.session.query(CityAsset.id, CityAsset.city_id, CityAsset.key).all()
+    except Exception as ex:
+        log.warning('Studio: Stadtbild-URLs nicht lesbar: %s', ex)
+        db.session.rollback()
+        return out
+    for aid, cid, key in rows:
+        if not key:
+            continue
+        out.setdefault(str(cid), {})[CITY_ASSET_VAR_PREFIX + key] = \
+            f'/api/studio/cities/{cid}/assets/{aid}/file'
+    return out
+
+
 def _variables_for(config, stadtbild_keys=None):
     """Variablenliste für den Editor: Stadtname, Stadtwissen, Stadtbilder, Marken-Farben,
     dazu alles, was in der Config sonst noch vorkommt."""
@@ -853,6 +872,7 @@ def api_studio_get(template_id):
         'brand_example': _city_brand(cities[0]) if cities else _city_brand(None),
         'ai_available': bool(_anthropic_key()),
         'city_assets': stadtbild_keys,
+        'city_asset_urls': _stadtbild_urls(),
         'city_count': staedte_gesamt,
         'assets': [_studio_asset_dict(a) for a in
                    StudioAsset.query.order_by(StudioAsset.kind, StudioAsset.id.desc()).all()],
