@@ -143,37 +143,122 @@ _IMAGE_MAX_REDIRECTS = 3
 _FONT_EXTS = ('.ttf', '.otf', '.ttc')
 
 # key -> (Label, Dateiname)
+# Reihenfolge = Anzeige-Reihenfolge im Studio: erst die drei alten, dann die Google-Fonts
+# (Lizenzen und Quellen: fonts/LIZENZEN.md). Nur statische TTFs, keine variablen Fonts.
+# Ausnahme aus Altbestand: bold.ttf ist Oswald[wght] (variabel); Pillow rendert davon die
+# Standard-Instanz Regular (400). Der Key bleibt, damit bestehende Vorlagen gleich aussehen;
+# die echte Bold-Instanz liegt als eigener Key oswald_bold daneben.
 _BUILTIN_FONTS = {
     'anton':              ('Anton', 'anton.ttf'),
-    'bold':               ('Oswald Bold', 'bold.ttf'),
+    'bold':               ('Oswald', 'bold.ttf'),                        # rendert Regular, s. o.
     'arial_rounded_bold': ('Arial Rounded Bold', 'arial_rounded_bold.ttf'),
+    'bebas_neue':         ('Bebas Neue', 'bebas_neue.ttf'),                 # schmal, hoch, Versalien
+    'archivo_black':      ('Archivo Black', 'archivo_black.ttf'),           # sehr fette breite Grotesk
+    'poppins_black':      ('Poppins Black', 'poppins_black.ttf'),           # fette geometrische Sans
+    'poppins_semibold':   ('Poppins SemiBold', 'poppins_semibold.ttf'),     # normale geometrische Sans
+    'titan_one':          ('Titan One', 'titan_one.ttf'),                   # rund, sehr fett
+    'lilita_one':         ('Lilita One', 'lilita_one.ttf'),                 # rund, weich
+    'bangers':            ('Bangers', 'bangers.ttf'),                       # Comic, schraeg
+    'luckiest_guy':       ('Luckiest Guy', 'luckiest_guy.ttf'),             # Cartoon, fett
+    'permanent_marker':   ('Permanent Marker', 'permanent_marker.ttf'),     # Filzstift
+    'kalam_bold':         ('Kalam Bold', 'kalam_bold.ttf'),                 # Handschrift
+    'alfa_slab_one':      ('Alfa Slab One', 'alfa_slab_one.ttf'),           # Slab-Serif, fett
+    'passion_one_black':  ('Passion One Black', 'passion_one_black.ttf'),   # sehr fett, leicht rund
+    'rubik_mono_one':     ('Rubik Mono One', 'rubik_mono_one.ttf'),         # breit, technisch
+    'oswald_bold':        ('Oswald Bold', 'oswald_bold.ttf'),               # schmal, fett (statisch)
 }
 _FALLBACK_KEY = 'anton'
 
-# Canva-/Systemschriftnamen -> eingebauter Key
+# Canva-/Systemschriftnamen -> eingebauter Key. Namen derselben Familie stehen zusaetzlich in
+# _EXACT_ALIASES (keine Ersatz-Warnung); alles andere ist eine aehnliche Ersatzschrift.
 CANVA_FONT_MAP = {
-    'Bebas Neue':            'anton',
-    'Bebas Neue Bold':       'anton',
-    'Bebas':                 'anton',
+    # Schmal und hoch (Versalien)
+    'Bebas Neue':            'bebas_neue',
+    'Bebas Neue Bold':       'bebas_neue',
+    'Bebas':                 'bebas_neue',
+    'Teko':                  'bebas_neue',
     'Anton':                 'anton',
-    'Impact':                'anton',
+    'Impact':                'anton',           # Impact ist nicht Anton, nur aehnlich
     'League Gothic':         'anton',
     'Oswald':                'bold',
-    'Oswald Bold':           'bold',
-    'Arial Black':           'bold',
-    'Montserrat':            'bold',
-    'Montserrat Bold':       'bold',
+    'Oswald Bold':           'oswald_bold',
+    'Fjalla One':            'oswald_bold',
+    # Sehr fette Grotesk
+    'Archivo Black':         'archivo_black',
+    'Arial Black':           'archivo_black',
+    'Franklin Gothic Heavy': 'archivo_black',
+    'Montserrat Black':      'archivo_black',
+    'Montserrat ExtraBold':  'archivo_black',
+    # Geometrische Sans (Poppins)
+    'Poppins':               'poppins_semibold',
+    'Poppins Regular':       'poppins_semibold',
+    'Poppins Medium':        'poppins_semibold',
+    'Poppins SemiBold':      'poppins_semibold',
+    'Poppins Bold':          'poppins_black',
+    'Poppins ExtraBold':     'poppins_black',
+    'Poppins Black':         'poppins_black',
+    'Montserrat':            'poppins_semibold',
+    'Montserrat SemiBold':   'poppins_semibold',
+    'Montserrat Bold':       'poppins_black',
+    'Futura':                'poppins_semibold',
+    'Futura Bold':           'poppins_black',
+    'Gill Sans':             'poppins_semibold',
+    'Lato':                  'poppins_semibold',
+    'Raleway':               'poppins_semibold',
+    'Inter':                 'poppins_semibold',
+    # Schlichte Sans (bleiben wie bisher beim Key bold, Oswald)
     'Arial':                 'bold',
     'Helvetica':             'bold',
     'Roboto':                'bold',
     'Open Sans':             'bold',
     'DM Sans':               'bold',
+    # Rund und weich
+    'Titan One':             'titan_one',
+    'Lilita One':            'lilita_one',
+    'Fredoka One':           'lilita_one',
+    'Fredoka':               'lilita_one',
+    'Baloo':                 'lilita_one',
     'Arial Rounded MT Bold': 'arial_rounded_bold',
     'Arial Rounded':         'arial_rounded_bold',
     'VAG Rounded':           'arial_rounded_bold',
+    # Comic und Cartoon
+    'Bangers':               'bangers',
+    'Comic Sans MS':         'bangers',
+    'Comic Sans':            'bangers',
+    'Luckiest Guy':          'luckiest_guy',
+    # Marker und Handschrift
+    'Permanent Marker':      'permanent_marker',
+    'Marker Felt':           'permanent_marker',
+    'Kalam':                 'kalam_bold',
+    'Kalam Bold':            'kalam_bold',
+    'Caveat':                'kalam_bold',
+    'Indie Flower':          'kalam_bold',
+    'Patrick Hand':          'kalam_bold',
+    # Slab-Serif
+    'Alfa Slab One':         'alfa_slab_one',
+    'Rockwell':              'alfa_slab_one',
+    'Rockwell Extra Bold':   'alfa_slab_one',
+    'Ultra':                 'alfa_slab_one',
+    # Sehr fett / breit
+    'Passion One':           'passion_one_black',
+    'Passion One Bold':      'passion_one_black',
+    'Passion One Black':     'passion_one_black',
+    'Rubik Mono One':        'rubik_mono_one',
 }
-# Aliase, die dieselbe Schriftfamilie meinen (font_key_for -> exact=True)
-_EXACT_ALIASES = {'anton', 'oswald', 'oswaldbold', 'arialroundedmtbold', 'arialroundedbold'}
+# Aliase, die dieselbe Schriftfamilie meinen (font_key_for -> exact=True). Schluessel sind
+# die mit _norm() normalisierten Namen (klein, ohne Leerzeichen/Bindestriche).
+_EXACT_ALIASES = {
+    'anton', 'oswald', 'oswaldbold', 'arialroundedmtbold', 'arialroundedbold',
+    'bebasneue', 'bebasneuebold', 'bebas',
+    'archivoblack',
+    'poppins', 'poppinsregular', 'poppinsmedium', 'poppinssemibold',
+    'poppinsbold', 'poppinsextrabold', 'poppinsblack',
+    'titanone', 'lilitaone', 'bangers', 'luckiestguy',
+    'permanentmarker', 'kalam', 'kalambold',
+    'alfaslabone',
+    'passionone', 'passiononebold', 'passiononeblack',
+    'rubikmonoone',
+}
 
 _BRAND_DEFAULTS = {'bg': '#ffffff', 'text': '#000000', 'accent': '#3b82f6', 'font': 'Arial'}
 
