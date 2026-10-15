@@ -59,6 +59,7 @@ from models import (db, City, CityAsset, CityKnowledge, MemeTemplate, StudioAsse
                     CITY_ASSET_KINDS, STUDIO_ASSET_KINDS, CITY_ASSET_VAR_PREFIX)
 import memeos_render as R
 import meme_muster as MU
+import stadt_handschrift as HS
 
 log = logging.getLogger(__name__)
 bp = Blueprint('studio', __name__)
@@ -1967,6 +1968,196 @@ def api_stil_stadt_paket(city_id):
     antwort = _stil_antwort(city, zeile)
     antwort['ok'] = True
     return jsonify(antwort)
+
+
+# ── Handschrift aus der Markenfarbe ableiten ──────────────────────────────────
+# Eine Stadtseite hat fast immer schon eine Farbe. Aus ihr den Rest zu rechnen ist bei
+# hundert Städten der Unterschied zwischen einem Knopf und einem Nachmittag.
+
+def _handschrift_auf_zeile(zeile, werte):
+    """Abgeleitete Werte in eine Stil-Zeile schreiben. -> Liste der geänderten Felder."""
+    paare = (('primary', 'primary'), ('secondary', 'secondary'), ('accent', 'accent'),
+             ('dark', 'dark'), ('light', 'light'),
+             ('font_headline', 'headline'), ('font_body', 'body'),
+             ('schreibweise', 'schreibweise'), ('kasten', 'kasten'),
+             ('radius', 'radius'), ('kontur', 'kontur'), ('schatten', 'schatten'),
+             ('wasserzeichen_ecke', 'wasserzeichen_ecke'))
+    geaendert = []
+    for feld, schluessel in paare:
+        if schluessel not in werte:
+            continue
+        if getattr(zeile, feld, None) != werte[schluessel]:
+            setattr(zeile, feld, werte[schluessel])
+            geaendert.append(feld)
+    # Eine abgeleitete Handschrift ist kein fertiges Paket mehr.
+    if (zeile.paket or '') != '':
+        zeile.paket = ''
+        geaendert.append('paket')
+    return geaendert
+
+
+# Die Vorgabefarbe des Stadt-Modells. Eine Stadt, die noch auf ihr steht, hat keine
+# Marke – sie hat nur nie eine bekommen. Abzuleiten wäre hier schlimmer als nichts zu tun:
+# zehn Städte auf der Vorgabe ergäben zehn identische Handschriften.
+_MARKE_UNGESETZT = {'', '#3b82f6'}
+
+
+def _marke_gesetzt(wert):
+    return str(wert or '').strip().lower() not in _MARKE_UNGESETZT
+
+
+def _marke_der_stadt(city, d):
+    """(Markenfarbe, Logofarbe) aus Rumpf oder Stadt. Rumpf schlägt die Stadt.
+
+    Eine im Rumpf genannte Farbe gilt immer – auch die Vorgabefarbe, denn wer sie
+    ausdrücklich schickt, meint sie. Nur die ungefragt übernommene Stadtfarbe wird
+    verworfen, wenn sie noch die Vorgabe ist."""
+    gewuenscht = str((d or {}).get('marke') or '').strip()
+    marke = gewuenscht or ((city.accent_color or '').strip()
+                           if _marke_gesetzt(city.accent_color) else '')
+    logo = str((d or {}).get('logo') or '').strip() or None
+    if not logo:
+        zeile = _stil_zeile(city.id)
+        # Die Zweitfarbe nur übernehmen, wenn sie wirklich gesetzt und nicht die
+        # Vorgabe ist – sonst zementiert die Ableitung das Standardblau.
+        vorgabe = str((R.STIL_STANDARD or {}).get('secondary') or '').lower()
+        if zeile is not None and (zeile.secondary or '').strip():
+            if (zeile.secondary or '').strip().lower() != vorgabe:
+                logo = zeile.secondary.strip()
+    return marke, logo
+
+
+@bp.route('/api/stil/stadt/<int:city_id>/ableiten', methods=['POST'])
+@studio_login_required
+def api_stil_stadt_ableiten(city_id):
+    """Handschrift einer Stadt aus ihrer Markenfarbe errechnen.
+
+    Rumpf (alles optional):
+      marke      Markenfarbe '#rrggbb' (Vorgabe: accent_color der Stadt)
+      logo       dunkle Fassung der Markenfarbe (Vorgabe: bisherige Zweitfarbe)
+      anmutung   Index in stadt_handschrift.ANMUTUNGEN (Vorgabe: aus der Verteilung)
+      speichern  true schreibt; ohne das kommt nur der Vorschlag zurück
+    """
+    city = City.query.get_or_404(city_id)
+    modell = _stil_modell()
+    if modell is None:
+        return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
+    d = request.get_json(silent=True) or {}
+    marke, logo = _marke_der_stadt(city, d)
+    if not marke:
+        return jsonify({'ok': False,
+                        'error': 'Diese Stadt hat noch keine eigene Markenfarbe (sie steht '
+                                 'auf der Vorgabe). Farbe im Rumpf als "marke" mitgeben '
+                                 'oder accent_color der Stadt setzen.'}), 400
+
+    roh = d.get('anmutung')
+    if roh in (None, ''):
+        alle = _cities()
+        verteilung = HS.anmutungen_verteilen([(c.id, c.name, c.lat, c.lon) for c in alle])
+        anmutung = verteilung.get(city.id, 0)
+    else:
+        try:
+            anmutung = int(roh)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'anmutung muss eine Zahl sein'}), 400
+
+    werte = HS.handschrift(marke, logo, anmutung)
+    if not werte:
+        return jsonify({'ok': False, 'error': f'Keine lesbare Farbe: {marke!r}'}), 400
+
+    if not d.get('speichern'):
+        return jsonify({'ok': True, 'gespeichert': False, 'stil': werte,
+                        'anmutung': anmutung % len(HS.ANMUTUNGEN)})
+
+    zeile = _stil_zeile_sichern(city, _stil_zeile(city_id))
+    geaendert = _handschrift_auf_zeile(zeile, werte)
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Studio: Handschrift für Stadt %s nicht speicherbar: %s', city_id, ex)
+        return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+    antwort = _stil_antwort(city, zeile)
+    antwort.update({'ok': True, 'gespeichert': True, 'geaendert': sorted(geaendert),
+                    'anmutung': anmutung % len(HS.ANMUTUNGEN)})
+    return jsonify(antwort)
+
+
+@bp.route('/api/stil/ableiten', methods=['POST'])
+@studio_login_required
+def api_stil_ableiten_alle():
+    """Für alle Städte mit Markenfarbe auf einmal ableiten.
+
+    Rumpf (alles optional):
+      nur_ohne_stil  true = Städte, die schon eine eigene Handschrift haben, bleiben
+      radius_km      ab welcher Entfernung zwei Städte gleich aussehen dürfen
+      speichern      true schreibt; ohne das kommt nur der Plan zurück
+    """
+    modell = _stil_modell()
+    if modell is None:
+        return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
+    d = request.get_json(silent=True) or {}
+    radius = d.get('radius_km')
+    try:
+        radius = float(radius) if radius not in (None, '') else HS.NACHBAR_KM
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'radius_km muss eine Zahl sein'}), 400
+    if radius <= 0:
+        return jsonify({'ok': False, 'error': 'radius_km muss größer als 0 sein'}), 400
+    nur_ohne = bool(d.get('nur_ohne_stil'))
+    speichern = bool(d.get('speichern'))
+
+    staedte = _cities()
+    if not staedte:
+        return jsonify({'ok': False, 'error': 'Keine Städte vorhanden'}), 400
+    zeilen = _stil_zeilen_map()
+    # Die Verteilung rechnet über ALLE Städte – sonst wüsste sie nichts von den Nachbarn,
+    # die diesmal übersprungen werden, und vergäbe deren Anmutung ein zweites Mal.
+    verteilung = HS.anmutungen_verteilen(
+        [(c.id, c.name, c.lat, c.lon) for c in staedte], nachbar_km=radius)
+
+    plan, ohne_marke, uebersprungen = [], [], []
+    for c in staedte:
+        if nur_ohne and c.id in zeilen and (zeilen[c.id].paket or '') == '':
+            uebersprungen.append(c.name)
+            continue
+        marke, logo = _marke_der_stadt(c, None)
+        werte = HS.handschrift(marke, logo, verteilung.get(c.id, 0))
+        if not werte:
+            ohne_marke.append(c.name)
+            continue
+        plan.append((c, werte))
+
+    geschrieben = []
+    if speichern:
+        for c, werte in plan:
+            zeile = _stil_zeile_sichern(c, _stil_zeile(c.id))
+            _handschrift_auf_zeile(zeile, werte)
+            geschrieben.append(c.name)
+        try:
+            db.session.commit()
+        except Exception as ex:
+            db.session.rollback()
+            log.warning('Studio: Handschriften nicht speicherbar: %s', ex)
+            return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+        log.info('Studio: %s Handschriften aus der Markenfarbe abgeleitet', len(geschrieben))
+
+    schriften = [f.get('key') for f in _public_fonts()]
+    return jsonify({
+        'ok': True,
+        'gespeichert': speichern,
+        'staedte': [{'city_id': c.id, 'city': c.name,
+                     'anmutung': verteilung.get(c.id, 0),
+                     'stil': werte} for c, werte in plan],
+        'ohne_markenfarbe': ohne_marke,
+        'uebersprungen': uebersprungen,
+        'geschrieben': geschrieben,
+        # Ehrliche Auskunft: mehr Städte als Anmutungen heißt, dass sich Auftritte
+        # irgendwann wiederholen. Mehr Schriften erhöhen die Zahl der Anmutungen.
+        'anmutungen_verfuegbar': HS.schriftpaare_moeglich(schriften),
+        'hinweis': (f'{HS.schriftpaare_moeglich(schriften)} verschiedene Anmutungen sind '
+                    f'mit {len(schriften)} Schriften möglich; geplant sind {len(plan)} Städte.'),
+    })
 
 
 # ── Pakete über die Städte verteilen ───────────────────────────────────────────

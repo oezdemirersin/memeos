@@ -845,6 +845,21 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
               </div>
             </div>
 
+            <!-- Aus der Markenfarbe ableiten -->
+            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" onclick="stilAbleitenStadt()"
+                        title="Zweitfarbe, Dunkel-, Hellton und Pointe aus der Hauptfarbe rechnen">
+                  Aus der Markenfarbe ableiten
+                </button>
+                <div style="font-size:11px;color:var(--muted);flex:1;min-width:180px;line-height:1.5;">
+                  Nimmt die Hauptfarbe dieser Stadt und rechnet den Rest dazu: Zweitfarbe,
+                  Dunkel- und Hellton, dazu eine Pointe im Gegenton. Die Hauptfarbe selbst
+                  bleibt, wie sie ist.
+                </div>
+              </div>
+            </div>
+
             <!-- Stil-Pakete -->
             <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
               <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -3689,6 +3704,8 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
         <input type="checkbox" id="stil-verteilen-nur-ohne" checked style="accent-color:var(--accent);"> Nur Städte ohne eigenen Stil
       </label>
       <button class="btn btn-primary btn-sm" id="stil-verteilen-btn" onclick="stilVerteilen()">Stile verteilen</button>
+      <button class="btn btn-ghost btn-sm" id="stil-ableiten-btn" onclick="stilAbleitenAlle()"
+              title="Aus der Markenfarbe jeder Stadt eine eigene Handschrift rechnen">Aus Markenfarben ableiten</button>
       <div id="stil-verteilen-bericht" style="font-size:11px;color:var(--muted);flex:1;min-width:160px;"></div>
       <button class="btn btn-ghost btn-xs" onclick="stilUebersichtNeuLaden()">↻ Aktualisieren</button>
     </div>
@@ -4631,6 +4648,59 @@ async function stilVerteilen() {
   toast('Stile verteilt', 'success');
   await stilUebersichtNeuLaden();
   if (_stilCityId) await stilStadtLaden(_stilCityId, _stilCityName);
+}
+
+// ── Handschrift aus der Markenfarbe ──────────────────────────────────────────
+// Die Markenfarbe steht meist schon fest; der Rest der Handschrift laesst sich daraus
+// rechnen. Zuerst wird nur geplant und gezeigt, was passieren wuerde.
+async function stilAbleitenAlle() {
+  const cb = _stilEl('stil-verteilen-nur-ohne');
+  const nurOhne = cb ? cb.checked : true;
+  const btn = _stilEl('stil-ableiten-btn'), bericht = _stilEl('stil-verteilen-bericht');
+  if (btn) { btn.disabled = true; btn.textContent = 'rechnet …'; }
+  const zurueck = () => { if (btn) { btn.disabled = false; btn.textContent = 'Aus Markenfarben ableiten'; } };
+
+  const plan = await _stilRuf('POST', '/api/stil/ableiten', {nur_ohne_stil: nurOhne});
+  if (!plan || plan.error) { zurueck(); toast((plan && plan.error) || 'Fehlgeschlagen', 'error'); return; }
+  const anzahl = (plan.staedte || []).length;
+  if (!anzahl) {
+    zurueck();
+    const grund = (plan.ohne_markenfarbe || []).length
+      ? `Keine Stadt hat eine eigene Markenfarbe (${(plan.ohne_markenfarbe || []).length} stehen auf der Vorgabe).`
+      : 'Nichts zu tun.';
+    if (bericht) bericht.textContent = grund;
+    toast(grund, 'info');
+    return;
+  }
+  const ohne = (plan.ohne_markenfarbe || []);
+  const frage = `${anzahl} Städte bekommen eine Handschrift aus ihrer Markenfarbe.`
+    + (ohne.length ? `\n\nOhne eigene Markenfarbe und darum unberührt: ${ohne.join(', ')}.` : '')
+    + (plan.hinweis ? `\n\n${plan.hinweis}` : '')
+    + '\n\nJetzt übernehmen?';
+  if (!confirm(frage)) { zurueck(); if (bericht) bericht.textContent = 'abgebrochen'; return; }
+
+  const r = await _stilRuf('POST', '/api/stil/ableiten', {nur_ohne_stil: nurOhne, speichern: true});
+  zurueck();
+  if (!r || r.error) { toast((r && r.error) || 'Nicht gespeichert', 'error'); return; }
+  const n = (r.geschrieben || []).length;
+  if (bericht) {
+    bericht.textContent = `${n} Handschriften abgeleitet`
+      + (ohne.length ? ` · ${ohne.length} ohne Markenfarbe übersprungen` : '');
+  }
+  toast(`${n} Handschriften aus den Markenfarben abgeleitet`, 'success');
+  await stilUebersichtNeuLaden();
+  if (_stilCityId) await stilStadtLaden(_stilCityId, _stilCityName);
+}
+
+// Einzelne Stadt – sitzt neben der Paketauswahl im Stadt-Bereich.
+async function stilAbleitenStadt() {
+  if (!_stilCityId) return;
+  const r = await _stilRuf('POST', '/api/stil/stadt/' + encodeURIComponent(_stilCityId) + '/ableiten',
+                           {speichern: true});
+  if (!r || r.error) { toast((r && r.error) || 'Fehlgeschlagen', 'error'); return; }
+  toast(`Handschrift von ${_stilCityName || 'der Stadt'} aus der Markenfarbe abgeleitet`, 'success');
+  await stilStadtLaden(_stilCityId, _stilCityName);
+  await stilUebersichtNeuLaden();
 }
 
 // ── Nachbarn mit demselben Stil ──────────────────────────────────────────────
