@@ -2092,7 +2092,8 @@ def api_stil_stadt_ableiten(city_id):
     roh = d.get('anmutung')
     if roh in (None, ''):
         alle = _cities()
-        verteilung = HS.anmutungen_verteilen([(c.id, c.name, c.lat, c.lon) for c in alle])
+        verteilung = HS.anmutungen_verteilen(
+            [(c.id, c.name, c.lat, c.lon, c.state) for c in alle])
         anmutung = verteilung.get(city.id, 0)
     else:
         # int(float('inf')) wirft OverflowError, int(float('nan')) ValueError – beides
@@ -2169,11 +2170,15 @@ def api_stil_ableiten_alle():
     # Die Verteilung rechnet über ALLE Städte – sonst wüsste sie nichts von den Nachbarn,
     # die diesmal übersprungen werden, und vergäbe deren Anmutung ein zweites Mal.
     verteilung = HS.anmutungen_verteilen(
-        [(c.id, c.name, c.lat, c.lon) for c in staedte], nachbar_km=radius)
+        [(c.id, c.name, c.lat, c.lon, c.state) for c in staedte], nachbar_km=radius)
 
     plan, ohne_marke, uebersprungen = [], [], []
     for c in staedte:
-        if nur_ohne and c.id in zeilen and (zeilen[c.id].paket or '') == '':
+        # Dieselbe Lesart wie in /api/stil/verteilen: „nur Städte ohne eigenen Stil"
+        # heißt „überspringe jede Stadt, die schon eine Stil-Zeile hat". Vorher wurden
+        # hier ausgerechnet die Städte MIT Paket überschrieben – der Haken hätte das
+        # Gegenteil von dem getan, was auf ihm steht.
+        if nur_ohne and c.id in zeilen:
             uebersprungen.append(c.name)
             continue
         marke, logo = _marke_der_stadt(c, None)
@@ -2264,7 +2269,8 @@ def _nachbarn_map(staedte, radius_km=None):
     return karte
 
 
-def _verteilen_planen(staedte, paket_keys, karte, paket_von, hat_zeile, nur_ohne_stil):
+def _verteilen_planen(staedte, paket_keys, karte, paket_von, hat_zeile, nur_ohne_stil,
+                      eigene=()):
     """Wer bekommt welches Paket? Reine Rechnung ohne Datenbank – dadurch prüfbar.
 
     Reihenfolge: Städte mit den meisten Nachbarn zuerst; die sind am schwersten
@@ -2273,7 +2279,14 @@ def _verteilen_planen(staedte, paket_keys, karte, paket_von, hat_zeile, nur_ohne
 
     Das bisherige Paket einer Stadt bleibt, solange es weiterhin bei keinem Nachbarn
     vorkommt. Ein zweiter Lauf auf einem konfliktfreien Stand ändert deshalb nichts mehr
-    und wirft keine Handarbeit weg; geändert wird nur, wo es sich stößt oder noch fehlt."""
+    und wirft keine Handarbeit weg; geändert wird nur, wo es sich stößt oder noch fehlt.
+
+    `eigene` sind Städte mit einer EIGENEN Handschrift – aus der Markenfarbe abgeleitet
+    oder von Hand gestellt. Sie tragen paket == '', und das heißt NICHT „hat noch kein
+    Paket", sondern „will keins". Ohne diese Liste hätte ein Klick auf „Stile verteilen"
+    jede abgeleitete Handschrift überschrieben: paket_setzen() ersetzt alle dreizehn
+    Felder, die Markenfarbe der Stadt wäre weg gewesen."""
+    eigene = set(eigene or ())
     zuteilung = dict(paket_von)
     anzahl = {k: 0 for k in paket_keys}
     for key in paket_von.values():
@@ -2281,9 +2294,11 @@ def _verteilen_planen(staedte, paket_keys, karte, paket_von, hat_zeile, nur_ohne
             anzahl[key] += 1
     plan, konflikte = [], []
     for c in sorted(staedte, key=lambda s: (-len(karte.get(s.id) or ()), s.id)):
-        if nur_ohne_stil and c.id in hat_zeile:
+        if c.id in eigene or (nur_ohne_stil and c.id in hat_zeile):
             plan.append({'city_id': c.id, 'name': c.name, 'paket': paket_von.get(c.id, ''),
-                         'neu': False, 'uebersprungen': True})
+                         'neu': False, 'uebersprungen': True,
+                         'grund': ('eigene Handschrift' if c.id in eigene
+                                   else 'hat schon einen Stil')})
             continue
         belegt = {zuteilung.get(n) for n in karte.get(c.id, ())} - {None, ''}
         frei = [k for k in paket_keys if k not in belegt]
@@ -2341,7 +2356,9 @@ def api_stil_verteilen():
         radius = float(radius) if radius not in (None, '') else None
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'radius_km muss eine Zahl sein'}), 400
-    nur_ohne_stil = bool(d.get('nur_ohne_stil'))
+    nur_ohne_stil, fehler = _ja_nein(d, 'nur_ohne_stil')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
 
     staedte = _cities()
     if not staedte:
@@ -2350,9 +2367,12 @@ def api_stil_verteilen():
     paket_von = {c.id: str((zeilen[c.id].paket or '')).strip().lower()
                  for c in staedte if c.id in zeilen}
     hat_zeile = set(zeilen.keys())
+    # Eine leere Paketangabe bei vorhandener Zeile heißt „eigene Handschrift", nicht
+    # „noch kein Paket". Diese Städte bleiben unberührt, sonst wäre ihre Markenfarbe weg.
+    eigene = {cid for cid, z in zeilen.items() if str(z.paket or '').strip() == ''}
     karte = _nachbarn_map(staedte, radius)
     plan, konflikte = _verteilen_planen(staedte, paket_keys, karte, paket_von,
-                                        hat_zeile, nur_ohne_stil)
+                                        hat_zeile, nur_ohne_stil, eigene)
 
     stadt_von_id = {c.id: c for c in staedte}
     geaendert = 0

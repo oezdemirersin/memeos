@@ -124,7 +124,7 @@ def main():
         # bei POST /api/stil/ableiten – zwei Wege, die sich widersprechen, wären schlimmer
         # als einer, der fehlt.
         verteilung = HS.anmutungen_verteilen(
-            [(s.id, s.name, s.lat, s.lon) for s in staedte])
+            [(s.id, s.name, s.lat, s.lon, s.state) for s in staedte])
         geaendert = 0
         for s in mit:
             c = nach_name[s.name]

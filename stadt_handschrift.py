@@ -292,8 +292,28 @@ def entfernung_km(a, b):
     return 2 * 6371 * asin(sqrt(h))
 
 
+def _sind_nachbarn(a, b, nachbar_km):
+    """Sehen diese beiden Städte dieselben Leute im Feed?
+
+    In erster Linie entscheidet die Luftlinie. Fehlen einem der beiden die Koordinaten,
+    bleibt der Rückfall „gleiches Bundesland" – denselben Weg geht planer_bp.neighbors.
+    Ohne ihn wäre auf einer frisch aufgesetzten Anlage (app._seed_cities legt die zwanzig
+    Startstädte ohne lat/lon an) keine Stadt Nachbarin irgendeiner anderen, und die
+    Verteilung fiele still auf die alphabetische Reihenfolge zurück."""
+    lat_a, lon_a, land_a = a[2], a[3], (a[4] if len(a) > 4 else None)
+    lat_b, lon_b, land_b = b[2], b[3], (b[4] if len(b) > 4 else None)
+    if None not in (lat_a, lon_a, lat_b, lon_b):
+        return entfernung_km((lat_a, lon_a), (lat_b, lon_b)) <= nachbar_km
+    if land_a and land_b:
+        return str(land_a).strip().lower() == str(land_b).strip().lower()
+    # Weder Koordinaten noch Bundesland: lieber als Nachbarn behandeln und verschieden
+    # aussehen lassen, als zwei Seiten gleich aussehen zu lassen, die nebeneinanderliegen.
+    return True
+
+
 def anmutungen_verteilen(staedte, nachbar_km=NACHBAR_KM, tabelle=None):
-    """staedte: [(id, name, lat, lon)] -> {id: Index in ANMUTUNGEN}
+    """staedte: [(id, name, lat, lon)] oder [(id, name, lat, lon, bundesland)]
+    -> {id: Index in ANMUTUNGEN}
 
     Zwei Seiten, die dieselben Leute erreichen, dürfen nicht gleich aussehen. Jede Stadt
     nimmt deshalb die erste Anmutung, die keiner ihrer Nachbarn schon hat. Ist in einer
@@ -304,13 +324,13 @@ def anmutungen_verteilen(staedte, nachbar_km=NACHBAR_KM, tabelle=None):
     if not tabelle:
         return {}
     folge = sorted(staedte, key=lambda s: str(s[1]))
+    nach_id = {s[0]: s for s in folge}
     koord = {s[0]: (s[2], s[3]) for s in folge}
     zuteilung = {}
     for i, stadt in enumerate(folge):
         sid = stadt[0]
         nachbarn = [t[0] for t in folge
-                    if t[0] in zuteilung
-                    and entfernung_km(koord[sid], koord[t[0]]) <= nachbar_km]
+                    if t[0] in zuteilung and _sind_nachbarn(stadt, t, nachbar_km)]
         belegt = {zuteilung[n] for n in nachbarn}
         frei = [j for j in range(len(tabelle)) if j not in belegt]
         if frei:
@@ -342,8 +362,10 @@ def handschrift(marke, logo=None, anmutung=0):
 def schriftpaare_moeglich(schriften):
     """Wie viele Anmutungen sich mit diesen Schriftschlüsseln überhaupt bauen lassen.
 
-    Dient der ehrlichen Auskunft im Bedienteil: mit drei Schriften sind es zwölf, und in
-    einer dichten Gegend reicht das irgendwann nicht mehr für lauter verschiedene Städte."""
+    Dient der ehrlichen Auskunft im Bedienteil: mit den drei ursprünglich eingebauten
+    Schriften sind nur sechs der zwanzig Anmutungen baubar, und in einer dichten Gegend
+    reicht das nicht für lauter verschiedene Städte. Keine feste Zahl in diesen Text
+    schreiben – sie hängt an ANMUTUNGEN und ginge beim nächsten Eintrag daneben."""
     vorhanden = {str(s).strip().lower() for s in (schriften or []) if str(s).strip()}
     if not vorhanden:
         return 0

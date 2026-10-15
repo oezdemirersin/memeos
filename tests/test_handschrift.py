@@ -462,5 +462,109 @@ class TestAbleitungsRouten(unittest.TestCase):
         self.assertTrue(js.get('hinweise'), js)
 
 
+class TestZusammenspielMitPaketen(unittest.TestCase):
+    """Eigene Handschrift und fertiges Paket dürfen sich nicht gegenseitig auslöschen.
+
+    Eine abgeleitete Handschrift trägt paket == ''. Das heißt „will kein Paket", nicht
+    „hat noch keins" – wer die beiden verwechselt, löscht mit einem Klick auf
+    „Stile verteilen" jede Markenfarbe aus dem Bestand."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault('MEMEOS_SCHEDULER', '0')
+        os.environ.setdefault('MEMEOS_WORKERS', '0')
+        os.environ.setdefault('MEMEOS_OFFLINE', '1')
+        os.environ.setdefault('DATABASE_URL', 'sqlite://')
+        import app as A
+        import studio_bp as SB
+        from models import db, City, CityStyle
+        uri = A.app.config['SQLALCHEMY_DATABASE_URI']
+        assert uri == 'sqlite://' or ':memory:' in uri, f'echte Datenbank: {uri}'
+        cls.A, cls.SB, cls.db, cls.City, cls.CityStyle = A, SB, db, City, CityStyle
+        cls.ctx = A.app.app_context()
+        cls.ctx.push()
+        db.create_all()
+        A.app.config['TESTING'] = True
+        cls.c = A.app.test_client()
+        with cls.c.session_transaction() as s:
+            s['logged_in'] = True
+            s['csrf_token'] = 'tt'
+        cls.H = {'X-CSRF-Token': 'tt'}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.session.remove()
+        cls.ctx.pop()
+
+    def setUp(self):
+        self._meine = []
+
+    def tearDown(self):
+        for s in self._meine:
+            z = self.CityStyle.query.filter_by(city_id=s.id).first()
+            if z is not None:
+                self.db.session.delete(z)
+            self.db.session.delete(s)
+        self.db.session.commit()
+
+    def stadt(self, name, farbe, lat=50.0, lon=8.0):
+        s = self.City(name=name, state='Hessen', accent_color=farbe, lat=lat, lon=lon)
+        self.db.session.add(s)
+        self.db.session.commit()
+        self._meine.append(s)
+        return s
+
+    def test_verteilen_laesst_eigene_handschriften_stehen(self):
+        s = self.stadt('Eigenstadt', '#ff0000')
+        r = self.c.post(f'/api/stil/stadt/{s.id}/ableiten',
+                        json={'speichern': True}, headers=self.H)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        zeile = self.CityStyle.query.filter_by(city_id=s.id).first()
+        vorher = (zeile.primary, zeile.font_headline, zeile.paket)
+        self.assertEqual(vorher[2], '')
+
+        r = self.c.post('/api/stil/verteilen', json={}, headers=self.H)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.db.session.expire_all()
+        zeile = self.CityStyle.query.filter_by(city_id=s.id).first()
+        self.assertEqual((zeile.primary, zeile.font_headline, zeile.paket), vorher,
+                         'Stile verteilen hat die eigene Handschrift überschrieben')
+
+    def test_haken_bedeutet_in_beiden_routen_dasselbe(self):
+        s = self.stadt('Hakenstadt', '#00ff00')
+        zeile = self.CityStyle.aus_paket(s.id, 'boulevard')
+        self.db.session.add(zeile)
+        self.db.session.commit()
+        # „Nur Städte ohne eigenen Stil" muss eine Stadt MIT Stil-Zeile überspringen –
+        # egal ob die Zeile ein Paket trägt oder eine eigene Handschrift.
+        r = self.c.post('/api/stil/ableiten',
+                        json={'nur_ohne_stil': True}, headers=self.H)
+        js = r.get_json() or {}
+        self.assertIn(s.name, js.get('uebersprungen', []), js)
+        self.assertNotIn(s.name, [x['city'] for x in js.get('staedte', [])])
+
+    def test_ohne_koordinaten_zaehlt_das_bundesland(self):
+        # Direkt nach dem Aufsetzen hat keine Stadt lat/lon. Ohne Rückfall wäre dann
+        # niemand Nachbar und die Verteilung fiele auf die Namensfolge zurück.
+        hessen = [(i, f'H{i:02d}', None, None, 'Hessen') for i in range(4)]
+        bayern = [(10 + i, f'B{i:02d}', None, None, 'Bayern') for i in range(4)]
+        z = H.anmutungen_verteilen(hessen + bayern)
+        self.assertEqual(len({z[s[0]] for s in hessen}), 4, 'Hessen nicht unterschieden')
+        self.assertEqual(len({z[s[0]] for s in bayern}), 4, 'Bayern nicht unterschieden')
+
+    def test_nachbau_vorschau_zeigt_auch_eigene_handschriften(self):
+        import vision_import_bp as V
+        gemacht = []
+        for i, farbe in enumerate(('#ff0000', '#00ff00', '#0000ff')):
+            s = self.stadt(f'Vorschaustadt {i}', farbe, lat=50.0 + i, lon=8.0 + i)
+            self.c.post(f'/api/stil/stadt/{s.id}/ableiten',
+                        json={'speichern': True}, headers=self.H)
+            gemacht.append(s.name)
+        auswahl = V._staedte_fuer_vorschau(anzahl=3)
+        eigene = [c.name for c in auswahl if not V._stadt_paket(c)]
+        self.assertTrue(eigene, f'Vorschau zeigt nur Paketstädte: '
+                                f'{[c.name for c in auswahl]}')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

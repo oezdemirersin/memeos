@@ -2488,11 +2488,18 @@ def _staedte_fuer_vorschau(city_ids=None, anzahl=3, anders=False):
     staedte = _aktive_staedte()
     if not staedte:
         return []
+    # Gruppiert wird nach dem AUSSEHEN, nicht nach dem Paketnamen. Eine Stadt mit eigener,
+    # aus ihrer Markenfarbe abgeleiteter Handschrift trägt paket == '' – früher landeten
+    # alle diese Städte in einem Sammeltopf, der zuletzt bedient wurde, und kamen bei
+    # anzahl=3 nie in die Vorschau. Dabei sind gerade sie diejenigen, die verschieden
+    # aussehen. Jede bekommt deshalb ihre eigene Gruppe.
     gruppen = {}
     for c in staedte:
-        gruppen.setdefault(_stadt_paket(c), []).append(c)
-    # Städte MIT Paket zuerst (die sehen verschieden aus), die ohne Paket zum Schluss
-    schluessel = sorted(gruppen.keys(), key=lambda k: (k == '', k))
+        paket = _stadt_paket(c)
+        gruppen.setdefault(paket or f'eigen:{c.id}', []).append(c)
+    # Nach dem Namen der ersten Stadt je Gruppe sortieren: das mischt Pakete und eigene
+    # Handschriften, statt eine der beiden Sorten systematisch hinten anzustellen.
+    schluessel = sorted(gruppen.keys(), key=lambda k: (gruppen[k][0].name, k))
     if anders:
         random.shuffle(schluessel)
         for k in schluessel:
