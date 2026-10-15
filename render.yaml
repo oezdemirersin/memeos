@@ -47,6 +47,16 @@ services:
       # RapidAPI (Inspiration-Abholung von Instagram); alternativ im Dashboard unter Einstellungen → Integrationen
       - key: RAPIDAPI_KEY
         sync: false
+      # DeepSeek als Ausweichmodell, falls Anthropic klemmt oder zu teuer wird.
+      # ACHTUNG: deepseek-v4-flash ist ein Reasoning-Modell – zu kleines max_tokens liefert
+      # eine LEERE Antwort ohne Fehler.
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # Modell für die Bildanalyse (Vorgabe im Code); hier überschreibbar, ohne neu zu bauen.
+      - key: MEMEOS_VISION_MODEL
+        sync: false
+      # Telegram (Tagesdigest) wird NICHT hier gesetzt, sondern im Dashboard unter
+      # Einstellungen → Telegram; die Werte stehen in AppSettings, nicht in der Umgebung.
     disk:
       name: memeos-data
       mountPath: /opt/render/project/src/instance
