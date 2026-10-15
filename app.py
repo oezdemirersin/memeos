@@ -900,7 +900,62 @@ def api_city_create():
     )
     db.session.add(city)
     db.session.commit()
-    return jsonify({'id': city.id, 'name': city.name}), 201
+    # Eine neue Stadt mit eigener Markenfarbe soll nicht aussehen wie alle anderen.
+    # Hat sie eine, wird die Handschrift gleich mitgerechnet; ohne Farbe passiert nichts –
+    # zehn Städte auf der Vorgabefarbe ergäben zehn identische Handschriften.
+    handschrift = _handschrift_beim_anlegen(city)
+    antwort = {'id': city.id, 'name': city.name}
+    if handschrift:
+        antwort['handschrift'] = handschrift
+    return jsonify(antwort), 201
+
+
+def _handschrift_beim_anlegen(city):
+    """Handschrift aus der Markenfarbe ableiten, falls die Stadt eine hat.
+
+    Liefert eine kurze Beschreibung für die Antwort oder None. Scheitert das Ableiten,
+    bleibt die Stadt bestehen – sie hat dann eben noch keinen Stil, und das ist kein Grund,
+    das Anlegen fehlschlagen zu lassen."""
+    try:
+        import stadt_handschrift as HS
+        from models import CityStyle
+    except Exception:                                   # pragma: no cover – defensiv
+        return None
+    farbe = (city.accent_color or '').strip()
+    if not farbe or farbe.lower() == '#3b82f6':         # Vorgabe heißt: keine Marke
+        return None
+    if CityStyle.query.filter_by(city_id=city.id).first():
+        return None
+    try:
+        alle = City.query.filter_by(active=True).all() or City.query.all()
+        verteilung = HS.anmutungen_verteilen(
+            [(c.id, c.name, c.lat, c.lon, c.state) for c in alle])
+        werte = HS.handschrift(farbe, None, verteilung.get(city.id, 0))
+        if not werte:
+            return None
+        zeile = CityStyle(city_id=city.id)
+        for feld, schluessel in (('primary', 'primary'), ('secondary', 'secondary'),
+                                 ('accent', 'accent'), ('dark', 'dark'), ('light', 'light'),
+                                 ('font_headline', 'headline'), ('font_body', 'body'),
+                                 ('schreibweise', 'schreibweise'), ('kasten', 'kasten'),
+                                 ('radius', 'radius'), ('kontur', 'kontur'),
+                                 ('schatten', 'schatten'),
+                                 ('wasserzeichen_ecke', 'wasserzeichen_ecke')):
+            setattr(zeile, feld, werte[schluessel])
+        zeile.paket = ''
+        city.brand_bg = city.brand_bg or werte['light']
+        city.brand_text_color = city.brand_text_color or werte['dark']
+        db.session.add(zeile)
+        db.session.commit()
+        log.info('Stadt %s: Handschrift aus %s abgeleitet (%s/%s)',
+                 city.name, farbe, werte['headline'], werte['body'])
+        return {'schrift': f"{werte['headline']}/{werte['body']}",
+                'farben': [werte['primary'], werte['accent'], werte['dark']],
+                'hinweise': HS.pruefe_palette(werte)}
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Stadt %s: Handschrift nicht ableitbar: %s', city.name, ex)
+        return None
 
 @app.route('/api/cities/<int:city_id>', methods=['PUT'])
 @login_required

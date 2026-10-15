@@ -195,6 +195,26 @@ class TestHandschrift(unittest.TestCase):
                 for a in H.ANMUTUNGEN]
         self.assertEqual(len(kern), len(set(kern)), 'zwei Anmutungen sind gleich')
 
+    def test_jede_anmutung_sieht_wirklich_anders_aus(self):
+        """Die Kernzusage des ganzen Moduls. Dass zwei Anmutungen sich in ihren Feldern
+        unterscheiden, heißt noch nicht, dass man den Unterschied SIEHT – eine Tabelle, in
+        der nur die Eckenrundung variiert, wäre technisch eindeutig und optisch wertlos.
+        Geprüft wird deshalb am fertigen Bild."""
+        import hashlib
+        import meme_muster as MU
+        cfg = MU.muster_config('zitat')
+        werte = {'city_name': 'Musterstadt', 'spruch': 'Hier kennt jeder jeden.',
+                 'city_handle': '@probe'}
+        summen = {}
+        for i in range(len(H.ANMUTUNGEN)):
+            stil = R.stil_dict(H.handschrift('#3db8ff', '#1a4fcc', i))
+            png = R.render(None, cfg, werte, brand=stil)
+            summen.setdefault(hashlib.md5(png).hexdigest(), []).append(i)
+        doppelt = {k: v for k, v in summen.items() if len(v) > 1}
+        self.assertFalse(doppelt,
+                         'Diese Anmutungen ergeben dasselbe Bild: '
+                         + '; '.join(str(v) for v in doppelt.values()))
+
     def test_eine_handschrift_rendert(self):
         import meme_muster as MU
         stil = R.stil_dict(H.handschrift('#3db8ff', '#1a4fcc', 2))
@@ -564,6 +584,33 @@ class TestZusammenspielMitPaketen(unittest.TestCase):
         eigene = [c.name for c in auswahl if not V._stadt_paket(c)]
         self.assertTrue(eigene, f'Vorschau zeigt nur Paketstädte: '
                                 f'{[c.name for c in auswahl]}')
+
+    def test_neue_stadt_mit_marke_bekommt_gleich_eine_handschrift(self):
+        r = self.c.post('/api/cities',
+                        json={'name': 'Neustadt mit Marke', 'state': 'Hessen',
+                              'accent_color': '#ff6600'}, headers=self.H)
+        self.assertEqual(r.status_code, 201, r.get_json())
+        js = r.get_json() or {}
+        s = self.City.query.get(js['id'])
+        self._meine.append(s)
+        self.assertTrue(js.get('handschrift'), js)
+        zeile = self.CityStyle.query.filter_by(city_id=s.id).first()
+        self.assertIsNotNone(zeile, 'keine Stil-Zeile angelegt')
+        self.assertEqual(zeile.primary, '#ff6600')
+        self.assertEqual(zeile.paket, '')
+
+    def test_neue_stadt_ohne_marke_bekommt_keine(self):
+        for rumpf in ({'name': 'Neustadt ohne Marke', 'state': 'Hessen'},
+                      {'name': 'Neustadt Vorgabe', 'state': 'Hessen',
+                       'accent_color': '#3b82f6'}):
+            with self.subTest(rumpf=rumpf):
+                r = self.c.post('/api/cities', json=rumpf, headers=self.H)
+                self.assertEqual(r.status_code, 201, r.get_json())
+                js = r.get_json() or {}
+                s = self.City.query.get(js['id'])
+                self._meine.append(s)
+                self.assertIsNone(js.get('handschrift'))
+                self.assertIsNone(self.CityStyle.query.filter_by(city_id=s.id).first())
 
 
 if __name__ == '__main__':
