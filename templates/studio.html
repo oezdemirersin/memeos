@@ -392,6 +392,8 @@ input[type=range]{width:100%;accent-color:var(--accent);height:18px;}
           <div id="baustein-list"></div>
         </div>
       </div>
+      <button class="btn btn-ghost btn-sm" type="button" id="btn-rollen"
+              title="Für jedes Textfeld eine Rolle vorschlagen – damit die Vorlage in jeder Stadt anders aussieht">Rollen vorschlagen</button>
       <div class="dd" id="dd-muster">
         <button class="btn btn-ghost btn-sm" type="button" data-dd="dd-muster" title="Ganze Vorlage auf einen Schlag – nur noch Texte tauschen">Muster ▾</button>
         <div class="dd-menu" style="min-width:330px;">
@@ -2053,6 +2055,41 @@ $('#muster-list').addEventListener('click', e => {
   musterEinsetzen(plus ? plus.dataset.musterPlus : b.dataset.muster, !plus);
 });
 $('[data-dd="dd-muster"]').addEventListener('click', ladeMuster);
+
+// ── Rollen für eine Bestandsvorlage ───────────────────────────────────────────
+// Eine Vorlage mit festen Farben sieht in jeder Stadt gleich aus. Der Server schlägt
+// für jedes Textfeld eine Rolle vor und sagt, welche festen Werte dabei abgegeben
+// würden – gespeichert wird hier nichts, das Ergebnis landet im Rückgängig-Stapel.
+$('#btn-rollen').addEventListener('click', async () => {
+  let d;
+  try { d = await api('POST', `/api/studio/${TID}/rollen-vorschlag`, {config: S.config}); }
+  catch (e) { toast('Vorschlag fehlgeschlagen: ' + e.message, 'error'); return; }
+  const v = (d && d.vorschlaege) || [];
+  const neue = v.filter(x => x.rolle && x.aendert && x.aendert.length);
+  const offen = v.filter(x => !x.rolle);
+  if (!neue.length) {
+    toast(offen.length
+      ? `Keine Rolle erkennbar (${offen.length} Felder) – Rollen lassen sich in der Leiste rechts von Hand setzen.`
+      : 'Alle Textfelder haben schon eine Rolle.', 'info');
+    return;
+  }
+  const zeilen = neue.map(x => `${x.element_id} → ${rollenName(x.rolle)} (${x.grund})`
+    + `\n    gibt ab: ${x.aendert.join(', ')}`).join('\n');
+  if (!confirm(`${neue.length} Textfelder bekommen eine Rolle:\n\n${zeilen}\n\n`
+      + 'Die genannten festen Werte werden entfernt – sonst schlügen sie die Rolle weiter '
+      + 'und die Vorlage sähe in jeder Stadt gleich aus.\n\nÜbernehmen?')) return;
+  snapshot();
+  for (const el of els()) {
+    const treffer = neue.find(x => x.element_id === (el.id || ''));
+    if (!treffer) continue;
+    el.role = treffer.rolle;
+    for (const feld of treffer.aendert) delete el[feld];
+  }
+  afterStructuralChange();
+  commit();
+  toast(`${neue.length} Rollen gesetzt – Farben und Schriften kommen jetzt aus dem Stil `
+        + 'der Stadt. Zum Festschreiben noch speichern.', 'success');
+});
 
 function duplicateElements(ids) {
   const list = ids.map(byId).filter(Boolean);

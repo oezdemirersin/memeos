@@ -1970,6 +1970,142 @@ def api_stil_stadt_paket(city_id):
     return jsonify(antwort)
 
 
+# ── Rollen für eine Bestandsvorlage vorschlagen ───────────────────────────────
+# Eine Vorlage mit festen Farben sieht in jeder Stadt gleich aus – das ist der Grund,
+# warum die Prüfung sie mit „alle Städte gleich" meldet. Rollen lösen das: sie holen
+# Schrift, Farbe, Kasten und Kontur aus dem Stil der jeweiligen Stadt. Dieses Stück
+# schlägt für jedes Textelement eine Rolle vor und sagt, warum.
+
+# Felder, die eine Rolle liefern kann. Wer eine Rolle übernimmt, gibt diese Werte ab –
+# sonst schlüge der feste Wert die Rolle weiterhin und nichts würde sich ändern.
+_ROLLE_UEBERNIMMT = ('font', 'color', 'max_size', 'min_size', 'uppercase',
+                     'box', 'stroke', 'stroke_width', 'shadow', 'opacity')
+
+
+def _rolle_vorschlagen(el, canvas, alle_text):
+    """(Rolle, Begründung) für ein Textelement – oder (None, Grund) wenn unklar.
+
+    Geraten wird aus der Gestalt, nicht aus dem Namen: Größe, Lage, Farbe und Kontur
+    sagen zuverlässiger, wofür eine Zeile da ist, als eine Variablenbezeichnung."""
+    breite, hoehe = canvas
+    var = str(el.get('var') or '').strip().lower()
+    text = str(el.get('text') or '')
+    if var in ('city_name', 'stadt', 'stadtname'):
+        return 'ort', 'zeigt den Stadtnamen'
+    if var in ('city_handle', 'handle', 'instagram'):
+        return 'wasserzeichen', 'zeigt den Seitennamen'
+
+    try:
+        x0, y0, x1, y1 = R._el_box(el, canvas)
+    except Exception:                                # pragma: no cover – defensiv
+        return None, 'Geometrie nicht lesbar'
+    mitte_y = (y0 + y1) / 2 / max(1, hoehe)
+    anteil = R._num(el.get('max_size'), 0) / max(1, hoehe)
+
+    # Sehr klein und am Rand: Wasserzeichen.
+    if anteil and anteil <= 0.030 and (mitte_y > 0.86 or mitte_y < 0.10) \
+            and (x1 - x0) / max(1, breite) < 0.6:
+        return 'wasserzeichen', 'klein und am Rand'
+    if anteil and anteil <= 0.030:
+        return 'klein', 'sehr kleine Schrift'
+
+    farbe = str(el.get('color') or '')
+    kontur = el.get('stroke')
+    hat_kasten = isinstance(el.get('box'), dict) and el['box'].get('fill')
+    hell = bool(farbe) and not R._is_gradient(farbe) and R.leuchtdichte(farbe) > 0.55
+
+    # Hell mit Kontur, ohne Kasten: die klassische Meme-Zeile.
+    if hell and kontur and not hat_kasten:
+        return 'memezeile', 'helle Schrift mit Kontur, kein Kasten'
+    # Im Kasten: die Überschrift, die den Beitrag ansagt.
+    if hat_kasten:
+        return 'ueberschrift', 'steht in einem Textkasten'
+    # Groß und unten: die Pointe.
+    if anteil >= 0.055 and mitte_y >= 0.55:
+        return 'pointe', 'große Schrift in der unteren Hälfte'
+    if anteil >= 0.055:
+        return 'ueberschrift', 'größte Schrift der Vorlage'
+    if len(text) > 40 or anteil <= 0.045:
+        return 'unterzeile', 'kleinere Schrift, erklärender Umfang'
+    return None, 'keine Gestalt, die eindeutig auf eine Rolle zeigt'
+
+
+@bp.route('/api/studio/<int:template_id>/rollen-vorschlag', methods=['POST'])
+@studio_login_required
+def api_studio_rollen_vorschlag(template_id):
+    """Rollen für die Textelemente einer Vorlage vorschlagen.
+
+    Rumpf (alles optional):
+      config     die zu betrachtende Config (Vorgabe: die gespeicherte)
+      speichern  true übernimmt die Vorschläge; ohne das passiert nichts
+
+    Übernehmen heißt: die Rolle wird gesetzt UND die festen Werte, die sie liefern kann,
+    werden entfernt. Sonst schlüge der feste Wert die Rolle weiterhin – die Vorlage sähe
+    in jeder Stadt weiter gleich aus, obwohl überall eine Rolle danebenstünde.
+    """
+    t = MemeTemplate.query.get_or_404(template_id)
+    d, fehler = _rumpf(request)
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+    speichern, fehler = _ja_nein(d, 'speichern')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+
+    config = _config_from_payload(d, t)
+    if config is None:
+        return jsonify({'ok': False, 'error': 'config muss ein Objekt sein'}), 400
+    elemente = [el for el in (config.get('elements') or []) if isinstance(el, dict)]
+    bg = _bg_path(t)
+    canvas_dict = _canvas_for(config, _image_size(bg) if bg else None)
+    canvas = (int(canvas_dict['width']), int(canvas_dict['height']))
+    text_elemente = [el for el in elemente if str(el.get('type') or 'text') == 'text']
+
+    vorschlaege = []
+    neue_elemente = [dict(el) for el in elemente]
+    for i, el in enumerate(neue_elemente):
+        if str(el.get('type') or 'text') != 'text':
+            continue
+        el_id = _pruef_element_id(el, i + 1)
+        if str(el.get('role') or '').strip():
+            vorschlaege.append({'element_id': el_id, 'rolle': el['role'],
+                                'grund': 'hat schon eine Rolle', 'aendert': []})
+            continue
+        rolle, grund = _rolle_vorschlagen(el, canvas, text_elemente)
+        if not rolle:
+            vorschlaege.append({'element_id': el_id, 'rolle': None,
+                                'grund': grund, 'aendert': []})
+            continue
+        abgegeben = [k for k in _ROLLE_UEBERNIMMT if el.get(k) not in (None, '')]
+        vorschlaege.append({'element_id': el_id, 'rolle': rolle, 'grund': grund,
+                            'aendert': abgegeben})
+        if speichern:
+            el['role'] = rolle
+            for k in abgegeben:
+                el.pop(k, None)
+
+    gesetzt = [v for v in vorschlaege if v['rolle'] and v['aendert'] is not None]
+    if not speichern:
+        return jsonify({'ok': True, 'gespeichert': False, 'vorschlaege': vorschlaege})
+
+    config = dict(config)
+    config['elements'] = neue_elemente
+    probleme = R.validate_config(config)
+    if probleme:
+        return jsonify({'ok': False, 'error': 'Vorschlag ergibt keine gültige Vorlage: '
+                                              + probleme[0]}), 400
+    t.pil_config = json.dumps(config, ensure_ascii=False)
+    t.required_vars = json.dumps(_required_vars(config), ensure_ascii=False)
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        log.warning('Studio: Rollen für Vorlage %s nicht speicherbar: %s', template_id, ex)
+        return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+    log.info('Studio: Vorlage %s auf %s Rollen umgestellt', template_id, len(gesetzt))
+    return jsonify({'ok': True, 'gespeichert': True, 'vorschlaege': vorschlaege,
+                    'config': config})
+
+
 # ── Handschrift aus der Markenfarbe ableiten ──────────────────────────────────
 # Eine Stadtseite hat fast immer schon eine Farbe. Aus ihr den Rest zu rechnen ist bei
 # hundert Städten der Unterschied zwischen einem Knopf und einem Nachmittag.
@@ -2197,7 +2333,11 @@ def api_stil_ableiten_alle():
         try:
             with db.session.no_autoflush:
                 for c, werte in plan:
-                    zeile = _stil_zeile_sichern(c, _stil_zeile(c.id))
+                    # Die Zeilen stehen schon in `zeilen` – eine erneute Abfrage je Stadt
+                    # wären bei hundert Städten hundert überflüssige Abfragen, und jede
+                    # davon könnte (innerhalb von no_autoflush zwar nicht, aber bei jeder
+                    # späteren Änderung hier) einen Flush auslösen.
+                    zeile = _stil_zeile_sichern(c, zeilen.get(c.id))
                     if zeile is None:                # pragma: no cover – defensiv
                         raise RuntimeError(f'Stil-Zeile für {c.name} nicht anlegbar')
                     _handschrift_auf_zeile(zeile, werte)
