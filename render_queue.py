@@ -51,6 +51,9 @@ BETWEEN_TASKS_SLEEP = 0.5       # Pause je Worker zwischen zwei Tasks
 RUN_ONCE_LIMIT = 5              # Tasks pro /api/render/run-once
 STALE_CHECK_SECONDS = 60        # höchstens einmal pro Minute nach verwaisten Tasks sehen
 CLEANUP_INTERVAL_SECONDS = 24 * 3600    # Rotation verwaister Render-Dateien: einmal täglich
+# Endungen, die das Aufräumen überhaupt anfassen darf – alles andere hat jemand anders
+# dort abgelegt und ist nicht unseres.
+RENDER_SUFFIXE = ('.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov', '.gif')
 ORPHAN_MAX_AGE_DAYS = 14        # so alt muss eine unreferenzierte Datei sein, bevor sie geht
 
 KEEP_LOCAL_SETTING = 'render_keep_local'   # '1' (Standard) = PNG bleibt auch nach Cloudinary liegen
@@ -710,8 +713,13 @@ def _referenced_render_files():
         if name:
             used.add(name)
 
-    for image_path, carousel in db.session.query(MemePost.image_path, MemePost.carousel_paths).all():
+    # image_url MUSS mitgelesen werden: POST /api/vorrat legt Beiträge an, bei denen nur
+    # image_url gefüllt ist. Zählte hier allein image_path, wäre deren Bild nach
+    # ORPHAN_MAX_AGE_DAYS weg – und der Beitrag im Vorrat bildlos.
+    for image_path, image_url, carousel in db.session.query(
+            MemePost.image_path, MemePost.image_url, MemePost.carousel_paths).all():
         add(image_path)
+        add(image_url)
         if carousel:
             # Unlesbare carousel_paths brechen den ganzen Lauf ab (siehe cleanup_orphan_renders)
             names = json.loads(carousel)
@@ -745,6 +753,10 @@ def cleanup_orphan_renders(max_age_days=ORPHAN_MAX_AGE_DAYS, dry_run=False):
         return []
     for name in names:
         if name in used:
+            continue
+        # Nur eigene Erzeugnisse anfassen. '.gitkeep' haelt den Ordner im Repository, und
+        # was sonst noch jemand hier ablegt, gehoert nicht dieser Routine.
+        if name.startswith('.') or os.path.splitext(name)[1].lower() not in RENDER_SUFFIXE:
             continue
         path = os.path.join(folder, name)
         try:
