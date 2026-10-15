@@ -147,10 +147,14 @@ def main():
                 if not vorhanden:
                     was.append(f'Verein „{verein}"')
                     if args.echt:
+                        # source MUSS einer der Werte sein, nach denen das Dashboard
+                        # filtert ('verified'/'manual'/'resident', app.py:5087) – ein
+                        # eigener Wert wie 'citybot' macht den Eintrag dort unsichtbar.
+                        # Die Herkunft gehört nicht in description: das Feld beschreibt den
+                        # Eintrag selbst und wird so der KI vorgelegt.
                         db.session.add(CityKnowledge(
                             city_id=s.id, category='sport', name=verein,
-                            description='Fußballverein der Stadt (übernommen aus CityBot)',
-                            confidence=90, source='citybot', active=True))
+                            description=None, confidence=90, source='manual', active=True))
             if marke and not args.ohne_handschrift:
                 werte = HS.handschrift(marke, logo, verteilung.get(s.id, 0))
                 if werte:

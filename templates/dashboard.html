@@ -849,13 +849,14 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
             <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                 <button class="btn btn-ghost btn-sm" onclick="stilAbleitenStadt()"
-                        title="Zweitfarbe, Dunkel-, Hellton und Pointe aus der Hauptfarbe rechnen">
-                  Aus der Markenfarbe ableiten
+                        title="Ersetzt die ganze Handschrift dieser Stadt – Farben UND Schriftpaar, Kasten und Kontur">
+                  Handschrift neu ableiten
                 </button>
                 <div style="font-size:11px;color:var(--muted);flex:1;min-width:180px;line-height:1.5;">
-                  Nimmt die Hauptfarbe dieser Stadt und rechnet den Rest dazu: Zweitfarbe,
-                  Dunkel- und Hellton, dazu eine Pointe im Gegenton. Die Hauptfarbe selbst
-                  bleibt, wie sie ist.
+                  Nimmt die Hauptfarbe dieser Stadt und rechnet daraus die
+                  <strong>ganze Handschrift</strong> neu: Zweitfarbe, Dunkel- und Hellton,
+                  Pointe im Gegenton – und dazu Schriftpaar, Schreibweise, Kasten und Kontur.
+                  Nur die Hauptfarbe selbst bleibt. Eine Paketzuordnung geht dabei verloren.
                 </div>
               </div>
             </div>
@@ -4665,16 +4666,38 @@ async function stilAbleitenAlle() {
   const anzahl = (plan.staedte || []).length;
   if (!anzahl) {
     zurueck();
-    const grund = (plan.ohne_markenfarbe || []).length
-      ? `Keine Stadt hat eine eigene Markenfarbe (${(plan.ohne_markenfarbe || []).length} stehen auf der Vorgabe).`
-      : 'Nichts zu tun.';
+    // Zwei ganz verschiedene Gründe, warum nichts zu tun ist – sie zu verwechseln
+    // hiesse dem Nutzer zu sagen, keine Stadt habe eine Markenfarbe, obwohl gerade die
+    // Städte MIT Markenfarbe übersprungen wurden.
+    const ohneN = (plan.ohne_markenfarbe || []).length;
+    const uebN = (plan.uebersprungen || []).length;
+    let grund;
+    if (uebN && ohneN) {
+      grund = `Nichts zu tun: ${uebN} Städte haben schon eine eigene Handschrift `
+            + `(Haken „Nur Städte ohne eigenen Stil" entfernen, um sie neu zu rechnen), `
+            + `${ohneN} weitere stehen noch auf der Vorgabefarbe.`;
+    } else if (uebN) {
+      grund = `Nichts zu tun: alle ${uebN} Städte haben schon eine eigene Handschrift. `
+            + `Haken „Nur Städte ohne eigenen Stil" entfernen, um sie neu zu rechnen.`;
+    } else if (ohneN) {
+      grund = `Keine Stadt hat eine eigene Markenfarbe – alle ${ohneN} stehen auf der `
+            + `Vorgabe. Trag erst eine Farbe ein.`;
+    } else {
+      grund = 'Nichts zu tun: keine Städte vorhanden.';
+    }
     if (bericht) bericht.textContent = grund;
     toast(grund, 'info');
     return;
   }
   const ohne = (plan.ohne_markenfarbe || []);
-  const frage = `${anzahl} Städte bekommen eine Handschrift aus ihrer Markenfarbe.`
+  const mitHinweis = (plan.staedte || []).filter(s => (s.hinweise || []).length);
+  const frage = `${anzahl} Städte bekommen eine neu gerechnete Handschrift `
+    + `(Farben, Schriftpaar, Kasten und Kontur).`
     + (ohne.length ? `\n\nOhne eigene Markenfarbe und darum unberührt: ${ohne.join(', ')}.` : '')
+    + (mitHinweis.length
+        ? `\n\nBei ${mitHinweis.length} Städten passt nicht alles zusammen:\n– `
+          + mitHinweis.slice(0, 4).map(s => `${s.city}: ${s.hinweise[0]}`).join('\n– ')
+        : '')
     + (plan.hinweis ? `\n\n${plan.hinweis}` : '')
     + '\n\nJetzt übernehmen?';
   if (!confirm(frage)) { zurueck(); if (bericht) bericht.textContent = 'abgebrochen'; return; }
@@ -4693,12 +4716,25 @@ async function stilAbleitenAlle() {
 }
 
 // Einzelne Stadt – sitzt neben der Paketauswahl im Stadt-Bereich.
+// Erst rechnen lassen und zeigen, was herauskäme, dann fragen, dann schreiben: der Aufruf
+// ersetzt die GANZE Handschrift, nicht nur die Farben.
 async function stilAbleitenStadt() {
-  if (!_stilCityId) return;
-  const r = await _stilRuf('POST', '/api/stil/stadt/' + encodeURIComponent(_stilCityId) + '/ableiten',
-                           {speichern: true});
-  if (!r || r.error) { toast((r && r.error) || 'Fehlgeschlagen', 'error'); return; }
-  toast(`Handschrift von ${_stilCityName || 'der Stadt'} aus der Markenfarbe abgeleitet`, 'success');
+  if (!_stilCityId) { toast('Erst eine Stadt auswählen', 'info'); return; }
+  const weg = '/api/stil/stadt/' + encodeURIComponent(_stilCityId) + '/ableiten';
+  const plan = await _stilRuf('POST', weg, {});
+  if (!plan || plan.error) { toast((plan && plan.error) || 'Fehlgeschlagen', 'error'); return; }
+  const st = plan.stil || {};
+  const hinweise = plan.hinweise || [];
+  const frage = `${_stilCityName || 'Diese Stadt'} bekommt eine neu gerechnete Handschrift:`
+    + `\n\nSchrift: ${st.headline || '?'} / ${st.body || '?'}`
+    + `\nKasten: ${st.kasten || '?'} · Kontur: ${st.kontur || '?'}`
+    + `\nFarben: ${st.primary || '?'} · ${st.secondary || '?'} · ${st.accent || '?'}`
+    + (hinweise.length ? `\n\nAchtung:\n– ${hinweise.join('\n– ')}` : '')
+    + '\n\nÜbernehmen?';
+  if (!confirm(frage)) return;
+  const r = await _stilRuf('POST', weg, {speichern: true});
+  if (!r || r.error) { toast((r && r.error) || 'Nicht gespeichert', 'error'); return; }
+  toast(`Handschrift von ${_stilCityName || 'der Stadt'} neu abgeleitet`, 'success');
   await stilStadtLaden(_stilCityId, _stilCityName);
   await stilUebersichtNeuLaden();
 }

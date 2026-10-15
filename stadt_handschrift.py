@@ -28,6 +28,12 @@ from math import radians, sin, cos, asin, sqrt
 # mit der dunklen Kontur, die ihre Rolle ihr mitgibt, und wird zum Klumpen.
 POINTE_MIN_KONTRAST = 2.8
 
+# Der dunkle Grund muss helle Schrift tragen – darunter ist er als Leinwand unbrauchbar.
+GRUND_MIN_KONTRAST = 7.0
+# So weit soll sich die Markenfarbe mindestens vom dunklen Grund abheben. Bei sehr dunklen
+# Marken ist das nicht erreichbar; pruefe_palette() meldet es dann, statt es zu verschweigen.
+MARKE_AUF_GRUND_MIN = 3.0
+
 # Schriftpaar + Anmutung. Jede Zeile ist ein eigener Auftritt; mehr Schriften in der
 # Bibliothek heißt, dass hier mehr Zeilen möglich werden (siehe schriftpaare_moeglich).
 ANMUTUNGEN = [
@@ -137,17 +143,18 @@ def kontrast(a, b):
 
 
 def _farbe_gueltig(wert):
+    """'#rgb' oder '#rrggbb' mit lauter Hexziffern – und sonst nichts.
+
+    int(rest, 16) allein genügt nicht: es schluckt Vorzeichen und Unterstriche, sodass
+    '#-1_abc' als gültig durchginge und hex_rgb daraus Schwarz machte. Geprüft wird darum
+    Zeichen für Zeichen."""
     h = str(wert or '').strip()
     if not h.startswith('#'):
         return False
     rest = h[1:]
     if len(rest) not in (3, 6):
         return False
-    try:
-        int(rest, 16)
-        return True
-    except ValueError:
-        return False
+    return all(c in '0123456789abcdefABCDEF' for c in rest)
 
 
 def palette(marke, logo=None):
@@ -161,46 +168,112 @@ def palette(marke, logo=None):
     ob er ein fertiges Paket nimmt oder nichts tut."""
     if not _farbe_gueltig(marke):
         return {}
-    primary = str(marke).strip()
+    primary = str(marke).strip().lower()
     h_m, l_m, s_m = _hls(primary)
 
+    # Eine unbunte Marke (Grau, Schwarz, Weiß) HAT keinen Farbton. colorsys liefert dafür
+    # h=0.0 – das ist Rot, aber es ist keine Aussage, sondern das Fehlen einer. Wer hier
+    # Sättigung erzwingt, erfindet der Stadt einen Rotstich, den ihr Logo nie hatte.
+    unbunt = s_m < 0.08
+
     if _farbe_gueltig(logo):
-        secondary = str(logo).strip()
+        secondary = str(logo).strip().lower()
+    elif unbunt:
+        # Neutral bleibt neutral, nur tiefer. Ohne feste Untergrenze: sonst bekämen zwei
+        # Städte mit verschieden dunklen Logos dieselbe Zweitfarbe.
+        secondary = _aus_hls(0.0, max(0.04, l_m * 0.55), 0.0)
     else:
         # Keine zweite Markenfarbe: dieselbe Farbe, deutlich tiefer und etwas satter.
         secondary = _aus_hls(h_m, max(0.16, l_m * 0.45), min(0.95, s_m + 0.12))
     h_s, l_s, s_s = _hls(secondary)
+    unbunt_s = s_s < 0.08
 
-    # 'dark' trägt helle Schrift und steht als Leinwandgrund. Tief genug für Kontrast,
-    # aber im Farbton der Marke – sonst sieht jede Stadt nach Standard-Schwarz aus.
-    dark = _aus_hls(h_s, 0.055, min(0.62, max(0.25, s_s)))
+    # 'light' ist fast weiß mit einem Hauch der Marke – bei einer unbunten Marke ohne Hauch.
+    light = _aus_hls(h_m, 0.965, 0.0 if unbunt else min(0.45, max(0.12, s_m)))
 
-    # 'light' ist fast weiß mit einem Hauch der Marke.
-    light = _aus_hls(h_m, 0.965, min(0.45, max(0.12, s_m)))
+    # 'dark' muss zweierlei zugleich: helle Schrift tragen (gegen 'light') UND die
+    # Markenfarbe sichtbar lassen (gegen 'primary'), denn Muster wie 'liste' setzen
+    # stil:primary direkt auf diesen Grund. Bei einer sehr dunklen Marke geht beides nicht
+    # zusammen – dann gewinnt die Lesbarkeit, und pruefe_palette() sagt es offen.
+    sat_d = 0.0 if unbunt_s else min(0.62, max(0.25, s_s))
+    dark, bester_wert = None, -1.0
+    for l in (0.055, 0.07, 0.09, 0.11, 0.135, 0.16, 0.19, 0.22, 0.26, 0.30):
+        kandidat = _aus_hls(h_s, l, sat_d)
+        if kontrast(light, kandidat) < GRUND_MIN_KONTRAST:
+            break                       # ab hier trägt der Grund keine helle Schrift mehr
+        wert = min(kontrast(primary, kandidat), MARKE_AUF_GRUND_MIN)
+        if wert > bester_wert:
+            dark, bester_wert = kandidat, wert
+    if dark is None:                    # 'light' ist selbst dunkel (sehr dunkle Marke)
+        dark = _aus_hls(h_s, 0.055, sat_d)
 
     # Die Pointe steht in 'accent' und bekommt von ihrer Rolle eine dunkle Kontur mit –
     # gegen den Untergrund trägt also die Kontur, nicht die Farbe. Die Farbe selbst muss
     # knallen: in den eingebauten Paketen ist die Pointe immer eine kräftige Farbe auf
     # ÄHNLICHER Helligkeit wie die Hauptfarbe, nur im Gegenton (boulevard #ffd400/#e11d48,
     # sonne #f59e0b/#0ea5e9). Genau so wird sie hier gebaut, nicht kontrastoptimiert.
-    sat = max(0.72, min(0.95, s_m + 0.08))
-    hell = max(0.42, min(0.60, l_m))
-    accent, bester_abstand = None, -1.0
-    for versatz in (0.50, 0.46, 0.54, 0.42, 0.58):
-        kandidat = _aus_hls(h_m + versatz, hell, sat)
-        if kontrast(kandidat, dark) < POINTE_MIN_KONTRAST:
-            continue
-        h_k = _hls(kandidat)[0]
-        abstand = abs(((h_k - h_m) + 0.5) % 1.0 - 0.5)
-        if abstand > bester_abstand:
-            accent, bester_abstand = kandidat, abstand
-    if accent is None:
-        # Dunkle Markenfarbe: der Gegenton muss eine Stufe heller werden, sonst
-        # verschwindet er im dunklen Grund.
-        accent = _aus_hls(h_m + 0.5, min(0.68, hell + 0.18), sat)
+    #
+    # Eine unbunte Marke hat keinen Gegenton. Statt einen zu erfinden, wird die Pointe die
+    # hellste bzw. dunkelste neutrale Stufe – auffällig durch Helligkeit, nicht durch Farbe.
+    if unbunt:
+        accent = _aus_hls(0.0, 0.93 if l_m < 0.5 else 0.12, 0.0)
+    else:
+        sat = max(0.72, min(0.95, s_m + 0.08))
+        hell = max(0.42, min(0.60, l_m))
+        accent, bester_abstand = None, -1.0
+        for versatz in (0.50, 0.46, 0.54, 0.42, 0.58):
+            kandidat = _aus_hls(h_m + versatz, hell, sat)
+            if kontrast(kandidat, dark) < POINTE_MIN_KONTRAST:
+                continue
+            h_k = _hls(kandidat)[0]
+            abstand = abs(((h_k - h_m) + 0.5) % 1.0 - 0.5)
+            if abstand > bester_abstand:
+                accent, bester_abstand = kandidat, abstand
+        if accent is None:
+            # Dunkle Markenfarbe: der Gegenton muss heller werden, sonst verschwindet er
+            # im dunklen Grund. Schrittweise aufhellen, bis er trägt.
+            for l in (0.62, 0.68, 0.74, 0.80, 0.86):
+                kandidat = _aus_hls(h_m + 0.5, l, sat)
+                if kontrast(kandidat, dark) >= POINTE_MIN_KONTRAST:
+                    accent = kandidat
+                    break
+            else:                        # auch das reicht nicht: heller Gegenpol
+                accent = _aus_hls(h_m + 0.5, 0.88, sat)
 
     return {'primary': primary, 'secondary': secondary,
             'accent': accent, 'dark': dark, 'light': light}
+
+
+def pruefe_palette(p):
+    """Was diese Palette NICHT leisten kann – als Liste deutscher Sätze, leer heißt: alles gut.
+
+    Ehrlichkeit statt stiller Kompromisse: bei sehr dunklen oder sehr blassen Markenfarben
+    lässt sich nicht jede Zusicherung einhalten. Dann soll es dastehen, statt dass sich
+    jemand wundert, warum die Markenfarbe im fertigen Bild nicht zu sehen ist."""
+    if not p:
+        return ['Keine lesbare Markenfarbe.']
+    sagen = []
+    k_marke = kontrast(p['primary'], p['dark'])
+    if k_marke < MARKE_AUF_GRUND_MIN:
+        sagen.append(
+            f"Die Markenfarbe {p['primary']} hebt sich vom dunklen Grund {p['dark']} nur "
+            f"{k_marke:.1f} zu 1 ab. Flächen in der Markenfarbe auf diesem Grund – etwa die "
+            f"Aufzählungspunkte im Muster „Dreier-Liste\u201c – sind dort kaum zu sehen. "
+            f"Eine hellere Markenfarbe würde das lösen.")
+    k_text = kontrast(p['light'], p['dark'])
+    if k_text < GRUND_MIN_KONTRAST:
+        sagen.append(
+            f"Heller Text trägt auf dem dunklen Grund nur {k_text:.1f} zu 1 – zu wenig.")
+    k_pointe = kontrast(p['accent'], p['dark'])
+    if k_pointe < POINTE_MIN_KONTRAST:
+        sagen.append(
+            f"Die Pointe {p['accent']} verschmilzt mit ihrer eigenen dunklen Kontur "
+            f"({k_pointe:.1f} zu 1).")
+    if _hls(p['primary'])[2] < 0.08:
+        sagen.append(
+            'Die Markenfarbe ist unbunt. Die Pointe bekommt deshalb keinen Gegenton, '
+            'sondern fällt über die Helligkeit auf.')
+    return sagen
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

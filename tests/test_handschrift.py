@@ -47,8 +47,17 @@ class TestFarbe(unittest.TestCase):
 class TestPalette(unittest.TestCase):
 
     def test_markenfarbe_bleibt_unangetastet(self):
+        # Gleiche Farbe, nur in Kleinschreibung – das Modul sichert Normalisierung zu.
         for marke, logo in MARKEN:
-            self.assertEqual(H.palette(marke, logo)['primary'], marke)
+            self.assertEqual(H.palette(marke, logo)['primary'], marke.lower())
+            self.assertEqual(H.hex_rgb(H.palette(marke, logo)['primary']),
+                             H.hex_rgb(marke))
+
+    def test_schreibweise_wird_vereinheitlicht(self):
+        # '#FFD700' und '#ffd700' sind dieselbe Farbe und müssen dieselbe Palette ergeben,
+        # sonst sehen zwei Städte verschieden aus, weil jemand Großbuchstaben getippt hat.
+        self.assertEqual(H.palette('#FFD700'), H.palette('#ffd700'))
+        self.assertEqual(H.palette('  #FFD700  ')['primary'], '#ffd700')
 
     def test_fuenf_gueltige_farben(self):
         for marke, logo in MARKEN:
@@ -67,12 +76,68 @@ class TestPalette(unittest.TestCase):
                 # Die Hauptfarbe muss als Ortszeile auf dem dunklen Grund lesbar sein.
                 self.assertGreater(H.kontrast(p['primary'], p['dark']), 4.5)
 
+    def test_der_dunkle_grund_traegt_IMMER_helle_schrift(self):
+        """Das ist die eine Zusicherung, die über den ganzen Farbkreis halten muss – auch
+        für Marken, die niemand vorhergesehen hat. Feste Zahl 7,0, nicht die Konstante des
+        geprüften Moduls."""
+        schlimmste = (99.0, None)
+        for i in range(36):
+            for hell in (0.10, 0.25, 0.45, 0.65, 0.85):
+                for sat in (0.0, 0.3, 0.6, 0.95):
+                    marke = H._aus_hls(i / 36, hell, sat)
+                    p = H.palette(marke)
+                    k = H.kontrast(p['light'], p['dark'])
+                    if k < schlimmste[0]:
+                        schlimmste = (k, marke)
+        self.assertGreaterEqual(schlimmste[0], 7.0,
+                                f'Marke {schlimmste[1]} ergibt nur {schlimmste[0]:.2f}:1 '
+                                f'zwischen hellem Text und dunklem Grund')
+
+    def test_unbunte_marke_bekommt_keinen_erfundenen_farbton(self):
+        """Grau, Schwarz und Weiß HABEN keinen Farbton. colorsys liefert dafür 0.0 – das
+        ist Rot, aber es ist keine Aussage. Wer daraus Sättigung erzeugt, erfindet der
+        Stadt einen Rotstich, den ihr Logo nie hatte."""
+        for marke in ('#000000', '#1a1a1a', '#303030', '#808080', '#c0c0c0', '#ffffff'):
+            p = H.palette(marke)
+            with self.subTest(marke=marke):
+                for key in ('secondary', 'dark', 'light', 'accent'):
+                    r, g, b = H.hex_rgb(p[key])
+                    self.assertEqual((r, g), (g, b) and (r, g),
+                                     f'{key}={p[key]} ist nicht neutral')
+                    self.assertTrue(r == g == b, f'{key}={p[key]} hat einen Farbstich')
+
+    def test_unbunte_marken_bekommen_nicht_alle_dasselbe(self):
+        paletten = {tuple(sorted(H.palette(m).items()))
+                    for m in ('#000000', '#1a1a1a', '#303030', '#808080', '#c0c0c0')}
+        self.assertEqual(len(paletten), 5, 'zwei unbunte Marken ergeben dieselbe Palette')
+
+    def test_pruefe_palette_sagt_die_wahrheit(self):
+        # Eine helle Bestandsmarke hat nichts zu beanstanden …
+        self.assertEqual(H.pruefe_palette(H.palette('#3db8ff', '#1a4fcc')), [])
+        # … eine sehr dunkle schon: ihre Markenfarbe verschwindet auf dem eigenen Grund.
+        hinweise = H.pruefe_palette(H.palette('#101010'))
+        self.assertTrue(hinweise)
+        self.assertTrue(any('Markenfarbe' in h for h in hinweise), hinweise)
+        # Eine unbunte Marke bekommt den Hinweis zur Pointe.
+        self.assertTrue(any('unbunt' in h for h in H.pruefe_palette(H.palette('#808080'))))
+        self.assertEqual(H.pruefe_palette({}), ['Keine lesbare Markenfarbe.'])
+
     def test_pointe_knallt_und_verschmilzt_nicht(self):
         for marke, logo in MARKEN:
             p = H.palette(marke, logo)
             with self.subTest(marke=marke):
-                self.assertGreaterEqual(H.kontrast(p['accent'], p['dark']),
-                                        H.POINTE_MIN_KONTRAST)
+                # Feste Zahl, NICHT H.POINTE_MIN_KONTRAST: holte der Test seine Schwelle
+                # aus dem geprüften Modul, wanderte sie mit und könnte nie fehlschlagen.
+                self.assertGreaterEqual(H.kontrast(p['accent'], p['dark']), 2.8)
+                # Die Pointe muss auch knallen, nicht nur Kontrast haben.
+                sat = H._hls(p['accent'])[2]
+                self.assertGreater(sat, 0.65, f"Pointe {p['accent']} ist zu blass")
+                # Die Pointe folgt der Helligkeit der Marke (so sind auch die eingebauten
+                # Pakete gebaut) – eine feste Helligkeit wäre etwas anderes.
+                hell_a, hell_m = H._hls(p['accent'])[1], H._hls(p['primary'])[1]
+                erwartet = max(0.42, min(0.60, hell_m))
+                self.assertAlmostEqual(hell_a, erwartet, delta=0.03,
+                                       msg=f"Pointe {p['accent']} folgt der Marke nicht")
                 # deutlich anderer Farbton als die Hauptfarbe, sonst keine eigene Stimme
                 h_p, h_a = H._hls(p['primary'])[0], H._hls(p['accent'])[0]
                 abstand = abs(((h_a - h_p) + 0.5) % 1.0 - 0.5) * 360
@@ -82,7 +147,7 @@ class TestPalette(unittest.TestCase):
         for marke, _ in MARKEN:
             p = H.palette(marke)
             with self.subTest(marke=marke):
-                self.assertEqual(p['primary'], marke)
+                self.assertEqual(p['primary'], marke.lower())
                 self.assertGreater(H.kontrast(p['light'], p['dark']), 12.0)
 
     def test_unlesbare_farbe_gibt_nichts(self):
@@ -148,6 +213,63 @@ class TestVerteilung(unittest.TestCase):
                (7, 'Offenbach', 50.1055, 8.7611), (8, 'Hanau', 50.1328, 8.9166),
                (9, 'Kaiserslautern', 49.4401, 7.7491), (10, 'Braunschweig', 52.2689, 10.5268)]
 
+    def test_geometrie_entscheidet_wirklich(self):
+        """Der Kern des Ganzen: die Entfernung bestimmt die Zuteilung, nicht die Position
+        in der Liste.
+
+        Mit zehn Städten und zwanzig Anmutungen kommt schon durch das Reihum-Starten
+        0,1,2,…,9 heraus – ein Test mit so wenigen Städten bliebe auch dann grün, wenn man
+        die Nachbarschaftsrechnung ersatzlos entfernte. Hier stehen deshalb zwei weit
+        getrennte Haufen, deren Mitglieder in der Namensfolge ABWECHSELN: wer stur
+        durchnummeriert, gibt zwei Städten DESSELBEN Haufens dieselbe Nummer."""
+        n = len(H.ANMUTUNGEN)
+        # Namen S00…S(2n-1); gerade Nummern liegen im Haufen bei Frankfurt, ungerade
+        # bei Berlin. In der Namensfolge wechseln sich die Haufen also ab.
+        staedte = []
+        for i in range(2 * n):
+            if i % 2 == 0:
+                staedte.append((i, f'S{i:02d}', 50.11 + i * 0.001, 8.68))
+            else:
+                staedte.append((i, f'S{i:02d}', 52.52 + i * 0.001, 13.40))
+        koord = {s[0]: (s[2], s[3]) for s in staedte}
+
+        # Gegenprobe zuerst: stures Durchnummerieren MUSS hier scheitern, sonst beweist
+        # der eigentliche Test nichts.
+        naiv = {s[0]: i % n for i, s in enumerate(sorted(staedte, key=lambda s: s[1]))}
+        naiv_kollision = [(a[1], b[1]) for i, a in enumerate(staedte) for b in staedte[i + 1:]
+                          if naiv[a[0]] == naiv[b[0]]
+                          and H.entfernung_km(koord[a[0]], koord[b[0]]) <= H.NACHBAR_KM]
+        self.assertTrue(naiv_kollision,
+                        'Der Aufbau taugt nicht: schon stures Durchnummerieren wäre hier '
+                        'konfliktfrei, der Test könnte eine Funktion ohne Geometrie nicht '
+                        'von einer mit unterscheiden.')
+
+        # Und jetzt die echte Zuteilung: kein Nachbarpaar teilt sich eine Anmutung.
+        z = H.anmutungen_verteilen(staedte)
+        for i, a in enumerate(staedte):
+            for b in staedte[i + 1:]:
+                if H.entfernung_km(koord[a[0]], koord[b[0]]) > H.NACHBAR_KM:
+                    continue
+                with self.subTest(a=a[1], b=b[1]):
+                    self.assertNotEqual(z[a[0]], z[b[0]])
+
+        # In jedem Haufen stecken genau n Städte – also muss jede Anmutung genau einmal
+        # vorkommen.
+        for name, ids in (('Frankfurt', [s[0] for s in staedte if s[0] % 2 == 0]),
+                          ('Berlin', [s[0] for s in staedte if s[0] % 2 == 1])):
+            self.assertEqual(sorted(z[i] for i in ids), list(range(n)),
+                             f'Haufen {name} verteilt nicht jede Anmutung genau einmal')
+
+    def test_entfernung_schlaegt_die_reihenfolge(self):
+        """Zwei Städte am selben Ort müssen sich unterscheiden, zwei weit entfernte dürfen
+        gleich sein – auch wenn sie in der Liste direkt nebeneinanderstehen."""
+        n = len(H.ANMUTUNGEN)
+        eng = [(i, f'S{i:02d}', 50.0, 8.0) for i in range(n + 3)]
+        z = H.anmutungen_verteilen(eng)
+        # Alle am selben Ort: jede verfügbare Anmutung muss benutzt werden, bevor sich
+        # eine wiederholt.
+        self.assertEqual(len(set(z.values())), n)
+
     def test_nachbarn_sehen_verschieden_aus(self):
         z = H.anmutungen_verteilen(self.STAEDTE)
         koord = {s[0]: (s[2], s[3]) for s in self.STAEDTE}
@@ -207,6 +329,137 @@ class TestSchriftauskunft(unittest.TestCase):
         vorhanden = [f['key'] for f in R.list_fonts()]
         self.assertEqual(H.schriftpaare_moeglich(vorhanden), len(H.ANMUTUNGEN),
                          'eine Anmutung nennt eine Schrift, die es nicht gibt')
+
+
+class TestAbleitungsRouten(unittest.TestCase):
+    """Die beiden Endpunkte – vor allem ihre Ränder.
+
+    Sie hatten bis zur Gegenprüfung keinen einzigen Test; der Riegel gegen die
+    Vorgabefarbe, der verhindert, dass zehn Städte identisch werden, war ungedeckt."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.update({k: '' for k in (
+            'ANTHROPIC_API_KEY', 'CLOUDINARY_URL', 'CANVA_CLIENT_ID', 'CANVA_CLIENT_SECRET',
+            'CANVA_REFRESH_TOKEN', 'CONTENT_OS_URL', 'CONTENT_OS_KEY', 'RAPIDAPI_KEY',
+            'DEEPSEEK_API_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_TOKEN')})
+        os.environ.setdefault('MEMEOS_SCHEDULER', '0')
+        os.environ.setdefault('MEMEOS_WORKERS', '0')
+        os.environ.setdefault('MEMEOS_OFFLINE', '1')
+        os.environ.setdefault('DATABASE_URL', 'sqlite://')
+        import app as A
+        from models import db, City, CityStyle
+        uri = A.app.config['SQLALCHEMY_DATABASE_URI']
+        assert uri == 'sqlite://' or ':memory:' in uri, f'echte Datenbank: {uri}'
+        cls.A, cls.db, cls.City, cls.CityStyle = A, db, City, CityStyle
+        cls.ctx = A.app.app_context()
+        cls.ctx.push()
+        db.create_all()
+        A.app.config['TESTING'] = True
+        cls.c = A.app.test_client()
+        with cls.c.session_transaction() as s:
+            s['logged_in'] = True
+            s['csrf_token'] = 'tt'
+        cls.H = {'X-CSRF-Token': 'tt'}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.session.remove()
+        cls.ctx.pop()
+
+    def setUp(self):
+        self._meine = []
+
+    def tearDown(self):
+        for s in self._meine:
+            zeile = self.CityStyle.query.filter_by(city_id=s.id).first()
+            if zeile is not None:
+                self.db.session.delete(zeile)
+            self.db.session.delete(s)
+        self.db.session.commit()
+
+    def stadt(self, name, farbe='#3db8ff', **rest):
+        s = self.City(name=name, state='Hessen', accent_color=farbe, **rest)
+        self.db.session.add(s)
+        self.db.session.commit()
+        self._meine.append(s)
+        return s
+
+    def ableiten(self, s, **rumpf):
+        return self.c.post(f'/api/stil/stadt/{s.id}/ableiten', json=rumpf, headers=self.H)
+
+    # ── Der Riegel gegen die Vorgabefarbe ────────────────────────────────
+    def test_vorgabefarbe_gilt_nicht_als_marke(self):
+        s = self.stadt('Riegelstadt', farbe='#3b82f6')
+        r = self.ableiten(s)
+        self.assertEqual(r.status_code, 400, r.get_json())
+        self.assertIn('Vorgabe', (r.get_json() or {}).get('error', ''))
+
+    def test_vorgabefarbe_auch_in_grossbuchstaben_und_mit_leerzeichen(self):
+        for farbe in ('#3B82F6', '  #3b82f6 ', '#3b82F6'):
+            s = self.stadt(f'Riegel {farbe.strip()}', farbe=farbe)
+            with self.subTest(farbe=farbe):
+                self.assertEqual(self.ableiten(s).status_code, 400)
+
+    def test_vorgabefarbe_im_rumpf_gilt_trotzdem(self):
+        # Wer sie ausdrücklich schickt, meint sie.
+        s = self.stadt('Ausdruecklich', farbe='#3b82f6')
+        r = self.ableiten(s, marke='#3b82f6')
+        self.assertEqual(r.status_code, 200, r.get_json())
+
+    # ── Schalter ─────────────────────────────────────────────────────────
+    def test_speichern_als_zeichenkette_false_schreibt_nicht(self):
+        s = self.stadt('Schalterstadt', farbe='#ff0000')
+        for wert in ('false', 'nein', '0', 'aus', 'off', False):
+            with self.subTest(wert=wert):
+                r = self.ableiten(s, speichern=wert)
+                self.assertEqual(r.status_code, 200, r.get_json())
+                self.assertFalse((r.get_json() or {}).get('gespeichert'), wert)
+                self.assertIsNone(self.CityStyle.query.filter_by(city_id=s.id).first())
+
+    def test_speichern_als_zeichenkette_true_schreibt(self):
+        s = self.stadt('Schreibstadt', farbe='#ff0000')
+        r = self.ableiten(s, speichern='ja')
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertTrue((r.get_json() or {}).get('gespeichert'))
+        self.assertIsNotNone(self.CityStyle.query.filter_by(city_id=s.id).first())
+
+    def test_unsinniger_schalter_ergibt_400(self):
+        s = self.stadt('Unsinnstadt', farbe='#ff0000')
+        self.assertEqual(self.ableiten(s, speichern='vielleicht').status_code, 400)
+
+    # ── Ränder, die vorher 500 ergaben ───────────────────────────────────
+    def test_rumpf_der_kein_objekt_ist(self):
+        s = self.stadt('Rumpfstadt', farbe='#ff0000')
+        r = self.c.post(f'/api/stil/stadt/{s.id}/ableiten', json=[1, 2, 3], headers=self.H)
+        self.assertEqual(r.status_code, 400, r.data[:200])
+
+    def test_zahlen_sonderwerte(self):
+        s = self.stadt('Zahlenstadt', farbe='#ff0000')
+        for wert in (float('inf'), float('nan'), 'viel'):
+            with self.subTest(wert=wert):
+                self.assertEqual(self.ableiten(s, anmutung=wert).status_code, 400)
+        for wert in (float('nan'), float('inf'), 0, -5, 'viel'):
+            with self.subTest(radius=wert):
+                r = self.c.post('/api/stil/ableiten', json={'radius_km': wert}, headers=self.H)
+                self.assertEqual(r.status_code, 400, f'radius_km={wert}: {r.get_json()}')
+
+    # ── Paketfarbe ist keine Markenfarbe ─────────────────────────────────
+    def test_zweitfarbe_eines_pakets_wird_nicht_als_marke_gelesen(self):
+        s = self.stadt('Paketstadt', farbe='#ff0000')
+        zeile = self.CityStyle.aus_paket(s.id, 'boulevard')   # secondary #a88b00
+        self.db.session.add(zeile)
+        self.db.session.commit()
+        r = self.ableiten(s)
+        st = (r.get_json() or {}).get('stil', {})
+        # Aus der Marke allein gerechnet – NICHT mit dem Goldton des Pakets.
+        self.assertEqual(st, H.handschrift('#ff0000', None, (r.get_json() or {})['anmutung']))
+        self.assertNotEqual(st.get('secondary', '').lower(), '#a88b00')
+
+    def test_hinweise_kommen_mit(self):
+        s = self.stadt('Dunkelstadt', farbe='#101010')
+        js = self.ableiten(s).get_json() or {}
+        self.assertTrue(js.get('hinweise'), js)
 
 
 if __name__ == '__main__':

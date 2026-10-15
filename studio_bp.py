@@ -2006,6 +2006,35 @@ def _marke_gesetzt(wert):
     return str(wert or '').strip().lower() not in _MARKE_UNGESETZT
 
 
+def _rumpf(request_):
+    """JSON-Rumpf als Dict, oder (None, Fehlertext). Eine Liste oder eine Zahl als Rumpf
+    ergab bisher einen 500er, weil .get() darauf nicht existiert."""
+    d = request_.get_json(silent=True)
+    if d is None:
+        return {}, None
+    if not isinstance(d, dict):
+        return None, 'Der Rumpf muss ein JSON-Objekt sein'
+    return d, None
+
+
+def _ja_nein(d, feld, vorgabe=False):
+    """Schalter aus dem Rumpf lesen – mit derselben Lesart wie _stil_wert_pruefen.
+
+    Reine Wahrheitswertprüfung wäre falsch: 'false', 'nein' und '0' sind nichtleere
+    Zeichenketten und damit wahr. Wer `{"speichern": "false"}` schickt, meint Nein."""
+    if feld not in d or d[feld] in (None, ''):
+        return vorgabe, None
+    roh = d[feld]
+    if isinstance(roh, bool):
+        return roh, None
+    text = str(roh).strip().lower()
+    if text in ('1', 'true', 'ja', 'an', 'on'):
+        return True, None
+    if text in ('0', 'false', 'nein', 'aus', 'off'):
+        return False, None
+    return None, f'„{roh}“ ist für {feld} kein Ja/Nein'
+
+
 def _marke_der_stadt(city, d):
     """(Markenfarbe, Logofarbe) aus Rumpf oder Stadt. Rumpf schlägt die Stadt.
 
@@ -2020,8 +2049,13 @@ def _marke_der_stadt(city, d):
         zeile = _stil_zeile(city.id)
         # Die Zweitfarbe nur übernehmen, wenn sie wirklich gesetzt und nicht die
         # Vorgabe ist – sonst zementiert die Ableitung das Standardblau.
+        # Die Zweitfarbe NUR übernehmen, wenn sie wirklich eine zweite Markenfarbe ist.
+        # Steht die Stadt auf einem fertigen Paket, ist secondary ein gerechneter Paketwert
+        # (boulevard #a88b00, nacht #0e7490 …) und keine Marke – daraus den Dunkelton zu
+        # bauen gäbe der Stadt den Farbton ihres alten Pakets statt den ihrer Marke.
         vorgabe = str((R.STIL_STANDARD or {}).get('secondary') or '').lower()
-        if zeile is not None and (zeile.secondary or '').strip():
+        aus_paket = zeile is not None and str(zeile.paket or '').strip() != ''
+        if zeile is not None and not aus_paket and (zeile.secondary or '').strip():
             if (zeile.secondary or '').strip().lower() != vorgabe:
                 logo = zeile.secondary.strip()
     return marke, logo
@@ -2042,7 +2076,12 @@ def api_stil_stadt_ableiten(city_id):
     modell = _stil_modell()
     if modell is None:
         return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
-    d = request.get_json(silent=True) or {}
+    d, fehler = _rumpf(request)
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+    speichern, fehler = _ja_nein(d, 'speichern')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
     marke, logo = _marke_der_stadt(city, d)
     if not marke:
         return jsonify({'ok': False,
@@ -2056,17 +2095,21 @@ def api_stil_stadt_ableiten(city_id):
         verteilung = HS.anmutungen_verteilen([(c.id, c.name, c.lat, c.lon) for c in alle])
         anmutung = verteilung.get(city.id, 0)
     else:
+        # int(float('inf')) wirft OverflowError, int(float('nan')) ValueError – beides
+        # gehört in eine 400er-Antwort, nicht in einen 500er.
         try:
             anmutung = int(roh)
-        except (TypeError, ValueError):
-            return jsonify({'ok': False, 'error': 'anmutung muss eine Zahl sein'}), 400
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({'ok': False, 'error': 'anmutung muss eine ganze Zahl sein'}), 400
 
     werte = HS.handschrift(marke, logo, anmutung)
     if not werte:
         return jsonify({'ok': False, 'error': f'Keine lesbare Farbe: {marke!r}'}), 400
 
-    if not d.get('speichern'):
+    hinweise = HS.pruefe_palette(werte)
+    if not speichern:
         return jsonify({'ok': True, 'gespeichert': False, 'stil': werte,
+                        'hinweise': hinweise,
                         'anmutung': anmutung % len(HS.ANMUTUNGEN)})
 
     zeile = _stil_zeile_sichern(city, _stil_zeile(city_id))
@@ -2079,6 +2122,7 @@ def api_stil_stadt_ableiten(city_id):
         return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
     antwort = _stil_antwort(city, zeile)
     antwort.update({'ok': True, 'gespeichert': True, 'geaendert': sorted(geaendert),
+                    'hinweise': hinweise,
                     'anmutung': anmutung % len(HS.ANMUTUNGEN)})
     return jsonify(antwort)
 
@@ -2096,16 +2140,27 @@ def api_stil_ableiten_alle():
     modell = _stil_modell()
     if modell is None:
         return jsonify({'ok': False, 'error': 'Stadt-Stile gibt es in dieser Version nicht'}), 501
-    d = request.get_json(silent=True) or {}
+    d, fehler = _rumpf(request)
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
     radius = d.get('radius_km')
     try:
         radius = float(radius) if radius not in (None, '') else HS.NACHBAR_KM
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'radius_km muss eine Zahl sein'}), 400
+    # NaN besteht jeden Vergleich NICHT – 'nan > 0' ist falsch, aber auch 'nan <= 0'.
+    # Ohne die Prüfung auf Gleichheit mit sich selbst rutscht NaN durch und schaltet die
+    # Nachbarschaftsregel still ab (jeder Abstandsvergleich wird dann falsch).
+    if radius != radius or radius in (float('inf'), float('-inf')):
+        return jsonify({'ok': False, 'error': 'radius_km muss eine endliche Zahl sein'}), 400
     if radius <= 0:
         return jsonify({'ok': False, 'error': 'radius_km muss größer als 0 sein'}), 400
-    nur_ohne = bool(d.get('nur_ohne_stil'))
-    speichern = bool(d.get('speichern'))
+    nur_ohne, fehler = _ja_nein(d, 'nur_ohne_stil')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+    speichern, fehler = _ja_nein(d, 'speichern')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
 
     staedte = _cities()
     if not staedte:
@@ -2130,16 +2185,24 @@ def api_stil_ableiten_alle():
 
     geschrieben = []
     if speichern:
-        for c, werte in plan:
-            zeile = _stil_zeile_sichern(c, _stil_zeile(c.id))
-            _handschrift_auf_zeile(zeile, werte)
-            geschrieben.append(c.name)
+        # Alles oder nichts. Vorher löste jede Abfrage in der Schleife einen Autoflush aus;
+        # scheiterte einer (bei SQLite reicht ein zweiter Schreiber für „database is
+        # locked"), rollte _stil_zeile() still zurück und verwarf die Arbeit aller vorher
+        # behandelten Städte – die Antwort meldete trotzdem Erfolg für alle.
         try:
+            with db.session.no_autoflush:
+                for c, werte in plan:
+                    zeile = _stil_zeile_sichern(c, _stil_zeile(c.id))
+                    if zeile is None:                # pragma: no cover – defensiv
+                        raise RuntimeError(f'Stil-Zeile für {c.name} nicht anlegbar')
+                    _handschrift_auf_zeile(zeile, werte)
+                    geschrieben.append(c.name)
             db.session.commit()
         except Exception as ex:
             db.session.rollback()
             log.warning('Studio: Handschriften nicht speicherbar: %s', ex)
-            return jsonify({'ok': False, 'error': f'Nicht gespeichert: {ex}'}), 500
+            return jsonify({'ok': False, 'gespeichert': False,
+                            'error': f'Nicht gespeichert, nichts geändert: {ex}'}), 500
         log.info('Studio: %s Handschriften aus der Markenfarbe abgeleitet', len(geschrieben))
 
     schriften = [f.get('key') for f in _public_fonts()]
@@ -2148,7 +2211,8 @@ def api_stil_ableiten_alle():
         'gespeichert': speichern,
         'staedte': [{'city_id': c.id, 'city': c.name,
                      'anmutung': verteilung.get(c.id, 0),
-                     'stil': werte} for c, werte in plan],
+                     'stil': werte,
+                     'hinweise': HS.pruefe_palette(werte)} for c, werte in plan],
         'ohne_markenfarbe': ohne_marke,
         'uebersprungen': uebersprungen,
         'geschrieben': geschrieben,
