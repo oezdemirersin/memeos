@@ -100,6 +100,11 @@ def _zahl(name, vorgabe, obergrenze):
         return float(vorgabe)
     if wert < 0:
         return float(vorgabe)
+    # Ein Betrag unter einem Cent liest sich in jeder Anzeige als „0,00" und damit als
+    # „keine Grenze". Auf einen Cent anheben, statt ihn unsichtbar werden zu lassen.
+    if 0 < wert < 0.01 and obergrenze > 1:
+        log.warning('ki_bremse: %s=%s ist kleiner als ein Cent – es gilt 0,01', name, wert)
+        return 0.01
     return min(float(wert), float(obergrenze))
 
 

@@ -311,6 +311,32 @@ def _offline():
     return os.getenv('MEMEOS_OFFLINE', '') == '1'
 
 
+def nachholsperre_setzen():
+    """Beim allerersten Start so tun, als wären die heutigen Tagesjobs schon gelaufen.
+
+    Ohne das feuern nach einem Deploy am Nachmittag ALLE Tagesjobs sofort und gleichzeitig
+    los – gemessen: acht Jobs auf einmal, darunter die beiden, die KI kosten. Wer das
+    ausdrücklich will, drückt „Jetzt ausführen"."""
+    heute = now_berlin()
+    gesetzt = []
+    for job in JOBS:
+        key = job['key']
+        if key == 'poll' or not job.get('default_time'):
+            continue
+        if _get(f'sched_last_{key}'):
+            continue                      # schon einmal gelaufen: nichts anfassen
+        try:
+            _set(f'sched_last_{key}', heute.isoformat())
+            _set(f'sched_result_{key}', 'beim ersten Start übersprungen (keine Nachholung)')
+            gesetzt.append(key)
+        except Exception:
+            db.session.rollback()
+            return gesetzt
+    if gesetzt:
+        log.info('Scheduler: Nachholsperre beim ersten Start für %s', ', '.join(gesetzt))
+    return gesetzt
+
+
 def _ki_gesperrt_text():
     """Fertiger Satz, wenn eine Kostenbremse greift – sonst None."""
     appmod = _appmod()
@@ -1346,9 +1372,33 @@ _JOB_FUNCS = {
 
 
 def run_job(key, manual=False):
-    """Job synchron ausführen; Ergebnis und Zeitpunkt merken. Wirft nie."""
+    """Job synchron ausführen; Ergebnis und Zeitpunkt merken. Wirft nie.
+
+    Jobs, die KI kosten, laufen weder bei gesetzter Master-Pause noch bei greifender
+    Kostenbremse – auch nicht von Hand ausgelöst. Vorher sass die Pause nur im
+    Automatik-Takt: run_job('rss') machte unter aktiver Pause weiterhin 20 bezahlte
+    Aufrufe, und der Knopf „Jetzt ausführen" war damit der bequemste Weg, beide
+    Sicherungen zu umgehen. Offline (MEMEOS_OFFLINE=1) gilt dasselbe – ein Schalter, der
+    „kein Netz" verspricht, darf keine Netzaufrufe durchlassen."""
     fn = _JOB_FUNCS[key]
     started = now_berlin()
+    if JOB_BY_KEY.get(key, {}).get('costs_ai'):
+        halt = None
+        if _offline():
+            halt = 'offline (MEMEOS_OFFLINE=1), übersprungen'
+        elif is_master_paused():
+            halt = 'Master-Pause aktiv, übersprungen'
+        else:
+            gesperrt = _ki_gesperrt_text()
+            if gesperrt:
+                halt = f'übersprungen: {gesperrt}'
+        if halt:
+            _state['phase'] = None
+            try:
+                _set(f'sched_result_{key}', halt)
+            except Exception:
+                db.session.rollback()
+            return halt
     _state['phase'] = key
     try:
         result = fn(manual=manual) or 'ok'
@@ -1499,6 +1549,14 @@ def init_app(flask_app):
     if not _acquire_lock():
         log.info('MemeOS-Automatik läuft bereits in einem anderen Prozess – dieser Worker bleibt passiv')
         return
+    # Beim allerersten Start nichts nachholen: sonst feuern nach einem Deploy am
+    # Nachmittag alle Tagesjobs gleichzeitig los, darunter die beiden, die KI kosten.
+    with flask_app.app_context():
+        try:
+            nachholsperre_setzen()
+        except Exception as ex:                      # pragma: no cover – defensiv
+            db.session.rollback()
+            log.warning('Nachholsperre nicht setzbar: %s', ex)
     t = threading.Thread(target=_loop, args=(flask_app,), name='memeos-scheduler', daemon=True)
     t.start()
     _state['thread'] = t

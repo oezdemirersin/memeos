@@ -251,7 +251,10 @@ def _key_problem():
                 return 'Kein Anthropic-Key hinterlegt'
     elif not key:
         return 'Kein Anthropic-Key hinterlegt'
-    bremse = getattr(appmod, '_ai_budget_gesperrt', None) if appmod else None
+    # _ki_gesperrt fragt ALLE Bremsen ab (Notaus, Monat, Tag, Stunde); _ai_budget_gesperrt
+    # kennt nur das Monatsbudget und bleibt der Rückfall für ältere Stände.
+    bremse = (getattr(appmod, '_ki_gesperrt', None)
+              or getattr(appmod, '_ai_budget_gesperrt', None)) if appmod else None
     if bremse is not None:
         try:
             gesperrt = bremse()
@@ -791,6 +794,22 @@ def analyze_image(path, city_hint=None, feature='vision_import'):
         raw, in_tok, out_tok, stop_reason = _call_claude_vision(b64, media_type, build_prompt(city_hint))
     except Exception as ex:
         log.error(f'vision_import: Claude-Aufruf fehlgeschlagen: {ex}')
+        # Die Einordnung von app benutzen statt den Text selbst zu bauen: ein 401 bekommt
+        # dort den Anfang 'KI-Zugang abgelehnt:' und gilt damit überall als dauerhaft.
+        # Vorher hiess auch ein abgelehnter Schlüssel 'KI nicht erreichbar' – und genau
+        # dieser Anfang ist das Kennzeichen, an dem die Render-Queue eine Wiedervorlage
+        # festmacht. Ein falscher Schlüssel wäre so endlos wiederholt worden.
+        appmod = _appmod()
+        einordnen = getattr(appmod, '_ki_fehler_art', None) if appmod else None
+        if einordnen:
+            try:
+                art, text, _warte = einordnen(ex)
+                # Ein dauerhafter Fehler hat nichts gekostet; ein abgebrochener schon.
+                if art != 'dauerhaft':
+                    _log_usage(0, MAX_TOKENS, f'{feature}_abbruch')
+                return {'error': text}
+            except Exception:                        # pragma: no cover – defensiv
+                pass
         return {'error': f'KI nicht erreichbar: {type(ex).__name__}: {str(ex)[:120]}'}
     _log_usage(in_tok, out_tok, feature)
     if stop_reason == 'max_tokens':

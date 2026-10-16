@@ -537,9 +537,10 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
       <div class="dot {{ 'green' if canva_connected else 'red' }}" id="canva-dot"></div>
       <span id="canva-status-text">Canva {{ 'verbunden' if canva_connected else 'getrennt' }}</span>
     </div>
-    <div class="sidebar-status" style="margin-top:2px;">
-      <div class="dot {{ 'green' if ai_cost_month < 5 else 'yellow' }}"></div>
-      <span>KI: €{{ "%.3f"|format(ai_cost_month) }} / Monat</span>
+    <div class="sidebar-status" style="margin-top:2px;cursor:pointer;"
+         onclick="showPage('settings')" title="{{ ki_stand.titel }}">
+      <div class="dot {{ ki_stand.farbe }}"></div>
+      <span>{{ ki_stand.text }}</span>
     </div>
     <div class="sidebar-status" style="margin-top:2px;cursor:pointer;" onclick="showPage('settings')" title="Selbsttest öffnen">
       <div class="dot" id="selftest-dot" style="background:var(--muted)"></div>
@@ -1643,10 +1644,36 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
               <option value="deepseek">DeepSeek</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Monatsbudget (EUR)</label>
-            <input type="text" id="ai-budget-input" placeholder="0" style="width:110px;">
-            <div style="font-size:11px;color:var(--muted);margin-top:4px;">0 = keine Grenze. Ist die Grenze erreicht, werden keine neuen Beiträge mehr erzeugt.</div>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label>Monatsbudget (EUR)</label>
+              <input type="text" id="ai-budget-input" placeholder="10,00" style="width:110px;">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;">0 = keine Grenze.</div>
+            </div>
+            <div class="form-group">
+              <label>Tagesbudget (EUR)</label>
+              <input type="text" id="ki-tag-input" placeholder="2,00" style="width:110px;">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;">Die Sicherung gegen einen Fehler: ein Monatsbudget merkt nichts davon, wenn eine Schleife in zehn Minuten alles verbraucht.</div>
+            </div>
+            <div class="form-group">
+              <label>Aufrufe je Stunde</label>
+              <input type="text" id="ki-stunde-input" placeholder="120" style="width:110px;">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;">Greift sofort, noch bevor Kosten anfallen. Löst sich von selbst wieder.</div>
+            </div>
+          </div>
+
+          <!-- Notaus: bewusst getrennt von der Master-Pause -->
+          <div id="ki-notaus-kasten" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;">
+              <input type="checkbox" id="ki-notaus" onchange="kiNotausGeschaltet()" style="accent-color:var(--danger);width:16px;height:16px;">
+              KI-Notaus
+            </label>
+            <div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5;">
+              Hält <strong>jeden</strong> KI-Aufruf sofort an, auch von Hand ausgelöste.
+              Nicht zu verwechseln mit der Master-Pause: die stoppt die Automatik, lässt
+              aber weiterhin zu, dass du selbst etwas erzeugst.
+            </div>
+            <div id="ki-bremse-stand" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6;"></div>
           </div>
         </div>
         <div id="ai-deepseek-fields" style="display:none;">
@@ -5643,10 +5670,38 @@ async function rqStartAllCities(preset) {
   const wen = anzahl == null ? 'alle aktiven Städte' : `${anzahl} aktive Stadt${anzahl === 1 ? '' : 'e'}`;
   if (anzahl === 0) { toast('Keine aktive Stadt vorhanden', 'error'); return; }
   // Ungeprüfter Schlüssel + viele Städte = viele gescheiterte Aufträge. Nur ein Hinweis.
-  const keyWarnung = (anzahl > RQ_SCHLUESSEL_AB && !aiKeyGeprueft())
-    ? '\n\nErst den Schlüssel prüfen, sonst scheitern alle Aufträge (Einstellungen → KI-Kosten).' : '';
-  if (!confirm(`Render-Auftrag für ${wen} in die Queue stellen?\n\nDas erzeugt je Stadt eine KI-Generierung und kostet Guthaben.${keyWarnung}`)) return;
+  if (!await rqKostenRueckfrage(anzahl || 1, wen)) return;
+  if (anzahl > RQ_SCHLUESSEL_AB && !aiKeyGeprueft()
+      && !confirm('Der KI-Schlüssel ist noch nicht geprüft. Ohne ihn scheitern alle '
+                  + 'Aufträge.\n\nTrotzdem starten?')) return;
   rqStartBatch(preset);
+}
+
+// Vor einem Stapellauf die Bremse fragen und eine ZAHL nennen. Vorher startete der
+// Hauptknopf ohne Rückfrage und ohne jeden Hinweis darauf, was der Lauf kostet.
+// Rückgabe: true = weitermachen, false = der Nutzer hat abgebrochen.
+async function rqKostenRueckfrage(anzahlAufrufe, wen) {
+  let stand;
+  try { stand = await api('GET', `/api/ki-bremse?aufrufe=${Math.max(1, anzahlAufrufe || 1)}`); }
+  catch (e) { return confirm(`Render-Auftrag für ${wen} starten?\n\n`
+    + `Die Kostenbremse ist gerade nicht abfragbar (${e.message}).`); }
+  if (stand && stand.gesperrt) {
+    toast(stand.grund || 'Eine Kostenbremse greift', 'error');
+    return false;
+  }
+  const sch = (stand && stand.schaetzung) || null;
+  const warn = (stand && stand.warnungen || []).length
+    ? `\n\nACHTUNG: ${stand.warnungen.join(' ')}` : '';
+  const zahl = sch
+    ? `\n\nGeschätzt: ${sch.kosten_eur.toFixed(2)} EUR für ${sch.aufrufe} KI-Aufrufe `
+      + `(${sch.modell}).\n${sch.hinweis || ''}`
+    : '';
+  const stände = stand
+    ? `\n\nHeute verbraucht: ${stand.tag.verbraucht_eur.toFixed(2)} von `
+      + `${stand.tag.grenze_eur.toFixed(2)} EUR · diesen Monat `
+      + `${stand.monat.verbraucht_eur.toFixed(2)} von ${stand.monat.grenze_eur.toFixed(2)} EUR`
+    : '';
+  return confirm(`Render-Auftrag für ${wen} in die Queue stellen?${zahl}${stände}${warn}`);
 }
 
 // preset (optional): {template_id | series, city_ids: [ids]|'all'|'with_wiki', skip_recent_days}
@@ -5663,6 +5718,12 @@ async function rqStartBatch(preset) {
       : mode;
     if(Array.isArray(body.city_ids) && !body.city_ids.length) { toast('Mindestens eine Stadt wählen','error'); return; }
     body.skip_recent_days = parseInt(document.getElementById('rq-skip-days').value || 0) || 0;
+    // Nur beim Knopf im Formular fragen – wer über rqStartAllCities kommt, wurde schon gefragt.
+    const wieViele = Array.isArray(body.city_ids)
+      ? body.city_ids.length
+      : (document.querySelectorAll('.rq-city-cb').length || 1);
+    const wen = Array.isArray(body.city_ids) ? `${wieViele} Städte` : 'alle passenden Städte';
+    if (!await rqKostenRueckfrage(wieViele, wen)) return;
   }
   await rqSchluesselPruefen(body.city_ids);
   const r = await api('POST','/api/render/batch', body).catch(() => ({error: 'Render-Queue nicht erreichbar'}));
@@ -10866,6 +10927,7 @@ function renderAiSettings(d) {
   if (clr) clr.style.display = d.deepseek_key_set ? '' : 'none';
   const budget = document.getElementById('ai-budget-input');
   if (budget) budget.value = (Number(d.ai_budget_month_eur) || 0).toString().replace('.', ',');
+  kiBremseAnzeigen(d.ki_bremse);
   const hint = document.getElementById('ai-usage-provider-hint');
   if (hint) { hint.textContent = d.ai_provider_hinweis || ''; hint.style.display = d.ai_provider_hinweis ? '' : 'none'; }
   const bh = document.getElementById('ai-usage-budget-hint');
@@ -10963,11 +11025,67 @@ async function loadAiUsage() {
   }
 }
 
+// Stand aller vier Bremsen anzeigen – und offen sagen, welche NICHT greift.
+function kiBremseAnzeigen(b) {
+  const kasten = document.getElementById('ki-bremse-stand');
+  const schalter = document.getElementById('ki-notaus');
+  if (!b || b.fehler) {
+    if (kasten) kasten.textContent = b && b.fehler ? ('Bremsen nicht lesbar: ' + b.fehler) : '';
+    return;
+  }
+  if (schalter) schalter.checked = !!b.notaus;
+  const tag = document.getElementById('ki-tag-input');
+  if (tag) tag.value = String(b.tag.grenze_eur).replace('.', ',');
+  const std = document.getElementById('ki-stunde-input');
+  if (std) std.value = String(b.stunde.grenze);
+  if (!kasten) return;
+  const zeilen = [
+    `Diesen Monat: <b>${b.monat.verbraucht_eur.toFixed(2)}</b> von ${b.monat.grenze_eur.toFixed(2)} EUR`,
+    `Heute: <b>${b.tag.verbraucht_eur.toFixed(2)}</b> von ${b.tag.grenze_eur.toFixed(2)} EUR`,
+    `Diese Stunde: <b>${b.stunde.bisher}</b> von ${b.stunde.grenze} Aufrufen`,
+  ];
+  let html = zeilen.join(' · ');
+  if (b.gesperrt) {
+    html += `<div style="color:var(--danger);margin-top:6px;font-weight:600;">`
+          + `Gesperrt: ${_esc(b.grund || '')}</div>`;
+  }
+  for (const w of (b.warnungen || [])) {
+    html += `<div style="color:var(--warning);margin-top:4px;">${_esc(w)}</div>`;
+  }
+  kasten.innerHTML = html;
+}
+
+async function kiNotausGeschaltet() {
+  const an = !!document.getElementById('ki-notaus')?.checked;
+  if (an && !confirm('KI-Notaus setzen?\n\nDanach geht kein einziger KI-Aufruf mehr '
+                     + 'hinaus – auch keiner, den du selbst auslöst.')) {
+    document.getElementById('ki-notaus').checked = false;
+    return;
+  }
+  const r = await api('POST', '/api/settings', {ki_aus: an ? '1' : '0'});
+  if (!r || r.error) { toast((r && r.error) || 'Fehler', 'error'); return; }
+  toast(an ? 'KI-Notaus gesetzt – es läuft kein Aufruf mehr' : 'KI-Notaus aufgehoben',
+        an ? 'info' : 'success');
+  loadSettingsPage();
+}
+
 async function saveAiSettings() {
+  const tag = (document.getElementById('ki-tag-input')?.value || '').trim();
+  const stunde = (document.getElementById('ki-stunde-input')?.value || '').trim();
+  const budget = (document.getElementById('ai-budget-input')?.value || '').trim();
+  // 0 schaltet eine Bremse ab – das darf nicht mit demselben grünen Erfolgston
+  // durchgehen wie jede andere Zahl.
+  const aus = [['Monatsbudget', budget], ['Tagesbudget', tag], ['Aufrufe je Stunde', stunde]]
+    .filter(([, v]) => v !== '' && parseFloat(v.replace(',', '.')) === 0)
+    .map(([n]) => n);
+  if (aus.length && !confirm(`${aus.join(' und ')} auf 0 heisst: KEINE Grenze.\n\n`
+      + 'Die Kosten sind dann nach oben offen. Wirklich speichern?')) return;
   const body = {
     ai_provider: document.getElementById('ai-provider-select')?.value || 'anthropic',
-    ai_budget_month_eur: (document.getElementById('ai-budget-input')?.value || '0').trim(),
+    ai_budget_month_eur: budget || '0',
   };
+  if (tag !== '') body.ki_budget_tag_eur = tag;
+  if (stunde !== '') body.ki_aufrufe_pro_stunde = stunde;
   const model = (document.getElementById('ai-deepseek-model')?.value || '').trim();
   if (model) body.deepseek_model = model;
   const key = (document.getElementById('ai-deepseek-key')?.value || '').trim();

@@ -45,6 +45,9 @@ STALE_RUNNING_MINUTES = 10      # laufende Tasks älter als das gelten nach Neus
 RETRY_DELAY_SECONDS = 30        # Wartezeit vor dem automatischen zweiten Versuch (KI nicht erreichbar)
 RETRY_ERROR_MARKER = 'KI nicht erreichbar'      # nur dieser Fehler wird automatisch wiederholt
 MAX_AUTO_ATTEMPTS = 2           # automatische Versuche insgesamt
+# Harte Obergrenze über ALLE Anläufe hinweg, auch über Neustarts und zurückgesetzte
+# Zähler. Ohne sie kann ein Auftrag beliebig oft bezahlte Aufrufe auslösen.
+MAX_TOTAL_ATTEMPTS = 5
 DEFAULT_SKIP_RECENT_DAYS = 30   # Standardfenster „nicht noch einmal erzeugen“ (Anlegen und Abarbeiten)
 IDLE_SLEEP = 2.0                # Pause der Worker ohne Arbeit
 BETWEEN_TASKS_SLEEP = 0.5       # Pause je Worker zwischen zwei Tasks
@@ -96,6 +99,11 @@ class RenderTask(db.Model):
     city_id       = db.Column(db.Integer, db.ForeignKey('city.id'), nullable=False, index=True)
     status        = db.Column(db.String(12), default='pending', nullable=False, index=True)
     attempts      = db.Column(db.Integer, default=0, nullable=False)
+    # Zählt jeden Zugriff und sinkt NIE. attempts darf für einen abgestürzten Arbeiter
+    # wieder heruntergehen – sonst frisst ein Neustart das Wiederholungsbudget auf –,
+    # aber ohne eine Zahl, die bleibt, ist das Herunterzählen ein Freifahrtschein:
+    # gemessen wurden damit beliebig viele bezahlte Wiederholungen derselben Aufgabe.
+    attempts_total = db.Column(db.Integer, default=0, nullable=False, server_default='0')
     worker        = db.Column(db.String(40))
     error         = db.Column(db.Text)
     fit_score     = db.Column(db.Integer)
@@ -144,6 +152,7 @@ class RenderTask(db.Model):
         einmal für ein Objekt, einmal als SQL-Bedingung."""
         return (self.status == 'failed'
                 and (self.attempts or 0) < MAX_AUTO_ATTEMPTS
+                and (self.attempts_total or 0) < MAX_TOTAL_ATTEMPTS
                 and RETRY_ERROR_MARKER in (self.error or ''))
 
     def to_dict(self):
@@ -172,6 +181,7 @@ class RenderTask(db.Model):
             'status': self.status,
             'status_label': STATUS_LABELS.get(self.status, self.status),
             'attempts': self.attempts or 0,
+            'attempts_total': self.attempts_total or 0,
             'worker': self.worker or '',
             'error': self.error or '',
             'retry_pending': self.retry_pending,
@@ -261,6 +271,7 @@ def _retry_pending_filter():
     Inhaltlich identisch mit der Property RenderTask.retry_pending."""
     return db.and_(RenderTask.status == 'failed',
                    RenderTask.attempts < MAX_AUTO_ATTEMPTS,
+                   RenderTask.attempts_total < MAX_TOTAL_ATTEMPTS,
                    RenderTask.error.like('%' + RETRY_ERROR_MARKER + '%'))
 
 
@@ -521,6 +532,13 @@ def _process_series(appmod, task, city, written):
     ts = int(time.time())
     # Ein KI-Aufruf für die ganze Serie, wenn app.py das anbietet; sonst wie bisher je Slide.
     multi = _fit_results_multi(appmod, city, templates)
+    if not multi and templates:
+        # Der Sammelaufruf hat nichts geliefert: ab hier kostet jede Folie einen eigenen
+        # Aufruf. Bei fünf Folien ist das der fünffache Verbrauch – das gehört ins
+        # Protokoll, sonst sucht niemand nach der Ursache.
+        log.warning('RenderQueue: Sammelaufruf für %s lieferte nichts – Rückfall auf '
+                    'einen Aufruf JE FOLIE (%s Folien)', city.name, len(templates))
+    endgueltig = getattr(appmod, '_ki_fehler_endgueltig', None)
     for idx, template in enumerate(templates, start=1):
         res = multi.get(template.id) or appmod._claude_fit_and_vars(city, template)
         missing = _missing_vars(template, res.get('vars') or {})
@@ -538,6 +556,20 @@ def _process_series(appmod, task, city, written):
             last_ki_error = res['error']
             entry['error'] = res['error']
             slide_results.append(entry)
+            # Ein dauerhafter Fehler (falscher Schlüssel, Kostenbremse, kaputte Anfrage)
+            # trifft die übrigen Folien garantiert genauso. Weiterzufragen heisst nur,
+            # viermal mehr zu bezahlen für viermal dasselbe Nein.
+            if endgueltig and endgueltig(res['error']):
+                for rest in templates[idx:]:
+                    slide_results.append({
+                        'template_id': rest.id, 'template': rest.name,
+                        'position': rest.series_position,
+                        'fit_score': None, 'reasoning': '', 'vars': {},
+                        'error': 'nicht versucht: ' + res['error']})
+                    ki_errors += 1
+                log.info('RenderQueue: Serie nach dauerhaftem Fehler abgebrochen, %s '
+                         'Folien nicht mehr angefragt', len(templates) - idx)
+                break
             continue
         if res.get('warning'):
             entry['warning'] = res['warning']
@@ -655,7 +687,8 @@ def _claim(token):
     stmt = (update(RenderTask)
             .where(RenderTask.id == first_pending, RenderTask.status == 'pending')
             .values(status='running', worker=token, started_at=now, finished_at=None,
-                    attempts=RenderTask.attempts + 1)
+                    attempts=RenderTask.attempts + 1,
+                   attempts_total=RenderTask.attempts_total + 1)
             .execution_options(synchronize_session=False))
     result = db.session.execute(stmt)
     db.session.commit()
@@ -697,7 +730,15 @@ def _reset_stale_running():
         task.started_at = None
         # _claim() zählt beim Ziehen hoch. Ein abgestürzter Arbeiter war aber kein Versuch –
         # sonst frisst ein Neustart das Budget der automatischen Wiederholung auf.
-        task.attempts = max(0, (task.attempts or 0) - 1)
+        # Nur zurücksetzen, solange die Aufgabe insgesamt noch nicht zu oft lief.
+        if (task.attempts_total or 0) < MAX_TOTAL_ATTEMPTS:
+            task.attempts = max(0, (task.attempts or 0) - 1)
+        else:
+            task.status = 'failed'
+            task.error = (f'Nach {task.attempts_total} Anläufen aufgegeben – die Aufgabe '
+                          f'blieb mehrfach hängen. Von Hand neu anstoßen, wenn gewollt.')
+            log.warning('RenderQueue: Task %s nach %s Anläufen endgültig aufgegeben',
+                        task.id, task.attempts_total)
     if stale:
         db.session.commit()
         log.info(f'RenderQueue: {len(stale)} verwaiste Tasks zurück auf pending')
@@ -1080,6 +1121,21 @@ def api_render_batch_create():
     if not cities and not skipped:
         return jsonify({'error': 'Keine Städte gefunden'}), 400
 
+    # Die Bremse VOR dem Anlegen fragen: ein Stapel, den sie ohnehin sofort stoppt, soll
+    # gar nicht erst als Erfolg gemeldet werden. Vorher antwortete er grün mit „20 Aufträge
+    # in der Queue", und alle zwanzig scheiterten danach einzeln.
+    appmod = _appmod()
+    bremse = getattr(appmod, '_ki_gesperrt', None) if appmod else None
+    if bremse is not None:
+        try:
+            gesperrt = bremse()
+        except Exception as ex:                      # pragma: no cover – defensiv
+            log.warning('RenderQueue: Kostenbremse nicht abfragbar: %s', ex)
+            gesperrt = None
+        if gesperrt:
+            return jsonify({'error': gesperrt, 'created': 0, 'gesperrt': True,
+                            'skipped': skipped}), 409
+
     recent = _recent_city_ids(kind, template_id, series, skip_days)
     queued = _queued_city_ids(kind, template_id, series)
     try:
@@ -1260,7 +1316,10 @@ def _migrate_columns():
     added = []
     for column, ddl in (('quality', 'ALTER TABLE render_task ADD COLUMN quality VARCHAR(20)'),
                         ('skip_recent_days',
-                         'ALTER TABLE render_task ADD COLUMN skip_recent_days INTEGER')):
+                         'ALTER TABLE render_task ADD COLUMN skip_recent_days INTEGER'),
+                        ('attempts_total',
+                         'ALTER TABLE render_task ADD COLUMN attempts_total INTEGER '
+                         'NOT NULL DEFAULT 0')):
         if column in have:
             continue
         try:

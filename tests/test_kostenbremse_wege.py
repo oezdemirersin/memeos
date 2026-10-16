@@ -265,5 +265,107 @@ class BremseTest(unittest.TestCase):
         self.db.session.commit()
 
 
+class BedienungTest(BremseTest):
+    """Kann der Betreiber der Bremse trauen, ohne den Quelltext zu lesen?"""
+
+    def client(self):
+        self.A.app.config['TESTING'] = True
+        c = self.A.app.test_client()
+        with c.session_transaction() as s:
+            s['logged_in'] = True
+            s['csrf_token'] = 'tt'
+        return c, {'X-CSRF-Token': 'tt'}
+
+    def test_notaus_ist_ueber_die_einstellungen_schaltbar(self):
+        c, H = self.client()
+        r = c.post('/api/settings', json={'ki_aus': '1'}, headers=H)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertTrue(K.notaus_an())
+        self.assertIsNotNone(K.pruefen())
+        r = c.post('/api/settings', json={'ki_aus': '0'}, headers=H)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(K.notaus_an())
+
+    def test_budget_laesst_sich_nicht_lautlos_abschalten(self):
+        c, H = self.client()
+        for wert, grund in (('-3', 'negativ'), ('0,002', 'unter einem Cent'),
+                            ('inf', 'unendlich'), ('', 'leer'), ('viel', 'keine Zahl')):
+            with self.subTest(wert=wert):
+                r = c.post('/api/settings', json={'ai_budget_month_eur': wert}, headers=H)
+                self.assertEqual(r.status_code, 400, f'{wert!r} ({grund}) ging durch: '
+                                                     f'{r.get_json()}')
+        # Eine ausdrückliche 0 ist erlaubt – sie ist eine Entscheidung.
+        self.assertEqual(c.post('/api/settings', json={'ai_budget_month_eur': '0'},
+                                headers=H).status_code, 200)
+
+    def test_tages_und_stundengrenze_sind_einstellbar(self):
+        c, H = self.client()
+        r = c.post('/api/settings',
+                   json={'ki_budget_tag_eur': '3,50', 'ki_aufrufe_pro_stunde': '40'},
+                   headers=H)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        g = K.grenzen()
+        self.assertAlmostEqual(g['tag_eur'], 3.50)
+        self.assertEqual(g['stunde_aufrufe'], 40)
+        for feld, wert in (('ki_budget_tag_eur', '-1'), ('ki_budget_tag_eur', 'nan'),
+                           ('ki_aufrufe_pro_stunde', '999999')):
+            with self.subTest(feld=feld, wert=wert):
+                self.assertEqual(c.post('/api/settings', json={feld: wert},
+                                        headers=H).status_code, 400)
+
+    def test_auskunft_nennt_rest_und_schaetzung(self):
+        c, H = self.client()
+        c.post('/api/settings', json={'ai_budget_month_eur': '10,00',
+                                      'ki_budget_tag_eur': '4,00'}, headers=H)
+        js = c.get('/api/ki-bremse?aufrufe=100').get_json() or {}
+        self.assertIn('schaetzung', js)
+        self.assertGreater(js['schaetzung']['kosten_eur'], 0)
+        self.assertIn('hinweis', js['schaetzung'])
+        self.assertIsNotNone(js['tag']['rest_eur'])
+        self.assertIn('reicht_heute', js)
+
+    def test_anzeiger_wird_rot_wenn_die_bremse_greift(self):
+        c, H = self.client()
+        self.assertEqual(self.A._ki_stand_kurz()['farbe'], 'green')
+        c.post('/api/settings', json={'ki_aus': '1'}, headers=H)
+        stand = self.A._ki_stand_kurz()
+        self.assertEqual(stand['farbe'], 'red', stand)
+        self.assertIn('gestoppt', stand['text'])
+
+    def test_anzeiger_warnt_wenn_eine_bremse_aus_ist(self):
+        c, H = self.client()
+        c.post('/api/settings', json={'ki_budget_tag_eur': '0'}, headers=H)
+        stand = self.A._ki_stand_kurz()
+        self.assertEqual(stand['farbe'], 'yellow', stand)
+        self.assertIn('Bremse teils aus', stand['text'])
+
+    def test_stapel_wird_abgelehnt_statt_gruen_gemeldet(self):
+        """Ein Stapel, den die Bremse ohnehin sofort stoppt, darf nicht als Erfolg
+        gemeldet werden – vorher hiess es „20 Aufträge in der Queue", und alle zwanzig
+        scheiterten danach einzeln."""
+        from models import City, MemeTemplate
+        c, H = self.client()
+        stadt = City(name='Stapelstadt', state='Hessen')
+        vorlage = MemeTemplate(name='Stapelvorlage', render_type='pil',
+                               pil_config='{"elements": []}', required_vars='[]',
+                               active=True)
+        self.db.session.add_all([stadt, vorlage])
+        self.db.session.commit()
+        try:
+            c.post('/api/settings', json={'ki_aus': '1'}, headers=H)
+            r = c.post('/api/render/batch',
+                       json={'template_id': vorlage.id, 'city_ids': [stadt.id]},
+                       headers=H)
+            self.assertEqual(r.status_code, 409, r.get_json())
+            js = r.get_json() or {}
+            self.assertEqual(js.get('created'), 0)
+            self.assertIn('Notaus', js.get('error', ''))
+        finally:
+            c.post('/api/settings', json={'ki_aus': '0'}, headers=H)
+            self.db.session.delete(stadt)
+            self.db.session.delete(vorlage)
+            self.db.session.commit()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

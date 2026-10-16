@@ -713,6 +713,10 @@ def dashboard():
         seasonal_templates=seasonal_templates,
         canva_connected=canva_connected,
         ai_cost_month=ai_cost_month,
+        # Der Anzeiger in der Seitenleiste stand fest auf „grün unter 5 EUR" – unabhängig
+        # vom tatsächlich eingestellten Budget. Er zeigte grün, während die Bremse schon
+        # griff. Jetzt kommt sein Zustand von der Bremse selbst.
+        ki_stand=_ki_stand_kurz(),
         categories=KNOWLEDGE_CATEGORIES,
         category_map=CATEGORY_MAP,
         template_categories=[(c.key, c.label, c.emoji, c.group)
@@ -2030,6 +2034,42 @@ def _ai_budget_eur():
         return max(0.0, float(roh))
     except ValueError:
         return 0.0
+
+
+def _ki_bremse_stand():
+    """auskunft() der Kostenbremsen – oder ein Fehlertext statt eines Absturzes."""
+    try:
+        import ki_bremse
+        return ki_bremse.auskunft()
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse: Auskunft nicht lesbar: %s', ex)
+        return {'fehler': str(ex)}
+
+
+def _ki_stand_kurz():
+    """Was der Anzeiger in der Seitenleiste braucht: Farbe, Text, Titel."""
+    try:
+        import ki_bremse
+        a = ki_bremse.auskunft()
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse: Auskunft nicht lesbar: %s', ex)
+        return {'farbe': 'yellow', 'text': 'KI: Stand unbekannt', 'titel': str(ex)}
+    monat = a['monat']['verbraucht_eur']
+    grenze = a['monat']['grenze_eur']
+    if a['gesperrt']:
+        return {'farbe': 'red', 'text': f'KI gestoppt: {monat:.2f} EUR',
+                'titel': a['grund'] or 'Eine Kostenbremse greift'}
+    if a['warnungen']:
+        return {'farbe': 'yellow', 'text': f'KI: {monat:.2f} EUR (Bremse teils aus)',
+                'titel': ' · '.join(a['warnungen'])}
+    anteil = (monat / grenze) if grenze else 0.0
+    farbe = 'red' if anteil >= 0.9 else ('yellow' if anteil >= 0.6 else 'green')
+    rest = a['monat']['rest_eur']
+    return {'farbe': farbe,
+            'text': f'KI: {monat:.2f} von {grenze:.2f} EUR',
+            'titel': (f'Noch {rest:.2f} EUR diesen Monat · heute '
+                      f'{a["tag"]["verbraucht_eur"]:.2f} von {a["tag"]["grenze_eur"]:.2f} EUR · '
+                      f'{a["stunde"]["bisher"]} von {a["stunde"]["grenze"]} Aufrufen diese Stunde')}
 
 
 def _ki_gesperrt(feature=''):
@@ -3774,6 +3814,37 @@ def api_todo_delete(todo_id):
 # SETTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.route('/api/ki-bremse', methods=['GET'])
+@login_required
+def api_ki_bremse():
+    """Stand aller Kostenbremsen – und was ein geplanter Stapel kosten würde.
+
+    Damit kann das Bedienteil VOR einem Stapellauf eine Zahl nennen, statt den Betreiber
+    raten zu lassen. ?aufrufe=100 schätzt für hundert Aufrufe mit.
+    """
+    try:
+        import ki_bremse
+        stand = ki_bremse.auskunft()
+    except Exception as ex:
+        log.warning('ki_bremse: Auskunft fehlgeschlagen: %s', ex)
+        return jsonify({'error': f'Bremsen nicht abfragbar: {ex}'}), 500
+    try:
+        aufrufe = int(request.args.get('aufrufe') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'aufrufe muss eine Zahl sein'}), 400
+    if aufrufe > 0:
+        stand['schaetzung'] = ki_bremse.schaetzung(min(aufrufe, 100000))
+        rest = stand['tag']['rest_eur']
+        if rest is not None and stand['schaetzung']:
+            kosten = stand['schaetzung']['kosten_eur']
+            stand['reicht_heute'] = kosten <= rest
+            stand['schaetzung']['hinweis'] = (
+                f'Geschätzt {kosten:.2f} EUR. Heute sind noch {rest:.2f} EUR frei – '
+                + ('das reicht.' if kosten <= rest else
+                   'das reicht NICHT, der Lauf bricht unterwegs ab.'))
+    return jsonify(stand)
+
+
 @app.route('/api/settings', methods=['GET'])
 @login_required
 def api_settings_get():
@@ -3806,6 +3877,8 @@ def api_settings_get():
         'ai_budget_bedeutung':  ('Keine Bremse — die Kosten sind nach oben offen'
                                  if _ai_budget_eur() <= 0
                                  else f'Bremse bei {_ai_budget_eur():.2f} EUR im Monat'),
+        # Der vollständige Stand aller vier Bremsen – damit das Bedienteil nicht raten muss.
+        'ki_bremse':            _ki_bremse_stand(),
         # Token nie im Klartext ausgeben – nur ob gesetzt + die letzten 4 Zeichen
         'telegram_token_set':   bool(_tg_token),
         'telegram_token_hint':  _tg_token[-4:] if _tg_token else '',
@@ -3837,11 +3910,58 @@ def api_settings_save():
     if d.get('deepseek_model'):
         AppSettings.set('deepseek_model', str(d['deepseek_model']).strip()[:80])
     if 'ai_budget_month_eur' in d:
-        roh = str(d.get('ai_budget_month_eur') or '0').strip().replace(',', '.')
+        roh = str(d.get('ai_budget_month_eur') or '').strip().replace(',', '.')
+        # Eine Bremse, die sich durch einen Tippfehler lautlos abschaltet, ist keine.
+        # Vorher wurde '-3' zu 0 (Bremse aus), '0,002' rundete auf '0.00' (Bremse aus),
+        # ein leeres Feld ebenso, und 'inf' ergab eine Grenze bei unendlich.
+        if roh == '':
+            return jsonify({'error': 'Budget fehlt. Eine Zahl eintragen – 0 bedeutet '
+                                     'ausdrücklich: keine Grenze.'}), 400
         try:
-            AppSettings.set('ai_budget_month_eur', f'{max(0.0, float(roh)):.2f}')
+            wert = float(roh)
         except ValueError:
-            return jsonify({'error': 'Budget muss eine Zahl sein (0 = aus)'}), 400
+            return jsonify({'error': f'Budget: „{roh}" ist keine Zahl'}), 400
+        if wert != wert or wert in (float('inf'), float('-inf')):
+            return jsonify({'error': 'Budget muss eine endliche Zahl sein'}), 400
+        if wert < 0:
+            return jsonify({'error': 'Budget darf nicht negativ sein. 0 bedeutet: '
+                                     'keine Grenze.'}), 400
+        if 0 < wert < 0.01:
+            return jsonify({'error': f'Budget {wert} EUR würde auf 0,00 gerundet und damit '
+                                     f'die Bremse abschalten. Mindestens 0,01 EUR – oder '
+                                     f'ausdrücklich 0 für „keine Grenze".'}), 400
+        AppSettings.set('ai_budget_month_eur', f'{wert:.2f}')
+        if wert == 0:
+            log.warning('KI-Monatsbudget ausdrücklich auf 0 gesetzt – keine Grenze mehr')
+    # ── Notaus und die beiden neuen Grenzen ─────────────────────────────────
+    if 'ki_aus' in d:
+        an = str(d.get('ki_aus')).strip().lower() in ('1', 'true', 'ja', 'an', 'on')
+        AppSettings.set('ki_aus', '1' if an else '0')
+        log.warning('KI-Notaus %s', 'GESETZT – kein Aufruf geht mehr hinaus' if an
+                    else 'aufgehoben')
+    for feld, label, hoechstens in (('ki_budget_tag_eur', 'Tagesbudget', 200.0),
+                                    ('ki_aufrufe_pro_stunde', 'Aufrufe je Stunde', 5000.0)):
+        if feld not in d:
+            continue
+        roh = str(d.get(feld) or '').strip().replace(',', '.')
+        if roh == '':
+            return jsonify({'error': f'{label} fehlt. 0 bedeutet ausdrücklich: '
+                                     f'keine Grenze.'}), 400
+        try:
+            wert = float(roh)
+        except ValueError:
+            return jsonify({'error': f'{label}: „{roh}" ist keine Zahl'}), 400
+        if wert != wert or wert in (float('inf'), float('-inf')):
+            return jsonify({'error': f'{label} muss eine endliche Zahl sein'}), 400
+        if wert < 0:
+            return jsonify({'error': f'{label} darf nicht negativ sein'}), 400
+        if wert > hoechstens:
+            return jsonify({'error': f'{label}: höchstens {hoechstens:g}'}), 400
+        AppSettings.set(feld, f'{wert:.2f}' if 'eur' in feld else str(int(wert)))
+        if wert == 0:
+            log.warning('%s ausdrücklich auf 0 gesetzt – diese Grenze greift nicht mehr',
+                        label)
+
     # Schlüssel wie beim Telegram-Token: leeres Feld heißt "unverändert lassen"
     if d.get('deepseek_api_key_clear'):
         AppSettings.set('deepseek_api_key', '')
