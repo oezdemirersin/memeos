@@ -173,38 +173,105 @@ def zaehler_zuruecksetzen():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Reservierung: Prüfen und Platz nehmen in einem Zug
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ohne das lassen acht gleichzeitige Worker bei 4,99 von 5,00 EUR alle acht durch: jeder
+# prüft, bevor einer gebucht hat. Gemessen wurden dabei 8,82 EUR statt 5,00.
+#
+# Darum: unter EINER Sperre prüfen und sofort eine Schätzung vormerken. Nach dem Aufruf
+# wird die Vormerkung durch den tatsächlichen Verbrauch ersetzt. Die Vormerkungen liegen
+# im Arbeitsspeicher – sie müssen nur so lange halten, wie ein Aufruf dauert.
+
+_vormerkungen = {}          # id -> (eur, zeitpunkt)
+_vormerk_id = [0]
+# Hängt ein Aufruf länger als das, gilt seine Vormerkung als verfallen; sonst bliebe nach
+# einem Absturz Geld für immer reserviert.
+VORMERKUNG_GILT_SEKUNDEN = 300
+
+
+def _vormerkungen_summe():
+    grenze = datetime.utcnow() - timedelta(seconds=VORMERKUNG_GILT_SEKUNDEN)
+    verfallen = [k for k, (_, wann) in _vormerkungen.items() if wann < grenze]
+    for k in verfallen:
+        log.warning('ki_bremse: Vormerkung %s verfallen – wurde nie abgerechnet', k)
+        _vormerkungen.pop(k, None)
+    return sum(eur for eur, _ in _vormerkungen.values())
+
+
+def platz_nehmen(feature='', geschaetzt_eur=0.0):
+    """(None, marke) wenn der Aufruf laufen darf – sonst (grund, None).
+
+    `marke` muss anschließend IMMER an abrechnen() zurückgegeben werden, auch wenn der
+    Aufruf scheitert. Sonst bleibt der Betrag reserviert, bis er verfällt."""
+    with _sperre:
+        grund = _pruefen_ohne_sperre(feature, zusaetzlich_eur=_vormerkungen_summe())
+        if grund:
+            return grund, None
+        _vormerk_id[0] += 1
+        marke = _vormerk_id[0]
+        _vormerkungen[marke] = (max(0.0, float(geschaetzt_eur or 0.0)), datetime.utcnow())
+        _aufrufe.append(datetime.utcnow())
+        return None, marke
+
+
+def abrechnen(marke):
+    """Eine Vormerkung auflösen. Der echte Verbrauch steht da längst im AiUsageLog."""
+    if marke is None:
+        return
+    with _sperre:
+        _vormerkungen.pop(marke, None)
+
+
+def vormerkungen_zuruecksetzen():
+    """Nur für Tests."""
+    with _sperre:
+        _vormerkungen.clear()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Die Prüfung
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def pruefen(feature=''):
-    """None, wenn ein Aufruf erlaubt ist – sonst ein fertiger deutscher Satz.
-
-    Die Reihenfolge ist Absicht: die billigsten Prüfungen zuerst, damit ein gesetzter
-    Notaus nicht erst eine Datenbankabfrage kostet."""
+def _pruefen_ohne_sperre(feature='', zusaetzlich_eur=0.0):
+    """Wie pruefen(), rechnet aber bereits vorgemerkte Beträge mit ein.
+    Erwartet, dass der Aufrufer die Sperre hält (oder sie nicht braucht)."""
     g = grenzen()
     if g['notaus']:
         return ('KI-Notaus ist gesetzt – es wird kein einziger Aufruf gemacht. '
                 'Im Bedienteil unter Einstellungen wieder freigeben.')
 
     if g['stunde_aufrufe'] > 0:
-        bisher = aufrufe_letzte_stunde()
+        grenze = datetime.utcnow() - timedelta(hours=1)
+        while _aufrufe and _aufrufe[0] < grenze:
+            _aufrufe.popleft()
+        bisher = len(_aufrufe)
         if bisher >= g['stunde_aufrufe']:
             return (f'Stundengrenze erreicht: {bisher} KI-Aufrufe in den letzten 60 Minuten '
                     f'(erlaubt sind {g["stunde_aufrufe"]}). Das ist die Sicherung gegen eine '
                     f'Schleife – sie löst sich von selbst, sobald die Stunde weiterrückt.')
 
+    extra = max(0.0, float(zusaetzlich_eur or 0.0))
     if g['tag_eur'] > 0:
-        heute = kosten_tag()
+        heute = kosten_tag() + extra
         if heute >= g['tag_eur']:
             return (f'Tagesbudget erreicht: {heute:.2f} von {g["tag_eur"]:.2f} EUR seit '
                     f'Mitternacht. Morgen geht es weiter, oder das Tagesbudget anheben.')
 
     if g['monat_eur'] > 0:
-        monat = kosten_monat()
+        monat = kosten_monat() + extra
         if monat >= g['monat_eur']:
             return (f'Monatsbudget erreicht: {monat:.2f} von {g["monat_eur"]:.2f} EUR in '
                     f'diesem Monat.')
     return None
+
+
+def pruefen(feature=''):
+    """None, wenn ein Aufruf erlaubt ist – sonst ein fertiger deutscher Satz.
+
+    Für den einfachen Fall ohne Reservierung. Wer mehrere Aufrufe gleichzeitig macht,
+    nimmt platz_nehmen()/abrechnen(), sonst laufen alle gemeinsam über die Grenze."""
+    with _sperre:
+        return _pruefen_ohne_sperre(feature, zusaetzlich_eur=_vormerkungen_summe())
 
 
 def auskunft():
@@ -239,16 +306,20 @@ def auskunft():
 def schaetzung(anzahl_aufrufe, eingabe_tokens=2000, ausgabe_tokens=600, modell=None):
     """Was ein geplanter Stapel ungefähr kostet – damit man VORHER fragen kann.
 
-    Bewusst grob und eher zu hoch: eine Schätzung, die zu niedrig liegt, beruhigt falsch."""
+    Gerechnet wird mit app._ai_cost(), also mit genau derselben Funktion, die hinterher
+    auch bucht. Eine Schätzung, die anders rechnet als die Abrechnung, ist keine Schätzung,
+    sondern eine zweite Wahrheit: die erste Fassung hier multiplizierte rohe Tokenzahlen
+    mit einem Preis je TAUSEND Token und griff dazu an der Vorsilbensuche vorbei – 460 EUR
+    statt 0,09 EUR, Faktor 5000."""
     try:
-        from app import MODEL_PRICES, MODEL_PRICE_DEFAULT, AI_MODEL_ANTHROPIC
-        preis = MODEL_PRICES.get(modell or AI_MODEL_ANTHROPIC) or MODEL_PRICE_DEFAULT
-        ein = float(preis.get('input', 0.0))
-        aus = float(preis.get('output', 0.0))
+        from app import _ai_cost, AI_MODEL_ANTHROPIC
     except Exception as ex:                          # pragma: no cover – defensiv
         log.warning('ki_bremse: Preise nicht lesbar: %s', ex)
         return None
     n = max(0, int(anzahl_aufrufe or 0))
-    kosten = n * (eingabe_tokens * ein + ausgabe_tokens * aus)
-    return {'aufrufe': n, 'kosten_eur': round(kosten, 4),
-            'je_aufruf_eur': round(kosten / n, 5) if n else 0.0}
+    je_aufruf = _ai_cost(modell or AI_MODEL_ANTHROPIC,
+                         max(0, int(eingabe_tokens or 0)),
+                         max(0, int(ausgabe_tokens or 0)))
+    return {'aufrufe': n, 'modell': modell or AI_MODEL_ANTHROPIC,
+            'kosten_eur': round(n * je_aufruf, 4),
+            'je_aufruf_eur': round(je_aufruf, 6)}

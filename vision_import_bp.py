@@ -2460,6 +2460,17 @@ def _stadt_paket(city):
     return str(getattr(stil, 'paket', '') or '') if stil is not None else ''
 
 
+def _stadt_stilgruppe(city):
+    """Woran man erkennt, dass zwei Städte verschieden AUSSEHEN.
+
+    Der Paketname taugt dafür nicht mehr: eine Stadt mit eigener, aus ihrer Markenfarbe
+    abgeleiteter Handschrift trägt paket == '', und zwei solche Städte sähen danach gleich
+    aus, obwohl sie es gerade nicht tun. Jede eigene Handschrift ist deshalb ihre eigene
+    Gruppe."""
+    paket = _stadt_paket(city)
+    return paket or f'eigen:{city.id}'
+
+
 def _aktive_staedte():
     from models import City
     try:
@@ -2495,8 +2506,7 @@ def _staedte_fuer_vorschau(city_ids=None, anzahl=3, anders=False):
     # aussehen. Jede bekommt deshalb ihre eigene Gruppe.
     gruppen = {}
     for c in staedte:
-        paket = _stadt_paket(c)
-        gruppen.setdefault(paket or f'eigen:{c.id}', []).append(c)
+        gruppen.setdefault(_stadt_stilgruppe(c), []).append(c)
     # Nach dem Namen der ersten Stadt je Gruppe sortieren: das mischt Pakete und eigene
     # Handschriften, statt eine der beiden Sorten systematisch hinten anzustellen.
     schluessel = sorted(gruppen.keys(), key=lambda k: (gruppen[k][0].name, k))
@@ -2572,7 +2582,7 @@ def _fehlende_stadtbilder(config, werte):
 def _stadt_vorschau(meta, config, city):
     """Ein Vorschaubild für eine Stadt → dict mit b64 oder fehler."""
     eintrag = {'city_id': city.id, 'city_name': city.name, 'paket': _stadt_paket(city),
-               'b64': None, 'fehlend': []}
+               'stil_gruppe': _stadt_stilgruppe(city), 'b64': None, 'fehlend': []}
     rend = _render_mod()
     if rend is None:
         eintrag['fehler'] = 'Renderer nicht verfügbar'

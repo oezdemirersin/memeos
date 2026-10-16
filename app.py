@@ -1068,7 +1068,7 @@ def api_knowledge_ai_generate(city_id):
         hinweis = _ai_key_hinweis()
         return jsonify({'error': ('Kein Anthropic API Key' if not hinweis
                                   else f'Kein brauchbarer Anthropic API Key: {hinweis}')}), 400
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         return jsonify({'error': gesperrt}), 400
     try:
@@ -1899,13 +1899,20 @@ MODEL_PRICES = {
     # bewusst als kurze Vorsilbe da, damit jede Opus-Ausgabe erfasst ist — über die
     # Umgebungsvariable MEMEOS_VISION_MODEL lässt sich ein Opus-Modell frei einstellen.
     'claude-opus':       _preise(5.00, 25.00),
+    # Fable und Mythos kosten das Doppelte von Opus. Als Vorsilbe eingetragen, damit jede
+    # Ausgabe der Reihe erfasst ist – über MEMEOS_VISION_MODEL lässt sich ein beliebiges
+    # Modell einstellen, und ein nicht geführtes würde sonst zu billig gerechnet.
+    'claude-fable':      _preise(10.00, 50.00, cache_read_faktor=0.025),
+    'claude-mythos':     _preise(10.00, 50.00, cache_read_faktor=0.025),
     'deepseek-chat':     _preise(0.27, 1.10, cache_write_faktor=1.00, cache_read_faktor=0.26),
     'deepseek-reasoner': _preise(0.55, 2.19, cache_write_faktor=1.00, cache_read_faktor=0.26),
 }
-# Unbekanntes Modell: der Opus-Satz, das teuerste hier geführte Modell. Vorher stand hier der
-# Sonnet-Satz — 40 Prozent unter Opus, obwohl der Kommentar „lieber zu hoch schätzen" versprach.
-# Bei einem unbekannten Opus-Modell hätte die Kostenbremse dadurch viel zu spät gegriffen.
-MODEL_PRICE_DEFAULT = _preise(5.00, 25.00)
+# Unbekanntes Modell: der derzeit TEUERSTE geführte Satz, damit die Kostenbremse bei einem
+# Modell, das hier noch nicht steht, eher zu früh als zu spät greift. Stand bis 16.10.2026
+# auf dem Opus-Satz – die Fable-/Mythos-Reihe kostet das Doppelte, ein damit gerechneter
+# Höchstaufruf wurde mit der Hälfte gebucht. Wer hier ein teureres Modell einträgt, muss
+# diesen Wert mit anheben.
+MODEL_PRICE_DEFAULT = _preise(10.00, 50.00)
 
 
 def _model_price(model):
@@ -2025,6 +2032,90 @@ def _ai_budget_eur():
         return 0.0
 
 
+def _ki_gesperrt(feature=''):
+    """Alle Bremsen auf einmal: das alte Monatsbudget UND ki_bremse (Notaus, Tag, Stunde).
+
+    Eine einzige Stelle, damit kein Aufrufweg versehentlich nur die Hälfte prüft."""
+    alt = _ai_budget_gesperrt()
+    if alt:
+        return alt
+    try:
+        import ki_bremse
+        return ki_bremse.pruefen(feature)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse nicht nutzbar: %s', ex)
+        return None
+
+
+def _ki_platz_nehmen(feature, modell, user_text, system_blocks, max_tokens):
+    """(Sperrgrund, Marke). Prüft alle Bremsen und merkt den Höchstbetrag vor.
+
+    Vorgemerkt wird die Obergrenze: so viel KANN dieser Aufruf höchstens kosten. Nach dem
+    Aufruf ersetzt der tatsächliche Verbrauch die Vormerkung."""
+    alt = _ai_budget_gesperrt()
+    if alt:
+        return alt, None
+    try:
+        import ki_bremse
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse nicht nutzbar: %s', ex)
+        return None, None
+    zeichen = len(user_text or '')
+    for block in (system_blocks or []):
+        zeichen += len((block.get('text') if isinstance(block, dict) else str(block)) or '')
+    hoechstens = _ai_cost(modell, max(1, zeichen // 4), int(max_tokens or 0))
+    try:
+        return ki_bremse.platz_nehmen(feature, hoechstens)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse: Platz nehmen fehlgeschlagen: %s', ex)
+        return None, None
+
+
+def _ki_abrechnen(marke):
+    """Eine Vormerkung auflösen – MUSS auf jedem Ausgang passieren."""
+    if marke is None:
+        return
+    try:
+        import ki_bremse
+        ki_bremse.abrechnen(marke)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse: Vormerkung nicht auflösbar: %s', ex)
+
+
+def _ki_aufruf_buchen(feature=''):
+    """Einen Aufruf im Stundenzähler vermerken. Fehler hier dürfen nichts umwerfen."""
+    try:
+        import ki_bremse
+        ki_bremse.aufruf_buchen(feature)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('ki_bremse: Zähler nicht fortgeschrieben: %s', ex)
+
+
+def _ki_abbruch_buchen(feature, modell, anfrage, max_tokens, provider='anthropic'):
+    """Einen bezahlten, aber nicht lesbaren Aufruf als geschätzte Obergrenze buchen.
+
+    Lieber zu hoch als gar nicht: eine Bremse, die einen bezahlten Aufruf mit 0 verbucht,
+    lässt dieselbe Schleife beliebig oft weiterlaufen."""
+    try:
+        text = ''
+        for teil in (anfrage or {}).get('messages') or []:
+            inhalt = teil.get('content') if isinstance(teil, dict) else None
+            if isinstance(inhalt, str):
+                text += inhalt
+        for block in (anfrage or {}).get('system') or []:
+            text += (block.get('text') if isinstance(block, dict) else str(block)) or ''
+        # Grobe Faustregel: vier Zeichen je Token. Eher zu viel als zu wenig.
+        ein = max(1, len(text) // 4)
+        _log_ai_usage(f'{feature}_abbruch', modell, ein, int(max_tokens or 0),
+                      provider=provider)
+        _ki_aufruf_buchen(feature)
+        log.warning('KI-Aufruf %s abgebrochen nach der Antwort – als Obergrenze gebucht '
+                    '(%s Eingabe-, %s Ausgabetokens)', feature, ein, max_tokens)
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.error('Abbruch-Buchung fehlgeschlagen (%s) – Verbrauch bleibt unverbucht: %s',
+                  feature, ex)
+
+
 def _ai_budget_gesperrt():
     """None wenn Aufrufe erlaubt sind, sonst der fertige Fehlertext."""
     budget = _ai_budget_eur()
@@ -2065,6 +2156,9 @@ _KI_DAUERHAFT_ANFAENGE = (
     'KI-Anfrage ungültig:',            # 400/404/422 – kaputte Anfrage, unbekanntes Modell
     'KI-Antwort abgeschnitten',        # max_tokens zu klein – ein zweiter Versuch scheitert gleich
     'KI-Budget',                       # Kostenbremse – wiederholen hilft nicht
+    'KI-Notaus',                       # Notaus gesetzt
+    'Stundengrenze', 'Tagesbudget', 'Monatsbudget',   # die übrigen Bremsen
+    'KI-Antwort unbrauchbar:',         # zweimal kein brauchbares JSON – bezahlt, aber nutzlos
     'Kein Anthropic-Key',
     'Kein DeepSeek-Schlüssel',
 )
@@ -2192,7 +2286,10 @@ def _anthropic_complete(system_blocks, user_text, max_tokens, feature, versuch=0
     if not _ai_key_plausibel(ANTHROPIC_API_KEY):
         _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', f'KI-Zugang abgelehnt: {_AI_KEY_BEISPIEL_HINWEIS}'
-    gesperrt = _ai_budget_gesperrt()
+    # Prüfen UND Platz nehmen in einem Zug: sonst lassen gleichzeitige Worker bei
+    # 4,99 von 5,00 EUR alle zusammen durch, weil jeder prüft, bevor einer gebucht hat.
+    gesperrt, marke = _ki_platz_nehmen(feature, AI_MODEL_ANTHROPIC, user_text,
+                                       system_blocks, max_tokens)
     if gesperrt:
         _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', gesperrt
@@ -2206,6 +2303,15 @@ def _anthropic_complete(system_blocks, user_text, max_tokens, feature, versuch=0
         msg = client.messages.create(**anfrage)
     except Exception as ex:
         art, text, warte = _ki_fehler_art(ex, versuch)
+        # Bricht die Verbindung NACH der Modellantwort ab, ist der Aufruf bezahlt – nur
+        # wissen wir nicht, wie teuer. Eine 0 zu buchen wäre das Schlimmste: die Bremse
+        # rückt dann nie vor, und dieselbe Schleife läuft weiter. Darum eine geschätzte
+        # Obergrenze buchen (angeforderte max_tokens), erkennbar am Merkmal '_abbruch'.
+        # Nur bei dauerhaften Fehlern nicht: 401/400 kosten nichts.
+        if art != 'dauerhaft':
+            _ki_abbruch_buchen(feature, AI_MODEL_ANTHROPIC, anfrage, max_tokens,
+                               'anthropic')
+        _ki_abrechnen(marke)
         _ki_hinweis_setzen(hinweise, art, warte)
         return '', text
     usage = getattr(msg, 'usage', None)
@@ -2214,6 +2320,7 @@ def _anthropic_complete(system_blocks, user_text, max_tokens, feature, versuch=0
                   cache_creation_tokens=_usage_wert(usage, 'cache_creation_input_tokens'),
                   cache_read_tokens=_usage_wert(usage, 'cache_read_input_tokens'),
                   provider='anthropic')
+    _ki_abrechnen(marke)
     # Abgeschnittene Antwort: bezahlt, aber unbrauchbar. Ein zweiter Versuch scheitert
     # deterministisch genauso — deshalb ein eigener Fehlertext ohne 'KI nicht erreichbar'.
     if getattr(msg, 'stop_reason', None) == 'max_tokens':
@@ -2236,7 +2343,7 @@ def _deepseek_complete(system_blocks, user_text, max_tokens, feature, versuch=0,
     if not key:
         _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', 'Kein DeepSeek-Schlüssel'
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', gesperrt
@@ -2251,8 +2358,16 @@ def _deepseek_complete(system_blocks, user_text, max_tokens, feature, versuch=0,
             timeout=60)
     except Exception as ex:
         art, text, warte = _ki_fehler_art(ex, versuch)
+        # Wie beim Anthropic-Weg: ein Abbruch NACH der Antwort ist bezahlt. Als
+        # geschätzte Obergrenze buchen, damit die Bremse vorrückt.
+        if art != 'dauerhaft':
+            _ki_abbruch_buchen(feature, model,
+                               {'messages': [{'content': _system_text(system_blocks)},
+                                             {'content': user_text}]},
+                               max_tokens, 'deepseek')
         _ki_hinweis_setzen(hinweise, art, warte)
         return '', text
+    _ki_aufruf_buchen(feature)
     if antwort.status_code != 200:
         art, text, warte = _ki_fehler_art_status(
             antwort.status_code,
@@ -2262,6 +2377,11 @@ def _deepseek_complete(system_blocks, user_text, max_tokens, feature, versuch=0,
     try:
         daten = antwort.json()
     except Exception as ex:
+        # HTTP 200, also abgerechnet, aber der Rumpf ist unlesbar – trotzdem buchen.
+        _ki_abbruch_buchen(feature, model,
+                           {'messages': [{'content': _system_text(system_blocks)},
+                                         {'content': user_text}]},
+                           max_tokens, 'deepseek')
         return '', f'DeepSeek-Antwort nicht lesbar: {type(ex).__name__}'
     usage = daten.get('usage') or {}
     try:
@@ -2297,7 +2417,7 @@ def _ai_complete(system_blocks, user_text, max_tokens, feature, versuch=0, hinwe
     nicht, und so erbt sie auch, wer eine der beiden direkt aufruft.
     """
     _ki_hinweis_setzen(hinweise, 'temporaer', _ki_wartezeit(versuch))
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         _ki_hinweis_setzen(hinweise, 'dauerhaft', 0.0)
         return '', gesperrt
@@ -2574,7 +2694,7 @@ def _claude_fit_and_vars(city, template):
     if not _ai_key_vorhanden():
         return _ki_ohne_schluessel(city, template)
 
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         return {'error': gesperrt, 'fit_score': None, 'reasoning': '', 'vars': {}, 'brief': ''}
 
@@ -2598,7 +2718,14 @@ def _claude_fit_and_vars(city, template):
             continue
         daten, fehler = _ki_json_lesen(raw)
         if fehler:
-            last_error = fehler
+            # Bezahlt, aber unbrauchbar. Ein zweiter Versuch darf sein – Modelle streuen –,
+            # ein dritter und vierter nicht. Ab dem zweiten Fehlschlag wird der Fehler
+            # dauerhaft, damit auch die Render-Queue nicht noch einmal nachlegt. Vorher
+            # ergab EINE Aufgabe bis zu vier bezahlte Aufrufe.
+            last_error = (f'KI-Antwort unbrauchbar: {fehler}' if attempt
+                          else fehler)
+            if attempt:
+                break
             continue
         return _ki_antwort_zu_ergebnis(daten, template, city)
 
@@ -2624,7 +2751,7 @@ def _claude_fit_and_vars_multi(city, templates):
     if not _ai_key_vorhanden():
         return {t.id: _ki_ohne_schluessel(city, t) for t in templates}
 
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         return {t.id: {'error': gesperrt, 'fit_score': None, 'reasoning': '',
                        'vars': {}, 'brief': ''} for t in templates}
@@ -2655,7 +2782,10 @@ def _claude_fit_and_vars_multi(city, templates):
             continue
         daten, fehler = _ki_json_lesen(raw)
         if fehler:
-            last_error = fehler
+            # Gleiche Regel wie beim Einzelaufruf: ein zweiter Versuch ja, ein dritter nein.
+            last_error = f'KI-Antwort unbrauchbar: {fehler}' if attempt else fehler
+            if attempt:
+                break
             continue
         ergebnis = {}
         for t in templates:
@@ -3669,8 +3799,8 @@ def api_settings_get():
         'deepseek_model':       _deepseek_model(),
         'ai_model_anthropic':   AI_MODEL_ANTHROPIC,
         'ai_budget_month_eur':  _ai_budget_eur(),
-        'ai_budget_reached':    bool(_ai_budget_gesperrt()),
-        'ai_budget_hinweis':    _ai_budget_gesperrt() or '',
+        'ai_budget_reached':    bool(_ki_gesperrt()),
+        'ai_budget_hinweis':    _ki_gesperrt() or '',
         # 0 ist ein gültiger Wert und bedeutet ausdrücklich: keine Bremse, beliebig hohe Kosten.
         'ai_budget_aktiv':      _ai_budget_eur() > 0,
         'ai_budget_bedeutung':  ('Keine Bremse — die Kosten sind nach oben offen'
@@ -3746,7 +3876,7 @@ def api_ai_test():
         return jsonify({'ok': False, 'detail': 'Kein Anthropic-Schlüssel hinterlegt'})
     if not _ai_key_plausibel(ANTHROPIC_API_KEY):
         return jsonify({'ok': False, 'detail': _AI_KEY_BEISPIEL_HINWEIS})
-    gesperrt = _ai_budget_gesperrt()
+    gesperrt = _ki_gesperrt()
     if gesperrt:
         return jsonify({'ok': False, 'detail': gesperrt})
     # max_tokens=1: die Antwort wird abgeschnitten sein, das ist gewollt und beweist trotzdem,
@@ -4023,8 +4153,42 @@ def _log_ai_usage(feature, model, input_tokens, output_tokens,
                        cache_read_input_tokens=int(cache_read_tokens or 0),
                        provider=(provider or 'anthropic')[:20],
                        cost_eur=cost)
-    db.session.add(entry)
-    db.session.commit()
+    try:
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as ex:
+        # Die Buchung darf den Aufruf nicht mitreißen: bezahlt ist er ohnehin, und eine
+        # Ausnahme hier verwandelte einen erfolgreichen Aufruf in einen Fehler, den die
+        # Wiederholungsschleife dann noch einmal bezahlt hätte. Stattdessen in eine
+        # Ausweichdatei schreiben, damit die Kosten nicht spurlos verschwinden.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        log.error('KI-Verbrauch nicht buchbar (%s, %s): %s', feature, model, ex)
+        _ai_usage_nachtrag(feature, model, input_tokens, output_tokens,
+                           cache_creation_tokens, cache_read_tokens, provider, cost)
+    return entry
+
+
+def _ai_usage_nachtrag(feature, model, input_tokens, output_tokens,
+                       cache_creation_tokens, cache_read_tokens, provider, cost):
+    """Letzte Rettung: eine Zeile in <DATA_ROOT>/ai_usage_nachtrag.log.
+
+    Besser eine Textzeile als gar nichts – sonst rechnet die Bremse ab hier zu niedrig und
+    niemand erfährt davon."""
+    try:
+        pfad = os.path.join(_DATA_ROOT, 'ai_usage_nachtrag.log')
+        with open(pfad, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps({
+                'zeit': datetime.utcnow().isoformat(), 'feature': feature, 'model': model,
+                'input': int(input_tokens or 0), 'output': int(output_tokens or 0),
+                'cache_write': int(cache_creation_tokens or 0),
+                'cache_read': int(cache_read_tokens or 0),
+                'provider': provider, 'kosten_eur': round(float(cost or 0), 6),
+            }, ensure_ascii=False) + '\n')
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.error('Auch der Nachtrag schlug fehl: %s', ex)
 
 
 def _monat_grenzen(month=None):
@@ -5014,7 +5178,23 @@ def api_inspo_ai_sort():
     """Lässt Claude unsortierte Posts thematisch einordnen + Stadtwissen extrahieren."""
     if not _ai_key_vorhanden():
         return jsonify({'error': _ai_key_hinweis() or 'Kein API Key'}), 400
-    count = int(request.json.get('count', 20) if request.json else 20)
+    # Die Bremse EINMAL vorab fragen: sonst merkt man ein erschöpftes Budget erst, nachdem
+    # die Schleife für jeden Beitrag einzeln eine Absage kassiert hat.
+    gesperrt = _ki_gesperrt()
+    if gesperrt:
+        return jsonify({'error': gesperrt}), 409
+    # 'count' kam ungedeckelt aus dem Rumpf: EIN Klick mit count=250 ergab 250 bezahlte
+    # Aufrufe. Derselbe Deckel wie im Scheduler (inspo_sort_limit).
+    try:
+        import scheduler as _sched
+        vorgabe, hoechstens = _sched.INSPO_SORT_DEFAULT, _sched.INSPO_SORT_MAX
+    except Exception:                                # pragma: no cover – defensiv
+        vorgabe, hoechstens = 20, 200
+    try:
+        gewuenscht = int((request.json or {}).get('count', vorgabe))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'count muss eine Zahl sein'}), 400
+    count = max(1, min(hoechstens, gewuenscht))
     posts = MemoInspirationPost.query.filter(
         MemoInspirationPost.ai_relevant.is_(None),
         MemoInspirationPost.status.in_(['new', 'saved'])

@@ -730,8 +730,11 @@ class TestSitzungFlask(unittest.TestCase):
             bild = Image.open(io.BytesIO(base64.b64decode(b['b64'])))
             self.assertLessEqual(max(bild.size), 540)
             self.assertIn('bild_rathaus', b['fehlend'])
-            pakete.append(b['paket'])
-        # drei verschiedene Pakete, weil es drei verschieden gestylte Städte gibt
+            pakete.append(b['stil_gruppe'])
+        # Drei verschiedene AUFTRITTE, weil es drei verschieden gestylte Städte gibt.
+        # Geprüft wird 'stil_gruppe', nicht 'paket': eine Stadt mit eigener, aus ihrer
+        # Markenfarbe abgeleiteter Handschrift trägt paket == '', und zwei solche Städte
+        # sähen danach gleich aus, obwohl sie es gerade nicht tun.
         self.assertEqual(len(set(pakete)), len(pakete))
         # verschiedene Städte, verschiedene Bilder
         self.assertEqual(len({b['b64'] for b in j['bilder']}), len(j['bilder']))

@@ -165,14 +165,27 @@ class TestVorgaben(unittest.TestCase):
         for feld in ('notaus', 'monat', 'tag', 'stunde', 'warnungen', 'vorgaben'):
             self.assertIn(feld, a)
 
-    def test_schaetzung_rechnet_mit_echten_preisen(self):
-        s = K.schaetzung(100, eingabe_tokens=2000, ausgabe_tokens=600)
-        self.assertEqual(s['aufrufe'], 100)
-        self.assertGreater(s['kosten_eur'], 0)
-        # Doppelt so viele Aufrufe kosten doppelt so viel.
-        s2 = K.schaetzung(200, eingabe_tokens=2000, ausgabe_tokens=600)
-        self.assertAlmostEqual(s2['kosten_eur'], 2 * s['kosten_eur'], places=3)
+    def test_schaetzung_rechnet_wie_die_abrechnung(self):
+        """Eine Schätzung, die anders rechnet als die Buchung, ist eine zweite Wahrheit.
+        Die erste Fassung lag um den Faktor 5000 daneben – darum wird hier gegen die
+        Funktion geprüft, die tatsächlich bucht, UND gegen eine feste Größenordnung."""
+        from app import _ai_cost, AI_MODEL_ANTHROPIC
+        s = K.schaetzung(20, eingabe_tokens=2000, ausgabe_tokens=600)
+        echt = 20 * _ai_cost(AI_MODEL_ANTHROPIC, 2000, 600)
+        self.assertAlmostEqual(s['kosten_eur'], echt, places=5)
+        # Größenordnung festnageln: 20 kleine Aufrufe kosten Cent, nicht Hunderte Euro.
+        self.assertLess(s['kosten_eur'], 0.20, s)
+        self.assertGreater(s['kosten_eur'], 0.0)
+        s2 = K.schaetzung(40, eingabe_tokens=2000, ausgabe_tokens=600)
+        self.assertAlmostEqual(s2['kosten_eur'], 2 * s['kosten_eur'], places=4)
         self.assertEqual(K.schaetzung(0)['kosten_eur'], 0)
+
+    def test_schaetzung_nimmt_das_modell_das_wirklich_laeuft(self):
+        from app import AI_MODEL_ANTHROPIC
+        self.assertEqual(K.schaetzung(1)['modell'], AI_MODEL_ANTHROPIC)
+        teuer = K.schaetzung(1, modell='claude-opus-5')
+        guenstig = K.schaetzung(1, modell='claude-haiku-4-5')
+        self.assertGreater(teuer['kosten_eur'], guenstig['kosten_eur'])
 
     def test_pruefen_haelt_die_reihenfolge_ein(self):
         """Der Notaus darf nicht erst eine Datenbankabfrage kosten."""

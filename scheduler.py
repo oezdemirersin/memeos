@@ -71,9 +71,12 @@ _UNSET = object()
 
 # ── Job-Register ───────────────────────────────────────────────────────────────
 JOBS = [
-    {'key': 'rss',      'label': 'RSS-Feeds holen',
-     'description': 'Holt die Feeds aller aktiven Städte mit RSS-URL, neue Artikel landen im News-Radar. KI-Bewertung nur, wenn ANTHROPIC_API_KEY gesetzt ist.',
-     'default_enabled': True,  'default_time': '07:00', 'needs_telegram': False, 'costs_ai': False},
+    {'key': 'rss',      'label': 'RSS-Feeds holen (bewertet mit KI)',
+     'description': 'Holt die Feeds aller aktiven Städte mit RSS-URL, neue Artikel landen '
+                    'im News-Radar. Die Bewertung läuft über die KI und kostet – deshalb '
+                    'ist dieser Job als kostenpflichtig gekennzeichnet, obwohl das Holen '
+                    'der Feeds selbst nichts kostet.',
+     'default_enabled': True,  'default_time': '07:00', 'needs_telegram': False, 'costs_ai': True},
     {'key': 'trending', 'label': 'Trending-Themen (KI)',
      'description': 'Analysiert die Schlagzeilen jeder Stadt mit Claude und legt Trending-Themen an. Kostet KI-Tokens, deshalb standardmäßig aus.',
      'default_enabled': False, 'default_time': '07:15', 'needs_telegram': False, 'costs_ai': True},
@@ -308,6 +311,19 @@ def _offline():
     return os.getenv('MEMEOS_OFFLINE', '') == '1'
 
 
+def _ki_gesperrt_text():
+    """Fertiger Satz, wenn eine Kostenbremse greift – sonst None."""
+    appmod = _appmod()
+    fn = getattr(appmod, '_ki_gesperrt', None) if appmod else None
+    if fn is None:
+        return None
+    try:
+        return fn()
+    except Exception as ex:                          # pragma: no cover – defensiv
+        log.warning('Kostenbremse nicht abfragbar: %s', ex)
+        return None
+
+
 def _anthropic_key():
     return (os.getenv('ANTHROPIC_API_KEY') or '').strip()
 
@@ -489,21 +505,28 @@ Antworte NUR mit validem JSON (kein Markdown, kein Text davor/danach):
 trend_score: 0-100, wie gut geeignet für einen viralen Stadtmeme."""
 
 
-def _trending_for_city(city, client):
+def _trending_for_city(city, client=None):
+    """Trending-Themen einer Stadt. Rückgabe (neu, Duplikate) oder (0, 0).
+
+    Geht über app._anthropic_complete statt selbst über das SDK. Das ist der EINZIGE Weg,
+    auf dem Schlüsselprüfung, Kostenbremse (Notaus, Monat, Tag, Stunde) und die Buchung
+    des Verbrauchs zusammen greifen. Vorher rief diese Funktion das SDK direkt auf und war
+    damit der einzige automatische Weg ohne jede Bremse: bei erschöpftem Budget lief sie
+    weiter, und bei 20 Städten waren das 20 bezahlte Aufrufe je Lauf.
+
+    `client` wird nicht mehr gebraucht und nur noch entgegengenommen, damit vorhandene
+    Aufrufer nicht brechen."""
     feed = _fetch_feed(city.rss_url)
     headlines = [e.title for e in feed.entries[:20] if getattr(e, 'title', None)]
     if not headlines:
         return 0, 0
-    resp = client.messages.create(
-        model=TRENDING_MODEL, max_tokens=800,
-        messages=[{'role': 'user', 'content': _trending_prompt(city.name, headlines)}],
-    )
-    try:
-        _appmod()._log_ai_usage('trending_auto', TRENDING_MODEL,
-                                resp.usage.input_tokens, resp.usage.output_tokens)
-    except Exception as ex:
-        log.warning('AI-Usage-Log fehlgeschlagen: %s', ex)
-    raw = ''.join(b.text for b in resp.content if getattr(b, 'type', '') == 'text').strip()
+    appmod = _appmod()
+    rufen = getattr(appmod, '_anthropic_complete', None) if appmod else None
+    if rufen is None:                                # pragma: no cover – defensiv
+        raise RuntimeError('app._anthropic_complete nicht erreichbar')
+    raw, fehler = rufen([], _trending_prompt(city.name, headlines), 800, 'trending_auto')
+    if fehler:
+        raise RuntimeError(fehler)
     start, end = raw.find('{'), raw.rfind('}') + 1
     data = json.loads(raw[start:end]) if start >= 0 and end > start else {}
     cutoff = datetime.utcnow() - timedelta(hours=48)
@@ -533,20 +556,40 @@ def _trending_for_city(city, client):
     return added, skipped
 
 
+# Höchstens so viele Städte je Lauf. Ohne Deckel wuchs dieser Job linear mit der Zahl der
+# Städte – bei den angestrebten hundert Accounts wären das hundert bezahlte Aufrufe täglich.
+TRENDING_MAX_STAEDTE = 25
+
+
+def trending_limit():
+    """Deckel für den Trending-Job je Lauf (AppSettings 'trending_limit')."""
+    return max(0, min(TRENDING_MAX_STAEDTE, _int_setting('trending_limit',
+                                                         TRENDING_MAX_STAEDTE)))
+
+
 def job_trending(manual=False):
     key = _anthropic_key()
     if not key:
         return 'kein ANTHROPIC_API_KEY, übersprungen'
+    # Die Bremse VOR der Schleife fragen: sonst liefe sie über alle Städte weiter und
+    # bekäme erst je Stadt eine Absage – zwanzig Fehlschläge statt eines sauberen Abbruchs.
+    gesperrt = _ki_gesperrt_text()
+    if gesperrt:
+        return f'übersprungen: {gesperrt}'
     cities = (City.query.filter_by(active=True)
               .filter(City.rss_url.isnot(None), City.rss_url != '').all())
     if not cities:
         return '0 Städte mit RSS-URL'
-    import anthropic
-    client = anthropic.Anthropic(api_key=key, timeout=60.0, max_retries=1)
+    deckel = trending_limit()
+    gekuerzt = max(0, len(cities) - deckel)
+    cities = cities[:deckel]
     done = added = skipped = failed = 0
     for city in cities:
+        # Auch IN der Schleife prüfen: das Budget kann durch diese Aufrufe selbst reißen.
+        if _ki_gesperrt_text():
+            break
         try:
-            a, s = _trending_for_city(city, client)
+            a, s = _trending_for_city(city)
             added += a
             skipped += s
             done += 1
@@ -557,6 +600,11 @@ def job_trending(manual=False):
     result = f'{done} Städte, {added} neue Themen, {skipped} Duplikate'
     if failed:
         result += f', {failed} fehlgeschlagen'
+    if gekuerzt:
+        result += f', {gekuerzt} wegen des Deckels nicht angefasst'
+    rest = len(cities) - done - failed
+    if rest > 0:
+        result += f', {rest} nach Erreichen der Kostengrenze abgebrochen'
     return result
 
 
@@ -1567,6 +1615,17 @@ def api_automation_save():
 def api_automation_run(job):
     if job not in JOB_BY_KEY:
         return jsonify({'ok': False, 'error': f'Unbekannter Job: {job}'}), 404
+    # Von Hand ausgelöst heißt nicht „an allen Sicherungen vorbei". Bei Jobs, die KI
+    # kosten, gelten Master-Pause und Kostenbremse genauso – vorher war dieser Knopf der
+    # bequemste Weg, beide zu umgehen.
+    if JOB_BY_KEY[job].get('costs_ai'):
+        if is_master_paused():
+            return jsonify({'ok': False, 'job': job,
+                            'error': 'Master-Pause ist aktiv – dieser Job kostet KI und '
+                                     'läuft deshalb nicht. Erst die Pause aufheben.'}), 409
+        gesperrt = _ki_gesperrt_text()
+        if gesperrt:
+            return jsonify({'ok': False, 'job': job, 'error': gesperrt}), 409
     result = run_job(job, manual=True)
     ok = not result.startswith('Fehler')
     return jsonify({'ok': ok, 'job': job, 'result': result,
