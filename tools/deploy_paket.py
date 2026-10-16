@@ -145,8 +145,12 @@ def pruefen(pfad):
     with tarfile.open(pfad, 'r:gz') as tar:
         namen = tar.getnames()
         zettel = None
-        if 'beipackzettel.json' in namen:
-            zettel = json.load(tar.extractfile('beipackzettel.json'))
+        # Seit dem Umstieg auf _paket/ liegt der Zettel eine Ebene tiefer; ältere
+        # Pakete haben ihn noch oben, und die will man auch noch ansehen können.
+        for wo in ('_paket/beipackzettel.json', 'beipackzettel.json'):
+            if wo in namen:
+                zettel = json.load(tar.extractfile(wo))
+                break
     print(f'Paket: {pfad}')
     print(f'  {len(namen)} Einträge, {os.path.getsize(pfad) / 1_048_576:.1f} MB')
     if zettel:
@@ -157,7 +161,10 @@ def pruefen(pfad):
         print(f'  Ordner: {", ".join(zettel.get("ordner") or [])}')
     nach_ordner = {}
     for n in namen:
-        teil = n.split('/')[0] if '/' in n else '(Wurzel)'
+        rest = n[len('_paket/'):] if n.startswith('_paket/') else n
+        if not rest:
+            continue
+        teil = rest.split('/')[0] if '/' in rest else '(Wurzel)'
         nach_ordner[teil] = nach_ordner.get(teil, 0) + 1
     print('  Dateien je Ordner:')
     for k, v in sorted(nach_ordner.items()):
@@ -187,7 +194,7 @@ def main():
     if not args.mit_renders:
         print('\n  Ohne instance/renders. Beiträge im Vorrat verlieren dadurch ihr Bild;'
               '\n  mit --mit-renders kommen sie mit (dafür wird das Paket deutlich größer).')
-    print(f"""
+    print("""
 So kommt es auf Render hinüber (der Starter-Plan hat SSH):
 
   1. Erst einmal normal deployen und einmal einloggen. Dann in der Render-Oberfläche

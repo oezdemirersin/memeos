@@ -164,6 +164,61 @@ class TestPacken(unittest.TestCase):
         self.assertEqual(zettel['inhalt']['meme_template'], 3)
 
 
+    def test_der_ganze_aufruf_laeuft_durch_und_druckt_die_anleitung(self):
+        """Das Werkzeug wird von Hand aufgerufen, nicht importiert. Es muss also als
+        Programm durchlaufen – mit Exit 0 – und die Befehle ausgeben, die in DEPLOY.md
+        versprochen sind.
+
+        Aufgefallen ist das zu spät: beim Probelauf hing ein `| sed -n '1,12p'` an der
+        Ausgabe, der Fehler stand auf stderr, und der Exit-Code der Pipe war der von sed.
+        Das Paket wurde geschrieben, die Anleitung nie – der Aufruf endete mit
+        NameError auf Exit 1. Dieser Test schaut auf beides."""
+        _db_mit_marke(os.path.join(self.tmp, 'memeos.db'), 'x')
+        with open(os.path.join(self.tmp, 'uploads', 'bild.png'), 'wb') as fh:
+            fh.write(b'\x89PNG' + b'0' * 20)
+        ziel = os.path.join(self.tmp, 'ausgabe.tar.gz')
+
+        umgebung = dict(os.environ, MEMEOS_DATA_ROOT=self.tmp, ANTHROPIC_API_KEY='')
+        r = subprocess.run([sys.executable, os.path.join(WURZEL, 'tools', 'deploy_paket.py'),
+                            '--ziel', ziel],
+                           capture_output=True, text=True, env=umgebung, timeout=180)
+        self.assertEqual(r.returncode, 0, f'stderr:\n{r.stderr}')
+        self.assertIn('scp ', r.stdout, 'die scp-Zeile fehlt')
+        self.assertIn('tar xzf ausgabe.tar.gz', r.stdout, 'der Auspack-Befehl fehlt')
+        self.assertIn('Restart service', r.stdout)
+        self.assertNotIn('{ziel}', r.stdout, 'eine Platzhalter-Klammer blieb stehen')
+        self.assertNotIn('{name}', r.stdout, 'eine Platzhalter-Klammer blieb stehen')
+        self.assertNotIn('{vorlagen}', r.stdout, 'eine Platzhalter-Klammer blieb stehen')
+
+    def test_pruefen_liest_den_beipackzettel(self):
+        """--pruefen soll zeigen, was im Paket steckt, ohne es auszupacken.
+
+        Der Zettel wanderte mit dem Umstieg auf _paket/ eine Ebene tiefer; gesucht
+        wurde er weiter oben. --pruefen lief durch und zeigte einfach nichts."""
+        db = os.path.join(self.tmp, 'memeos.db')
+        c = sqlite3.connect(db)
+        c.execute('pragma journal_mode=wal')
+        c.execute('create table meme_template (id integer primary key, name text)')
+        c.executemany('insert into meme_template (name) values (?)', [('a',), ('b',)])
+        c.commit()
+        c.close()
+        with open(os.path.join(self.tmp, 'uploads', 'bild.png'), 'wb') as fh:
+            fh.write(b'\x89PNG' + b'0' * 20)
+        ziel, _d, _z = self._packen()
+
+        umgebung = dict(os.environ, ANTHROPIC_API_KEY='')
+        r = subprocess.run([sys.executable, os.path.join(WURZEL, 'tools', 'deploy_paket.py'),
+                            '--pruefen', ziel],
+                           capture_output=True, text=True, env=umgebung, timeout=180)
+        self.assertEqual(r.returncode, 0, f'stderr:\n{r.stderr}')
+        self.assertIn('Inhalt der Datenbank', r.stdout,
+                      'der Beipackzettel wurde nicht gefunden')
+        self.assertIn('meme_template', r.stdout)
+        self.assertRegex(r.stdout, r'meme_template\s+2')
+        self.assertRegex(r.stdout, r'uploads\s+1',
+                         'die Ordnerliste zaehlt nicht je Ordner, sondern nur _paket')
+
+
 class TestEinspielen(unittest.TestCase):
     """app._paket_einspielen() – der Tausch beim Start."""
 
