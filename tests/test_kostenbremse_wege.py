@@ -56,6 +56,22 @@ class Attrappe:
         return Antwort()
 
 
+class FeedAttrappe:
+    """Ersetzt scheduler._fetch_feed: liefert Schlagzeilen, ohne ins Netz zu gehen.
+
+    Ohne das versuchte der Test eine echte DNS-Auflösung, der Feed scheiterte, und
+    _trending_for_city stieg aus, BEVOR es zur KI kam – der Test prüfte also nichts."""
+
+    class Eintrag:
+        def __init__(self, titel):
+            self.title = titel
+
+    def __call__(self, url):
+        class Feed:
+            entries = [FeedAttrappe.Eintrag(f'Schlagzeile {i}') for i in range(5)]
+        return Feed()
+
+
 class BremseTest(unittest.TestCase):
 
     @classmethod
@@ -249,20 +265,118 @@ class BremseTest(unittest.TestCase):
 
     # ── Der Trending-Job ─────────────────────────────────────────────────
     def test_trending_job_respektiert_die_bremse(self):
+        """scheduler.job_trending war der einzige automatische Weg ohne Bremse.
+
+        Wichtig: scheduler._anthropic_key() liest die UMGEBUNGSVARIABLE, nicht
+        app.ANTHROPIC_API_KEY. Ohne sie steigt der Job schon vorher mit
+        „kein ANTHROPIC_API_KEY, übersprungen" aus – und der Test wäre grün, ohne die
+        Bremse je berührt zu haben. Genau das ist mir zuerst passiert."""
+        import os
         import scheduler as S
         from models import City
         a = self.attrappe()
+        echter_feed = S._fetch_feed
+        S._fetch_feed = FeedAttrappe()
+        vorher_env = os.environ.get('ANTHROPIC_API_KEY', '')
+        os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-api03-' + 'x' * 80
         for i in range(5):
             self.db.session.add(City(name=f'Bremsstadt {i}', state='Hessen',
                                      rss_url='https://example.invalid/feed'))
         self.db.session.commit()
-        self.setz('notaus', '1')
-        ergebnis = S.job_trending()
-        self.assertEqual(a.aufrufe, 0, f'{a.aufrufe} Aufrufe trotz Notaus: {ergebnis}')
-        self.assertIn('übersprungen', ergebnis)
-        for c in City.query.filter(City.name.like('Bremsstadt%')).all():
-            self.db.session.delete(c)
+        try:
+            # Gegenprobe: OHNE Bremse würde der Job die Städte anfassen (er scheitert
+            # dann am unerreichbaren Feed, aber er kommt bis dorthin).
+            ohne = S.job_trending()
+            self.assertNotIn('übersprungen', ohne,
+                             f'der Job stieg schon vor der Bremse aus: {ohne}')
+            self.assertGreater(a.aufrufe, 0,
+                               f'ohne Bremse kam der Job gar nicht zur KI: {ohne}')
+            vor_der_bremse = a.aufrufe
+
+            self.setz('notaus', '1')
+            K.zaehler_zuruecksetzen()
+            ergebnis = S.job_trending()
+            self.assertEqual(a.aufrufe - vor_der_bremse, 0,
+                             f'{a.aufrufe - vor_der_bremse} Aufrufe trotz Notaus: {ergebnis}')
+            self.assertIn('Notaus', ergebnis,
+                          f'der Grund steht nicht im Ergebnis: {ergebnis}')
+        finally:
+            S._fetch_feed = echter_feed
+            os.environ['ANTHROPIC_API_KEY'] = vorher_env
+            for c in City.query.filter(City.name.like('Bremsstadt%')).all():
+                self.db.session.delete(c)
+            self.db.session.commit()
+
+    def test_trending_hat_einen_deckel_je_lauf(self):
+        """Ohne Deckel wächst dieser Job linear mit der Zahl der Städte – bei den
+        angestrebten hundert Accounts wären das hundert bezahlte Aufrufe täglich."""
+        import os
+        import scheduler as S
+        from models import City
+        a = self.attrappe()
+        echter_feed = S._fetch_feed
+        S._fetch_feed = FeedAttrappe()
+        vorher_env = os.environ.get('ANTHROPIC_API_KEY', '')
+        os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-api03-' + 'x' * 80
+        anzahl = S.TRENDING_MAX_STAEDTE + 7
+        for i in range(anzahl):
+            self.db.session.add(City(name=f'Bremsstadt {i:03d}', state='Hessen',
+                                     rss_url='https://example.invalid/feed'))
         self.db.session.commit()
+        try:
+            self.setz('stunde', '0')          # Stundengrenze aus, nur der Deckel zählt
+            self.setz('tag', '0')
+            self.setz('monat', '0')
+            ergebnis = S.job_trending()
+            self.assertLessEqual(a.aufrufe, S.TRENDING_MAX_STAEDTE,
+                                 f'{a.aufrufe} Aufrufe bei {anzahl} Städten, Deckel ist '
+                                 f'{S.TRENDING_MAX_STAEDTE}: {ergebnis}')
+            self.assertIn('Deckel', ergebnis,
+                          f'der Deckel wird nicht gemeldet: {ergebnis}')
+        finally:
+            S._fetch_feed = echter_feed
+            os.environ['ANTHROPIC_API_KEY'] = vorher_env
+            for c in City.query.filter(City.name.like('Bremsstadt%')).all():
+                self.db.session.delete(c)
+            self.db.session.commit()
+
+    def test_trending_bricht_ab_wenn_das_budget_MITTEN_im_lauf_reisst(self):
+        """Die Prüfung vor der Schleife reicht nicht: das Budget kann durch die Aufrufe
+        dieses Laufs selbst reissen. Ohne die zweite Prüfung IN der Schleife liefe der Job
+        über alle Städte weiter und bezahlte jede einzeln."""
+        import os
+        import scheduler as S
+        from models import City
+        # Jeder Aufruf kostet spürbar; nach wenigen ist die Stundengrenze erreicht.
+        a = self.attrappe(ein=1000, aus=300)
+        echter_feed = S._fetch_feed
+        S._fetch_feed = FeedAttrappe()
+        vorher_env = os.environ.get('ANTHROPIC_API_KEY', '')
+        os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-api03-' + 'x' * 80
+        for i in range(12):
+            self.db.session.add(City(name=f'Bremsstadt {i:02d}', state='Hessen',
+                                     rss_url='https://example.invalid/feed'))
+        self.db.session.commit()
+        try:
+            # Fünf Aufrufe sind frei – die Prüfung VOR der Schleife lässt den Job also
+            # starten. Die Grenze reisst erst durch die Aufrufe dieses Laufs selbst.
+            self.setz('stunde', '5')
+            K.zaehler_zuruecksetzen()
+            ergebnis = S.job_trending()
+            self.assertLessEqual(a.aufrufe, 5,
+                                 f'{a.aufrufe} Aufrufe trotz Grenze 5: {ergebnis}')
+            # Entscheidend: der Job HÖRT AUF, statt die restlichen sieben Städte
+            # einzeln gegen die Bremse laufen zu lassen. Ohne die Prüfung in der
+            # Schleife stünden hier sieben Fehlschläge.
+            self.assertNotIn('7 fehlgeschlagen', ergebnis)
+            self.assertIn('Kostengrenze', ergebnis,
+                          f'der Abbruchgrund fehlt im Ergebnis: {ergebnis}')
+        finally:
+            S._fetch_feed = echter_feed
+            os.environ['ANTHROPIC_API_KEY'] = vorher_env
+            for c in City.query.filter(City.name.like('Bremsstadt%')).all():
+                self.db.session.delete(c)
+            self.db.session.commit()
 
 
 class BedienungTest(BremseTest):
