@@ -129,7 +129,84 @@ def _migrate_static_files():
     if copied:
         log.info(f'{copied} Datei(en) aus static/ in den Datenpfad übernommen')
 
+# ── Inhalt aus einem Deploy-Paket einspielen ───────────────────────────────────
+# instance/ steht in .gitignore. Ein frischer Deploy auf Render hat deshalb die zwanzig
+# Städte aus dem Seed – und sonst nichts: keine Vorlagen, keine Hintergrundbilder, keine
+# Stadt-Handschriften. tools/deploy_paket.py packt den vorhandenen Bestand in ein Archiv,
+# das auf der Platte zu _paket/ ausgepackt wird. Eingespielt wird es hier: beim Start, VOR
+# der ersten Datenbankverbindung.
+#
+# Warum genau hier und nicht per Hand über SSH: tauscht man memeos.db unter einem laufenden
+# gunicorn aus, bleibt das -wal der ALTEN Datenbank daneben liegen. SQLite prüft nicht, ob
+# ein -wal zur Datei gehört, und spielt es beim nächsten Start auf die neue Datenbank –
+# das Ergebnis ist im besten Fall Unsinn, im schlechteren eine kaputte Datei. Beim Start
+# schreibt noch niemand, der Tausch ist gefahrlos.
+_PAKET_DIR = os.path.join(_DATA_ROOT, '_paket')
+_PAKET_ORDNER = ('uploads', 'renders', 'assets', 'fonts')
+
+
+def _paket_einspielen():
+    """Ein ausgepacktes Deploy-Paket übernehmen. Läuft höchstens einmal je Paket.
+
+    Die vorhandene Datenbank wird nicht gelöscht, sondern mit ihrem -wal und -shm
+    zusammen beiseitegelegt (memeos.db.vor_paket_<Zeitstempel>) – damit bleibt sie
+    vollständig wiederherstellbar, und neben der neuen Datei liegt kein fremdes -wal.
+    """
+    try:
+        if not os.path.isdir(_PAKET_DIR):
+            return
+        erledigt = os.path.join(_PAKET_DIR, '.erledigt')
+        if os.path.exists(erledigt):
+            return
+
+        stempel = datetime.now().strftime('%Y%m%d_%H%M%S')
+        dateien = 0
+        for name in _PAKET_ORDNER:
+            quelle = os.path.join(_PAKET_DIR, name)
+            if not os.path.isdir(quelle):
+                continue
+            ziel_basis = os.path.join(_DATA_ROOT, name)
+            os.makedirs(ziel_basis, exist_ok=True)
+            for wurzel, _unter, namen in os.walk(quelle):
+                rel = os.path.relpath(wurzel, quelle)
+                ziel_dir = ziel_basis if rel == '.' else os.path.join(ziel_basis, rel)
+                os.makedirs(ziel_dir, exist_ok=True)
+                for f in namen:
+                    if f.startswith('.'):
+                        continue
+                    try:
+                        shutil.copy2(os.path.join(wurzel, f), os.path.join(ziel_dir, f))
+                        dateien += 1
+                    except Exception as ex:
+                        log.warning(f'Paket: {name}/{f} nicht übernommen: {ex}')
+
+        db_quelle = os.path.join(_PAKET_DIR, 'memeos.db')
+        db_getauscht = False
+        if os.path.isfile(db_quelle):
+            beiseite = f'{_DB_PATH}.vor_paket_{stempel}'
+            for suffix in ('', '-wal', '-shm'):
+                alt = _DB_PATH + suffix
+                if os.path.exists(alt):
+                    os.replace(alt, beiseite + suffix)
+            shutil.copy2(db_quelle, _DB_PATH)
+            db_getauscht = True
+
+        with open(erledigt, 'w', encoding='utf-8') as fh:
+            fh.write(stempel + '\n')
+        log.info(f'Deploy-Paket eingespielt: {dateien} Datei(en)'
+                 + (f', Datenbank getauscht (alte liegt als memeos.db.vor_paket_{stempel})'
+                    if db_getauscht else ', ohne Datenbank'))
+        try:
+            os.rename(_PAKET_DIR, f'{_PAKET_DIR}_erledigt_{stempel}')
+        except Exception as ex:
+            log.warning(f'Paketordner nicht umbenannt ({ex}) – .erledigt verhindert '
+                        f'ein zweites Einspielen')
+    except Exception as ex:
+        log.error(f'Deploy-Paket NICHT eingespielt: {ex}')
+
+
 _migrate_static_files()
+_paket_einspielen()
 _adopt_legacy_db()
 
 
