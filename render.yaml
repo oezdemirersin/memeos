@@ -5,8 +5,11 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     # Genau EIN Gunicorn-Prozess: Render-Queue-Worker und Scheduler dürfen nur einmal laufen
-    # (--threads hält die App reaktionsfähig, während Jobs/Renders laufen)
-    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180
+    # (--threads hält die App reaktionsfähig, während Jobs/Renders laufen).
+    # --bind ist PFLICHT: ohne ihn lauscht gunicorn auf 127.0.0.1:8000, Render erwartet aber
+    # 0.0.0.0 auf dem Port aus $PORT. Der Deploy scheiterte sonst mit "no open ports detected",
+    # obwohl der Prozess läuft. Das Procfile hatte es richtig, aber startCommand sticht es.
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180 --bind 0.0.0.0:$PORT
     envVars:
       # Render liest .python-version (runtime.txt ist Heroku-Konvention und wird ignoriert);
       # PYTHON_VERSION ist die zweite Sicherung. Ohne beides baut Render mit der neuesten
