@@ -195,5 +195,60 @@ class TestVorgaben(unittest.TestCase):
         self.assertIn('Notaus', K.pruefen())
 
 
+class TestAbrechnungsfenster(unittest.TestCase):
+    """Bremse und Kostenseite müssen dasselbe Fenster benutzen."""
+
+    @classmethod
+    def setUpClass(cls):
+        import app as A
+        from models import db
+        uri = A.app.config['SQLALCHEMY_DATABASE_URI']
+        assert uri == 'sqlite://' or ':memory:' in uri, f'echte Datenbank: {uri}'
+        cls.A, cls.db = A, db
+        cls.ctx = A.app.app_context()
+        cls.ctx.push()
+        db.create_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.session.remove()
+        cls.ctx.pop()
+
+    def setUp(self):
+        from models import AiUsageLog
+        self.AiUsageLog = AiUsageLog
+        AiUsageLog.query.delete()
+        self.db.session.commit()
+
+    tearDown = setUp
+
+    def kosten(self, eur, wann):
+        self.db.session.add(self.AiUsageLog(
+            feature='t', model='claude-haiku-4-5', input_tokens=1, output_tokens=1,
+            cost_eur=float(eur), created_at=wann))
+        self.db.session.commit()
+
+    def test_bremse_und_kostenseite_zeigen_dasselbe(self):
+        from datetime import datetime, timedelta
+        jetzt = datetime.utcnow()
+        monatsanfang = jetzt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        self.kosten(1.00, monatsanfang + timedelta(hours=1))
+        # Eine Zeile aus dem Vormonat darf nicht mitzählen.
+        self.kosten(9.99, monatsanfang - timedelta(hours=1))
+        # Und eine mit einem Zeitstempel in der Zukunft auch nicht.
+        self.kosten(5.00, monatsanfang + timedelta(days=40))
+        self.assertAlmostEqual(self.A._ai_cost_this_month(), 1.00, places=4)
+
+    def test_kurs_bremst_eher_zu_frueh_als_zu_spaet(self):
+        # Anthropic rechnet in USD. Ein zu niedriger Kurs liesse die Bremse zu spät
+        # greifen – deshalb mindestens Parität.
+        self.assertGreaterEqual(self.A._USD_EUR, 1.0)
+
+    def test_unbekanntes_modell_kostet_den_teuersten_satz(self):
+        teuerste = max(p['output'] for p in self.A.MODEL_PRICES.values())
+        self.assertGreaterEqual(self.A.MODEL_PRICE_DEFAULT['output'], teuerste,
+                                'ein unbekanntes Modell wird zu billig gerechnet')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

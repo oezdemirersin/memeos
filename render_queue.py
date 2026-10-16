@@ -399,13 +399,30 @@ def _combine_error(*parts):
     return text[:2000] or None
 
 
+# Höchstens so viele Folien in EINEM Sammelaufruf. Darüber reicht der Platz für die
+# Antwort nicht mehr: ab 11 Folien lief der Aufruf planmäßig in max_tokens – bezahlt und
+# unbrauchbar. Zwei Aufrufe für zwölf Folien sind billiger als einer, den man wegwirft.
+MULTI_MAX_FOLIEN = 10
+
+
 def _fit_results_multi(appmod, city, templates):
     """Ein KI-Aufruf für die ganze Serie (app._claude_fit_and_vars_multi, Bereich E1).
     Rückgabe {template_id: ergebnis}. Leeres Dict = die Funktion fehlt oder war unbrauchbar,
-    dann greift die bisherige Schleife mit einem Aufruf je Slide."""
+    dann greift die bisherige Schleife mit einem Aufruf je Slide.
+
+    Lange Serien werden in Häppchen von höchstens MULTI_MAX_FOLIEN zerlegt."""
     fn = getattr(appmod, '_claude_fit_and_vars_multi', None)
     if not callable(fn):
         return {}
+    templates = list(templates or [])
+    if len(templates) > MULTI_MAX_FOLIEN:
+        gesamt = {}
+        for i in range(0, len(templates), MULTI_MAX_FOLIEN):
+            teil = templates[i:i + MULTI_MAX_FOLIEN]
+            gesamt.update(_fit_results_multi(appmod, city, teil))
+        log.info('RenderQueue: Serie mit %s Folien in %s Sammelaufrufe zerlegt',
+                 len(templates), (len(templates) + MULTI_MAX_FOLIEN - 1) // MULTI_MAX_FOLIEN)
+        return gesamt
     try:
         raw = fn(city, templates)
     except Exception as ex:

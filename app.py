@@ -1880,7 +1880,11 @@ DEEPSEEK_BASE_URL  = 'https://api.deepseek.com'
 #   Cache bei Anthropic:       Schreiben = 1,25 × Eingabe, Lesen = 0,10 × Eingabe
 #   DeepSeek, Stand 09/2026:   deepseek-chat 0,27 $ / 1,10 $; Cache-Treffer ≈ 0,26 × Eingabe,
 #                              für das Schreiben in den Cache verlangt DeepSeek nichts extra.
-_USD_EUR = 0.92        # grober Umrechnungskurs USD → EUR
+# Anthropic rechnet in USD, das Budget steht in EUR. Der Kurs steht fest – und bewusst
+# bei 1,00 statt beim Tageskurs: ein zu niedriger Kurs lässt die Bremse ZU SPÄT greifen.
+# Bei 0,92 und einem Kurs von 1,05 entsprach ein 5-EUR-Budget in Wahrheit 5,71 EUR
+# Ausgaben (+14 %). Lieber ein paar Prozent zu früh bremsen als zu spät.
+_USD_EUR = float(os.getenv('MEMEOS_USD_EUR', '1.00') or '1.00')
 
 
 def _preise(eingabe_usd_mio, ausgabe_usd_mio, cache_write_faktor=1.25, cache_read_faktor=0.10):
@@ -4252,10 +4256,17 @@ def api_stats():
     })
 
 def _ai_cost_this_month():
-    first_day = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    """Verbrauch im laufenden Monat in EUR.
+
+    Benutzt _monat_grenzen(), dieselbe Quelle wie die Kostenseite – vorher rechnete die
+    Bremse mit einem eigenen Fenster ohne obere Grenze, sodass beide verschiedene Zahlen
+    zeigen konnten. Gerechnet wird in UTC, so wie die Zeitstempel gespeichert sind; am
+    Monatswechsel verschiebt sich die Grenze dadurch um den Zeitzonenversatz."""
+    start, ende, _ = _monat_grenzen()
     from sqlalchemy import func
-    result = db.session.query(func.sum(AiUsageLog.cost_eur))\
-                .filter(AiUsageLog.created_at >= first_day).scalar()
+    result = (db.session.query(func.sum(AiUsageLog.cost_eur))
+              .filter(AiUsageLog.created_at >= start)
+              .filter(AiUsageLog.created_at < ende).scalar())
     return round(result or 0, 4)
 
 def _log_ai_usage(feature, model, input_tokens, output_tokens,
@@ -6368,6 +6379,12 @@ def api_bulk_multi():
     city_ids     = d.get('city_ids', [])
     if not template_ids or not city_ids:
         return jsonify({'error': 'template_ids und city_ids erforderlich'}), 400
+    # Die Bremse einmal vorab: ein Stapel, den sie ohnehin stoppt, soll gar nicht erst
+    # als Erfolg gemeldet werden.
+    gesperrt = _ki_gesperrt()
+    if gesperrt:
+        return jsonify({'error': gesperrt, 'created': 0, 'gesperrt': True}), 409
+
     created = []
     for tid in template_ids:
         tmpl = MemeTemplate.query.get(tid)
@@ -6379,8 +6396,12 @@ def api_bulk_multi():
             db.session.add(job)
             db.session.flush()
             created.append(job.id)
-            threading.Thread(target=_run_generate_job, args=(app, job.id), daemon=True).start()
+    # ERST schreiben, DANN die Fäden starten. Vorher liefen sie los, während die Zeilen
+    # nur geflusht, aber nicht festgeschrieben waren: gemessen fanden 0 von 30 Fäden ihre
+    # Job-Zeile. Dasselbe Muster wie in api_generate_bulk.
     db.session.commit()
+    for job_id in created:
+        threading.Thread(target=_run_generate_job, args=(app, job_id), daemon=True).start()
     return jsonify({'created': len(created), 'job_ids': created})
 
 
