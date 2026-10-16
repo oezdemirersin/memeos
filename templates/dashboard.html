@@ -849,14 +849,15 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
             <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                 <button class="btn btn-ghost btn-sm" onclick="stilAbleitenStadt()"
-                        title="Ersetzt die ganze Handschrift dieser Stadt – Farben UND Schriftpaar, Kasten und Kontur">
-                  Handschrift neu ableiten
+                        title="Rechnet nur die Werte, die noch auf der Vorgabe stehen – deine eigenen bleiben">
+                  Lücken ausrechnen
                 </button>
                 <div style="font-size:11px;color:var(--muted);flex:1;min-width:180px;line-height:1.5;">
-                  Nimmt die Hauptfarbe dieser Stadt und rechnet daraus die
-                  <strong>ganze Handschrift</strong> neu: Zweitfarbe, Dunkel- und Hellton,
-                  Pointe im Gegenton – und dazu Schriftpaar, Schreibweise, Kasten und Kontur.
-                  Nur die Hauptfarbe selbst bleibt. Eine Paketzuordnung geht dabei verloren.
+                  Füllt die <strong>Lücken</strong>: Zweitfarbe, Dunkel- und Hellton, Pointe
+                  im Gegenton, dazu Schriftpaar, Schreibweise, Kasten und Kontur.
+                  <strong>Alles, was du oben selbst gesetzt hast, bleibt stehen</strong> –
+                  gerechnet wird nur, was noch auf der Vorgabe steht. Der Dialog sagt dir
+                  vorher, was unberührt bleibt.
                 </div>
               </div>
             </div>
@@ -3706,7 +3707,7 @@ select.stil-sel{font-size:12px;padding:6px 8px;}
       </label>
       <button class="btn btn-primary btn-sm" id="stil-verteilen-btn" onclick="stilVerteilen()">Stile verteilen</button>
       <button class="btn btn-ghost btn-sm" id="stil-ableiten-btn" onclick="stilAbleitenAlle()"
-              title="Aus der Markenfarbe jeder Stadt eine eigene Handschrift rechnen">Aus Markenfarben ableiten</button>
+              title="Füllt je Stadt die Lücken aus ihrer Markenfarbe – selbst gesetzte Werte bleiben">Lücken aus Markenfarben füllen</button>
       <div id="stil-verteilen-bericht" style="font-size:11px;color:var(--muted);flex:1;min-width:160px;"></div>
       <button class="btn btn-ghost btn-xs" onclick="stilUebersichtNeuLaden()">↻ Aktualisieren</button>
     </div>
@@ -4659,7 +4660,7 @@ async function stilAbleitenAlle() {
   const nurOhne = cb ? cb.checked : true;
   const btn = _stilEl('stil-ableiten-btn'), bericht = _stilEl('stil-verteilen-bericht');
   if (btn) { btn.disabled = true; btn.textContent = 'rechnet …'; }
-  const zurueck = () => { if (btn) { btn.disabled = false; btn.textContent = 'Aus Markenfarben ableiten'; } };
+  const zurueck = () => { if (btn) { btn.disabled = false; btn.textContent = 'Lücken aus Markenfarben füllen'; } };
 
   const plan = await _stilRuf('POST', '/api/stil/ableiten', {nur_ohne_stil: nurOhne});
   if (!plan || plan.error) { zurueck(); toast((plan && plan.error) || 'Fehlgeschlagen', 'error'); return; }
@@ -4691,8 +4692,8 @@ async function stilAbleitenAlle() {
   }
   const ohne = (plan.ohne_markenfarbe || []);
   const mitHinweis = (plan.staedte || []).filter(s => (s.hinweise || []).length);
-  const frage = `${anzahl} Städte bekommen eine neu gerechnete Handschrift `
-    + `(Farben, Schriftpaar, Kasten und Kontur).`
+  const frage = `Bei ${anzahl} Städten werden die Lücken gerechnet `
+    + `(Farben, Schriftpaar, Kasten und Kontur). Selbst gesetzte Werte bleiben stehen.`
     + (ohne.length ? `\n\nOhne eigene Markenfarbe und darum unberührt: ${ohne.join(', ')}.` : '')
     + (mitHinweis.length
         ? `\n\nBei ${mitHinweis.length} Städten passt nicht alles zusammen:\n– `
@@ -4725,10 +4726,14 @@ async function stilAbleitenStadt() {
   if (!plan || plan.error) { toast((plan && plan.error) || 'Fehlgeschlagen', 'error'); return; }
   const st = plan.stil || {};
   const hinweise = plan.hinweise || [];
-  const frage = `${_stilCityName || 'Diese Stadt'} bekommt eine neu gerechnete Handschrift:`
-    + `\n\nSchrift: ${st.headline || '?'} / ${st.body || '?'}`
+  const bleibt = plan.bleibt_stehen || [];
+  const frage = `${_stilCityName || 'Diese Stadt'}: die Lücken werden gerechnet.`
+    + `\n\nVorschlag – Schrift: ${st.headline || '?'} / ${st.body || '?'}`
     + `\nKasten: ${st.kasten || '?'} · Kontur: ${st.kontur || '?'}`
     + `\nFarben: ${st.primary || '?'} · ${st.secondary || '?'} · ${st.accent || '?'}`
+    + (bleibt.length
+        ? `\n\nUNBERÜHRT (hast du selbst gesetzt): ${bleibt.join(', ')}`
+        : '\n\nDiese Stadt hat noch nichts selbst Gesetztes – es wird alles gerechnet.')
     + (hinweise.length ? `\n\nAchtung:\n– ${hinweise.join('\n– ')}` : '')
     + '\n\nÜbernehmen?';
   if (!confirm(frage)) return;

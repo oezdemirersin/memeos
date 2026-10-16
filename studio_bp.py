@@ -56,7 +56,8 @@ from PIL import Image, ImageFont
 
 from models import (db, City, CityAsset, CityKnowledge, MemeTemplate, StudioAsset,
                     StudioPreset, TemplateCategory, KNOWLEDGE_CATEGORIES, TEMPLATE_CAT_MAP,
-                    CITY_ASSET_KINDS, STUDIO_ASSET_KINDS, CITY_ASSET_VAR_PREFIX)
+                    CITY_ASSET_KINDS, STUDIO_ASSET_KINDS, CITY_ASSET_VAR_PREFIX,
+                    CITY_STYLE_DEFAULTS)
 import memeos_render as R
 import meme_muster as MU
 import stadt_handschrift as HS
@@ -2110,17 +2111,43 @@ def api_studio_rollen_vorschlag(template_id):
 # Eine Stadtseite hat fast immer schon eine Farbe. Aus ihr den Rest zu rechnen ist bei
 # hundert Städten der Unterschied zwischen einem Knopf und einem Nachmittag.
 
-def _handschrift_auf_zeile(zeile, werte):
-    """Abgeleitete Werte in eine Stil-Zeile schreiben. -> Liste der geänderten Felder."""
-    paare = (('primary', 'primary'), ('secondary', 'secondary'), ('accent', 'accent'),
-             ('dark', 'dark'), ('light', 'light'),
-             ('font_headline', 'headline'), ('font_body', 'body'),
-             ('schreibweise', 'schreibweise'), ('kasten', 'kasten'),
-             ('radius', 'radius'), ('kontur', 'kontur'), ('schatten', 'schatten'),
-             ('wasserzeichen_ecke', 'wasserzeichen_ecke'))
+# Welches Feld der Stil-Zeile zu welchem Schlüssel einer abgeleiteten Handschrift gehört.
+_HANDSCHRIFT_PAARE = (
+    ('primary', 'primary'), ('secondary', 'secondary'), ('accent', 'accent'),
+    ('dark', 'dark'), ('light', 'light'),
+    ('font_headline', 'headline'), ('font_body', 'body'),
+    ('schreibweise', 'schreibweise'), ('kasten', 'kasten'),
+    ('radius', 'radius'), ('kontur', 'kontur'), ('schatten', 'schatten'),
+    ('wasserzeichen_ecke', 'wasserzeichen_ecke'))
+
+
+def _von_hand_gesetzt(zeile, feld):
+    """Steht in diesem Feld eine eigene Entscheidung – oder nur die Vorgabe des Modells?
+
+    Die Rechnung darf nur Lücken füllen. Was der Betreiber selbst gewählt hat, gewinnt
+    immer: eine Markenfarbe ist eine Entscheidung, kein Zwischenstand."""
+    wert = getattr(zeile, feld, None)
+    if wert in (None, ''):
+        return False
+    vorgabe = CITY_STYLE_DEFAULTS.get({'font_headline': 'headline',
+                                       'font_body': 'body'}.get(feld, feld))
+    if vorgabe is None:
+        return True
+    if isinstance(wert, str) and isinstance(vorgabe, str):
+        return wert.strip().lower() != vorgabe.strip().lower()
+    return wert != vorgabe
+
+
+def _handschrift_auf_zeile(zeile, werte, nur_fehlende=False):
+    """Abgeleitete Werte in eine Stil-Zeile schreiben. -> Liste der geänderten Felder.
+
+    nur_fehlende=True lässt alles stehen, was schon von Hand gesetzt ist, und rechnet nur
+    die Lücken aus. Das ist der Normalfall, sobald jemand eigene Farben gewählt hat."""
     geaendert = []
-    for feld, schluessel in paare:
+    for feld, schluessel in _HANDSCHRIFT_PAARE:
         if schluessel not in werte:
+            continue
+        if nur_fehlende and _von_hand_gesetzt(zeile, feld):
             continue
         if getattr(zeile, feld, None) != werte[schluessel]:
             setattr(zeile, feld, werte[schluessel])
@@ -2218,6 +2245,12 @@ def api_stil_stadt_ableiten(city_id):
     speichern, fehler = _ja_nein(d, 'speichern')
     if fehler:
         return jsonify({'ok': False, 'error': fehler}), 400
+    # Vorgabe: nur die Lücken rechnen. Was der Betreiber selbst gewählt hat, bleibt.
+    # Wer wirklich alles neu will, schickt alles_ersetzen=true.
+    alles, fehler = _ja_nein(d, 'alles_ersetzen')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+    nur_fehlende = not alles
     marke, logo = _marke_der_stadt(city, d)
     if not marke:
         return jsonify({'ok': False,
@@ -2245,12 +2278,17 @@ def api_stil_stadt_ableiten(city_id):
 
     hinweise = HS.pruefe_palette(werte)
     if not speichern:
+        vorhanden = _stil_zeile(city_id)
+        bleibt = ([f for f, _ in _HANDSCHRIFT_PAARE
+                   if _von_hand_gesetzt(vorhanden, f)] if (vorhanden is not None
+                                                           and nur_fehlende) else [])
         return jsonify({'ok': True, 'gespeichert': False, 'stil': werte,
-                        'hinweise': hinweise,
+                        'hinweise': hinweise, 'bleibt_stehen': sorted(bleibt),
+                        'nur_fehlende': nur_fehlende,
                         'anmutung': anmutung % len(HS.ANMUTUNGEN)})
 
     zeile = _stil_zeile_sichern(city, _stil_zeile(city_id))
-    geaendert = _handschrift_auf_zeile(zeile, werte)
+    geaendert = _handschrift_auf_zeile(zeile, werte, nur_fehlende)
     try:
         db.session.commit()
     except Exception as ex:
@@ -2298,6 +2336,10 @@ def api_stil_ableiten_alle():
     speichern, fehler = _ja_nein(d, 'speichern')
     if fehler:
         return jsonify({'ok': False, 'error': fehler}), 400
+    alles, fehler = _ja_nein(d, 'alles_ersetzen')
+    if fehler:
+        return jsonify({'ok': False, 'error': fehler}), 400
+    nur_fehlende = not alles
 
     staedte = _cities()
     if not staedte:
@@ -2340,7 +2382,7 @@ def api_stil_ableiten_alle():
                     zeile = _stil_zeile_sichern(c, zeilen.get(c.id))
                     if zeile is None:                # pragma: no cover – defensiv
                         raise RuntimeError(f'Stil-Zeile für {c.name} nicht anlegbar')
-                    _handschrift_auf_zeile(zeile, werte)
+                    _handschrift_auf_zeile(zeile, werte, nur_fehlende)
                     geschrieben.append(c.name)
             db.session.commit()
         except Exception as ex:

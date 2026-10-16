@@ -476,6 +476,43 @@ class TestAbleitungsRouten(unittest.TestCase):
         self.assertEqual(st, H.handschrift('#ff0000', None, (r.get_json() or {})['anmutung']))
         self.assertNotEqual(st.get('secondary', '').lower(), '#a88b00')
 
+    def test_eigene_farbe_gewinnt_gegen_die_rechnung(self):
+        """Der Betreiber waehlt die Markenfarben selbst. Die Ableitung darf nur Luecken
+        fuellen – was von Hand gesetzt ist, bleibt."""
+        s = self.stadt('Handstadt', farbe='#ff0000')
+        zeile = self.CityStyle(city_id=s.id, accent='#123456', font_headline='bangers')
+        self.db.session.add(zeile)
+        self.db.session.commit()
+
+        r = self.ableiten(s, speichern=True)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.db.session.expire_all()
+        zeile = self.CityStyle.query.filter_by(city_id=s.id).first()
+        self.assertEqual(zeile.accent, '#123456', 'eigene Akzentfarbe wurde überschrieben')
+        self.assertEqual(zeile.font_headline, 'bangers', 'eigene Schrift wurde überschrieben')
+        # Die Lücken sind gefüllt worden.
+        self.assertEqual(zeile.primary, '#ff0000')
+        self.assertTrue(zeile.dark)
+
+    def test_alles_ersetzen_raeumt_auch_eigenes_weg(self):
+        s = self.stadt('Ersetzstadt', farbe='#ff0000')
+        zeile = self.CityStyle(city_id=s.id, accent='#123456')
+        self.db.session.add(zeile)
+        self.db.session.commit()
+        r = self.ableiten(s, speichern=True, alles_ersetzen=True)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.db.session.expire_all()
+        self.assertNotEqual(
+            self.CityStyle.query.filter_by(city_id=s.id).first().accent, '#123456')
+
+    def test_vorschau_nennt_was_stehen_bleibt(self):
+        s = self.stadt('Bleibtstadt', farbe='#ff0000')
+        self.db.session.add(self.CityStyle(city_id=s.id, accent='#123456'))
+        self.db.session.commit()
+        js = self.ableiten(s).get_json() or {}
+        self.assertIn('accent', js.get('bleibt_stehen', []), js)
+        self.assertTrue(js.get('nur_fehlende'))
+
     def test_hinweise_kommen_mit(self):
         s = self.stadt('Dunkelstadt', farbe='#101010')
         js = self.ableiten(s).get_json() or {}
