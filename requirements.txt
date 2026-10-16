@@ -6,7 +6,10 @@ feedparser==6.0.11
 gunicorn==23.0.0
 python-dotenv==1.0.1
 cloudinary>=1.40.0
-Pillow==10.4.0
+# Pillow auf dem Stand, mit dem der Renderer entwickelt und geprueft wurde: die
+# Schriftkanten haengen an Pillow UND FreeType, 10.4.0 rendert messbar andere Bytes
+# (tests/test_i1_stil.py haelt dafuer Kontrollsummen). Deploy, was geprueft ist.
+Pillow==11.3.0
 # Phase B: Template-Import aus Canva/PPTX (pptx_import_bp.py)
 python-pptx==1.0.2
 # Phase B: Renderer cover fill 'inpaint' (memeos_render.py) – optional, ohne beides Fallback auf fill 'auto'

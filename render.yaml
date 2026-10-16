@@ -10,10 +10,14 @@ services:
     # 0.0.0.0 auf dem Port aus $PORT. Der Deploy scheiterte sonst mit "no open ports detected",
     # obwohl der Prozess läuft. Das Procfile hatte es richtig, aber startCommand sticht es.
     startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180 --bind 0.0.0.0:$PORT
+    # Render prüft hier, ob der Dienst lebt. Nicht "/" nehmen: das ist hinter dem Login
+    # und antwortet mit 302 auf /login – Render erwartet eine 200. /ping ist offen und
+    # antwortet ohne Datenbankzugriff.
+    healthCheckPath: /ping
     envVars:
       # Render liest .python-version (runtime.txt ist Heroku-Konvention und wird ignoriert);
       # PYTHON_VERSION ist die zweite Sicherung. Ohne beides baut Render mit der neuesten
-      # Python-Version, für die es kein Pillow-10.4.0-Wheel gibt.
+      # Python-Version, für die es kein Pillow-Wheel gibt.
       - key: PYTHON_VERSION
         value: "3.11.11"
       - key: SECRET_KEY
@@ -58,6 +62,12 @@ services:
       # Modell für die Bildanalyse (Vorgabe im Code); hier überschreibbar, ohne neu zu bauen.
       - key: MEMEOS_VISION_MODEL
         sync: false
+      # Umrechnung der Anthropic-Preise (die Rechnung kommt in Dollar) in die Währung, in
+      # der die Kostenbremsen zählen. 1.00 heisst: nicht umrechnen – die Grenze "10 €" ist
+      # dann in Wahrheit 10 $ und greift damit früher, nicht später. Wer den Tageskurs
+      # eintragen will (z. B. 0.92), tut das hier.
+      - key: MEMEOS_USD_EUR
+        value: "1.00"
       # Telegram (Tagesdigest) wird NICHT hier gesetzt, sondern im Dashboard unter
       # Einstellungen → Telegram; die Werte stehen in AppSettings, nicht in der Umgebung.
     disk:

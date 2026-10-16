@@ -83,10 +83,26 @@ ALT_SUMMEN = {
     'template_5': '99a0e0862a9700519f0d2e2228504530',
     'template_6': '07ee9d5e78100e8115670ccca365f810',
 }
+# Die Summen hängen an der Bibliothek, nicht nur am Code: Schriftkanten kommen aus
+# FreeType, die PNG-Bytes aus zlib. Mit Pillow 10.4.0 (FreeType 2.13.2) rendert derselbe
+# Code messbar andere Bytes – nachgemessen in einer frischen Umgebung nach
+# requirements.txt. Deshalb wird nur auf dem aufgenommenen Stand verglichen; läuft der
+# Test woanders, sagt er das, statt falschen Alarm zu schlagen. Der Schutz geht dabei
+# nicht verloren: test_vollstaendiges_stil_dict_aendert_altbestand_nicht prüft dieselbe
+# Zusage versionsunabhängig.
+AUFGENOMMEN_MIT = ('11.3.0', '2.13.3')
+
+
+def _bildbibliothek():
+    import PIL, PIL.features
+    return PIL.__version__, PIL.features.version('freetype2')
 
 
 class TestAltbestand(unittest.TestCase):
 
+    @unittest.skipUnless(_bildbibliothek() == AUFGENOMMEN_MIT,
+                         'Kontrollsummen wurden mit Pillow %s / FreeType %s aufgenommen, '
+                         'hier läuft %s / %s' % (AUFGENOMMEN_MIT + _bildbibliothek()))
     def test_template_5_und_6_bitgleich(self):
         """Prüfstein: dieselben Bytes wie vor dem Umbau (Pillow-abhängige Kontrollsumme)."""
         for name, cfg in (('template_5', TEMPLATE_5), ('template_6', TEMPLATE_6)):
