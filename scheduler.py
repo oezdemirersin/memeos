@@ -14,8 +14,8 @@ Uhrzeit (Europe/Berlin) genau einmal pro Tag aus. Zustand liegt in AppSettings:
     telegram_token / telegram_chat_id   – kommen aus der Telegram-Card der Einstellungen
     alert_threshold_days                – Warnschwelle "ohne geplanten Post" (Einstellungen)
 
-Jobs: rss, trending, inspo, events, nopost, overdue, weather, digest (täglich)
-und poll (alle 30 s).
+Jobs: rss, trending, inspo, events, nopost, overdue, weather, digest, sicherung
+(täglich) und poll (alle 30 s).
 
 Regeln:
 - app.py wird NIE auf Modulebene importiert (zirkulärer Import). Helfer aus app.py
@@ -98,6 +98,13 @@ JOBS = [
     {'key': 'digest',   'label': 'Tages-Digest',
      'description': 'Schickt alle heute geplanten Posts mit Bild und Knöpfen (Gepostet / Überspringen) an Telegram.',
      'default_enabled': True,  'default_time': '08:30', 'needs_telegram': True,  'costs_ai': False},
+    {'key': 'sicherung','label': 'Datensicherung',
+     'description': 'Legt nachts eine Kopie der Datenbank in instance/exports/sicherungen ab '
+                    '(über die sqlite3-Backup-Schnittstelle, also auch bei laufendem Betrieb '
+                    'vollständig) und behält die sieben jüngsten. Das schützt gegen Fehlgriffe '
+                    'im Betrieb – gegen den Verlust der Platte selbst nicht, dafür braucht es '
+                    'eine Kopie ausser Haus (Einstellungen → Datenbank herunterladen).',
+     'default_enabled': True,  'default_time': '03:30', 'needs_telegram': False, 'costs_ai': False},
     {'key': 'poll',     'label': 'Telegram-Rückmeldungen',
      'description': 'Fragt alle 30 Sekunden die Knopfdrücke aus Telegram ab und markiert Posts als veröffentlicht.',
      'default_enabled': True,  'default_time': None,    'needs_telegram': True,  'costs_ai': False},
@@ -1364,10 +1371,98 @@ def job_poll(manual=False):
 # Ausführung, Schleife, Wächter
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Job 9: Datensicherung
+# ══════════════════════════════════════════════════════════════════════════════
+
+SICHERUNG_ORDNER = 'sicherungen'
+SICHERUNG_BEHALTEN = 7
+
+
+def _sicherungsordner(appmod):
+    pfad = os.path.join(appmod._EXPORT_DIR, SICHERUNG_ORDNER)
+    os.makedirs(pfad, exist_ok=True)
+    return pfad
+
+
+def _alte_sicherungen_abraeumen(ordner, behalten=SICHERUNG_BEHALTEN):
+    """Die jüngsten `behalten` bleiben, der Rest geht. Liefert die Zahl der gelöschten.
+
+    Bewusst eng: nur Dateien, die dieser Job selbst angelegt hat (memeos_*.db), und
+    nur direkt in diesem Ordner."""
+    dateien = [n for n in os.listdir(ordner)
+               if n.startswith('memeos_') and n.endswith('.db')
+               and os.path.isfile(os.path.join(ordner, n))]
+    dateien.sort()                      # der Zeitstempel im Namen sortiert chronologisch
+    weg = 0
+    for name in dateien[:-behalten] if behalten > 0 else dateien:
+        try:
+            os.remove(os.path.join(ordner, name))
+            weg += 1
+        except OSError as ex:
+            log.warning(f'Sicherung {name} nicht entfernt: {ex}')
+    return weg
+
+
+def job_sicherung(manual=False):
+    """Kopie der Datenbank auf die Platte.
+
+    Über sqlite3.Connection.backup(), NICHT über ein Kopieren der Datei: im WAL-Modus
+    steht der zuletzt geschriebene Teil noch in memeos.db-wal, eine Dateikopie wäre
+    unvollständig. Dieselbe Begründung wie bei /api/backup/db.
+
+    Was das leistet und was nicht: es hilft gegen Fehlgriffe im Betrieb – versehentlich
+    gelöschte Städte, eine missratene Änderung. Gegen den Verlust der Platte hilft es
+    nicht, denn die Kopie liegt auf derselben Platte.
+    """
+    import sqlite3
+    import urllib.parse as _up
+    appmod = _appmod()
+    quelle = appmod._sqlite_datei()
+    if not quelle:
+        return 'keine SQLite-Datenbank – diese Sicherung gibt es nur für SQLite'
+
+    ordner = _sicherungsordner(appmod)
+    name = f'memeos_{now_berlin().strftime("%Y%m%d_%H%M")}.db'
+    ziel = os.path.join(ordner, name)
+    vorlaeufig = ziel + '.teil'
+    try:
+        q = sqlite3.connect(f'file:{_up.quote(quelle)}?mode=ro', uri=True)
+        try:
+            z = sqlite3.connect(vorlaeufig)
+            try:
+                q.backup(z)
+            finally:
+                z.close()
+        finally:
+            q.close()
+        # Erst wenn die Kopie vollständig ist, bekommt sie ihren endgültigen Namen –
+        # sonst zählt eine abgebrochene Sicherung beim Abräumen als vollwertige mit.
+        os.replace(vorlaeufig, ziel)
+    except Exception as ex:
+        for rest in (vorlaeufig,):
+            try:
+                os.remove(rest)
+            except OSError:
+                pass
+        log.error(f'Datensicherung fehlgeschlagen: {ex}')
+        return f'Fehler: {ex}'
+
+    weg = _alte_sicherungen_abraeumen(ordner)
+    try:
+        _set('last_backup_at', now_berlin().isoformat())
+    except Exception:
+        db.session.rollback()
+    mb = os.path.getsize(ziel) / 1_048_576
+    return (f'{name} ({mb:.1f} MB)'
+            + (f', {weg} alte entfernt' if weg else '')
+            + ' – liegt auf derselben Platte, ersetzt keine Kopie ausser Haus')
+
+
 _JOB_FUNCS = {
     'rss': job_rss, 'trending': job_trending, 'inspo': job_inspo, 'events': job_events,
     'nopost': job_nopost, 'overdue': job_overdue, 'weather': job_weather,
-    'digest': job_digest, 'poll': job_poll,
+    'digest': job_digest, 'sicherung': job_sicherung, 'poll': job_poll,
 }
 
 

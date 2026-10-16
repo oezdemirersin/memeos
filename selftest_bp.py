@@ -832,7 +832,12 @@ def _lesbares_datum(roh):
         dt = datetime.fromisoformat(text.replace('Z', '').replace('T', ' ').strip())
     except Exception:
         return text
-    tage = (datetime.utcnow() - dt).days
+    # Mit und ohne Zeitzone: der Scheduler legt Zeitpunkte mit Berliner Offset ab
+    # (now_berlin().isoformat()), ältere Schlüssel stehen ohne. Ein Abzug über die Grenze
+    # hinweg wirft TypeError – und damit stürzte früher die ganze Prüfung ab, statt ein
+    # Datum zu melden.
+    jetzt = datetime.now(dt.tzinfo) if dt.tzinfo is not None else datetime.utcnow()
+    tage = (jetzt - dt).days
     if tage >= 2:
         alter = f' (vor {tage} Tagen)'
     elif tage == 1:
